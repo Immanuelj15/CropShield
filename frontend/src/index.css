@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Source Sans 3', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-stone-50 text-stone-800;
+    background-image:
+      radial-gradient(circle at 20% 20%, rgba(45, 168, 45, 0.04) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(199, 131, 30, 0.05) 0%, transparent 50%);
+    min-height: 100vh;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Playfair Display', Georgia, serif;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl border border-stone-200 shadow-sm;
+  }
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+  }
+  .btn-primary {
+    @apply bg-leaf-600 text-white font-semibold px-6 py-3 rounded-xl
+           hover:bg-leaf-700 active:bg-leaf-800
+           transition-all duration-150 shadow-sm
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-stone-100 text-stone-700 font-semibold px-6 py-3 rounded-xl
+           hover:bg-stone-200 transition-all duration-150;
+  }
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border border-stone-300
+           bg-white text-stone-800
+           focus:outline-none focus:ring-2 focus:ring-leaf-500 focus:border-transparent
+           transition-all duration-150;
+  }
+  .label {
+    @apply block text-sm font-semibold text-stone-600 mb-1.5;
+  }
+  .risk-badge-low {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full
+           bg-green-100 text-green-800 text-sm font-semibold;
+  }
+  .risk-badge-medium {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full
+           bg-amber-100 text-amber-800 text-sm font-semibold;
+  }
+  .risk-badge-high {
+    @apply inline-flex items-center gap-1 px-3 py-1 rounded-full
+           bg-red-100 text-red-800 text-sm font-semibold;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-stone-100; }
+::-webkit-scrollbar-thumb { @apply bg-stone-300 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-stone-400; }
+
+/* Animated underline for nav links */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #1f8a1f;
+  transition: width 0.25s ease;
+}
+.nav-link.active::after,
+.nav-link:hover::after {
+  width: 100%;
+}

@@ -1,0 +1,121 @@
+{
+  "model_name": "AgriGuard-LeafDisease-MobileNetV3",
+  "accuracy": 0.1389,
+  "precision_macro": 0.1178,
+  "recall_macro": 0.2222,
+  "f1_macro": 0.1238,
+  "auc_roc_estimated": 0.9852,
+  "num_classes": 9,
+  "classes": [
+    "Paddy_Bacterial_Blight",
+    "Paddy_Blast",
+    "Paddy_Brown_Spot",
+    "Cotton_Leaf_Curl",
+    "Tomato_Early_Blight",
+    "Tomato_Late_Blight",
+    "Sugarcane_Red_Rot",
+    "Cassava_Mosaic",
+    "Healthy_Leaf"
+  ],
+  "confusion_matrix": [
+    [
+      0,
+      0,
+      9,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      8,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      4,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      11,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      12,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      7,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      4,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      11,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      6
+    ]
+  ]
+}

@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  # ── MongoDB Database ─────────────────────────────────────
+  mongo:
+    image: mongo:7.0
+    container_name: cropshield_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Mongo Express (Admin UI) ─────────────────────────────
+  mongo-express:
+    image: mongo-express:latest
+    container_name: cropshield_mongo_express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongo
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # ── Backend API ──────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cropshield_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      MONGODB_URL: mongodb://mongo:27017/cropshield_db
+      MONGODB_DB_NAME: cropshield_db
+      NASA_POWER_BASE_URL: https://power.larc.nasa.gov/api/temporal/daily/point
+      APP_ENV: production
+      DEBUG: "false"
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000","http://frontend:5173"]'
+    volumes:
+      - ./ml/training/saved_models:/app/ml/training/saved_models
+      - ./ml/data:/app/ml/data
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command: >
+      sh -c "
+        python -m scripts.init_mongo_db &&
+        python -m ml.training.train_model &&
+        uvicorn backend.main:app --host 0.0.0.0 --port 8000
+      "
+
+  # ── Frontend ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cropshield_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:
+
