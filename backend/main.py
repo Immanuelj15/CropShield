@@ -11,7 +11,21 @@ from backend.api import predict, detect, features, weather, history, auth, disea
 from backend.db.database import engine, Base
 from backend.utils.config import settings
 
+from contextlib import asynccontextmanager
+from backend.db.mongodb import init_mongodb, close_mongodb
+
 Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize MongoDB & Beanie collections/indexes
+    try:
+        await init_mongodb()
+    except Exception as e:
+        print(f"[WARN] MongoDB startup init error: {e}")
+    yield
+    # Close connection pool on shutdown
+    await close_mongodb()
 
 app = FastAPI(
     title="AgriGuard AI — Early Warning & Advisory API",
@@ -23,7 +37,9 @@ app = FastAPI(
     docs_url="/api/v1/docs",
     redoc_url="/api/v1/redoc",
     openapi_url="/api/v1/openapi.json",
+    lifespan=lifespan,
 )
+
 
 app.add_middleware(
     CORSMiddleware,

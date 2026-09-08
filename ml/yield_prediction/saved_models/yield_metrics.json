@@ -1,0 +1,9 @@
+{
+  "model_name": "RandomForestRegressor",
+  "dataset": "agriguard_soil_yield_dataset_10000rows.csv",
+  "n_samples": 10000,
+  "n_features": 33,
+  "r2_score": 0.9917,
+  "mae_kg_per_ha": 784.01,
+  "rmse_kg_per_ha": 2250.27
+}

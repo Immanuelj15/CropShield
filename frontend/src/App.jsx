@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
-import { Leaf, AlertTriangle, Clock, BarChart3, Menu, X, Sprout, Map, Mic, ShieldCheck } from 'lucide-react'
+import { Leaf, AlertTriangle, Clock, BarChart3, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock } from 'lucide-react'
 import { useState } from 'react'
 import TodayPage from './pages/TodayPage'
 import YieldPage from './pages/YieldPage'
@@ -7,6 +7,7 @@ import OutbreakMapPage from './pages/OutbreakMapPage'
 import HistoryPage from './pages/HistoryPage'
 import FeaturesPage from './pages/FeaturesPage'
 import ExpertPortalPage from './pages/ExpertPortalPage'
+import LoginPage from './pages/LoginPage'
 import VoiceAssistantModal from './components/VoiceAssistantModal'
 import clsx from 'clsx'
 
@@ -16,7 +17,9 @@ const navItems = [
   { to: '/outbreak', label: 'Outbreak Map',    icon: Map },
   { to: '/expert',   label: 'Expert Portal',   icon: ShieldCheck },
   { to: '/history',  label: 'History',          icon: Clock },
+  { to: '/login',    label: 'Sign In',          icon: Lock },
 ]
+
 
 function Navbar() {
   const [open, setOpen] = useState(false)
@@ -119,7 +122,9 @@ export default function App() {
           <Route path="/expert"   element={<ExpertPortalPage />} />
           <Route path="/features" element={<FeaturesPage />} />
           <Route path="/history"  element={<HistoryPage />} />
+          <Route path="/login"    element={<LoginPage />} />
         </Routes>
+
       </main>
       <Footer />
     </BrowserRouter>

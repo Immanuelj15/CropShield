@@ -4,14 +4,13 @@ echo ==========================================
 echo      Starting AgriGuard AI FastAPI Backend
 echo ==========================================
 cd /d "%~dp0"
-if not exist venv\Scripts\activate.bat (
-    echo Error: Virtual environment 'venv' not found.
-    echo Please make sure you are in the cropshield-pest directory.
-    pause
-    exit /b
+if exist venv\Scripts\activate.bat (
+    echo Activating virtual environment...
+    call venv\Scripts\activate.bat
+) else (
+    echo Using available Python environment...
 )
-echo Activating virtual environment...
-call venv\Scripts\activate.bat
-echo Starting backend server with Uvicorn...
-uvicorn backend.main:app --reload --port 8000
+echo Starting backend server with Uvicorn on http://127.0.0.1:8000 ...
+python -m uvicorn backend.main:app --reload --port 8000
 pause
+
