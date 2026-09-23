@@ -146,12 +146,25 @@ def predict_today(
 
         # SHAP
         sv = mgr.explainer.shap_values(X_scaled)
-        sv_arr = sv[2][0] if isinstance(sv, list) and len(sv) == 3 else (
-            sv[-1][0] if isinstance(sv, list) else sv[0]
-        )
+        if isinstance(sv, list):
+            sv_arr = sv[2][0] if len(sv) >= 3 else sv[-1][0]
+        elif isinstance(sv, np.ndarray):
+            if sv.ndim == 3:
+                if sv.shape[-1] >= 3:
+                    sv_arr = sv[0, :, 2]
+                elif sv.shape[0] >= 3:
+                    sv_arr = sv[2, 0, :]
+                else:
+                    sv_arr = sv[0, :, -1]
+            elif sv.ndim == 2:
+                sv_arr = sv[0]
+            else:
+                sv_arr = sv.flatten()
+        else:
+            sv_arr = np.asarray(sv).flatten()
 
         feat_data = list(zip(mgr.features, X_df.iloc[0].values, sv_arr))
-        feat_data.sort(key=lambda x: abs(x[2]), reverse=True)
+        feat_data.sort(key=lambda x: abs(float(x[2])), reverse=True)
 
         top_features = [
             {

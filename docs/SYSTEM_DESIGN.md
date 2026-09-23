@@ -209,7 +209,7 @@ docker-compose up --build
 ## Future Improvements
 
 1. **Real pest incidence labels** — integrate TNAU/ICAR surveillance data to replace rule-derived labels
-2. **IoT sensors** — real-time soil moisture / leaf wetness via MQTT broker
+2. **High-Resolution Satellite Remote Sensing** — integration of 1km gridded reanalysis (ERA5-Land / Sentinel-2 surface reflectance) via cloud REST API
 3. **Image-based CNN** — MobileNetV3 for photo-based pest confirmation
 4. **SMS/WhatsApp alerts** — Twilio integration for High risk warnings
 5. **Geospatial heatmap** — district-level risk overlay with Leaflet.js

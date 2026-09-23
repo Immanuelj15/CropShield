@@ -9,6 +9,10 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(cfg => {
+  const token = sessionStorage.getItem('cropshield_token')
+  if (token) {
+    cfg.headers.Authorization = `Bearer ${token}`
+  }
   if (import.meta.env.DEV) console.log(`[API] ${cfg.method?.toUpperCase()} ${cfg.url}`)
   return cfg
 })

@@ -60,3 +60,8 @@ ml/data/processed/
 # OS
 .DS_Store
 Thumbs.db
+
+# User Uploads
+uploads/*
+!uploads/.gitkeep
+

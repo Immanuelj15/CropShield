@@ -1,3 +1,4 @@
+
 location,district_soil_type,crop_type,year,season,soil_ph,soil_ec_dS_m,organic_carbon_pct,available_nitrogen_kg_ha,available_phosphorus_kg_ha,available_potassium_kg_ha,area_hectares,yield_kg_per_hectare,production_kg
 krishnagiri,Red Loam,Millets,2022,Kharif,6.08,0.88,0.53,184.3,12.7,191.1,1.89,1038.8,1967.8
 trichy,Black Cotton Soil,Rice,2019,Kharif,6.7,0.5,0.17,136.5,14.6,149.1,0.62,2943.5,1830.6

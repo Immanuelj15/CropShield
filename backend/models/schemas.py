@@ -59,6 +59,8 @@ class TodayWarningResponse(BaseModel):
     # Explanation
     top_features:     List[SHAPFeature]
     shap_interpretation: str
+    shap_explanation: Optional[List[Dict[str, Any]]] = None
+    counterfactual_prescription: Optional[Dict[str, Any]] = None
 
     # Weather context
     weather_snapshot: Dict[str, Any]
@@ -67,6 +69,7 @@ class TodayWarningResponse(BaseModel):
     data_date:        date   # date of latest weather observation used
     model_version:    str
     data_source:      str = "NASA POWER"
+
 
 
 # ── Detection ─────────────────────────────────────────────────
@@ -197,7 +200,8 @@ class UserRegister(BaseModel):
     district:  Optional[str] = "Coimbatore"
 
 class UserLogin(BaseModel):
-    username: str
+    username: Optional[str] = None
+    email:    Optional[str] = None
     password: str
 
 class TokenResponse(BaseModel):
@@ -205,14 +209,22 @@ class TokenResponse(BaseModel):
     token_type:   str = "bearer"
     username:     str
     role:         str
+    user_id:      Optional[str] = None
+    name:         Optional[str] = None
+    region_assigned: Optional[str] = None
+    farm_id:      Optional[str] = None
 
 class UserProfile(BaseModel):
-    id:        int
+    id:        Optional[Any] = 1
+    user_id:   Optional[str] = None
     username:  str
     email:     str
     role:      str
-    full_name: Optional[str]
-    district:  Optional[str]
+    full_name: Optional[str] = None
+    district:  Optional[str] = None
+    region_assigned: Optional[str] = None
+    farm_id:   Optional[str] = None
+
 
 
 # ── Disease Scan Schemas ─────────────────────────────────────

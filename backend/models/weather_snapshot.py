@@ -3,7 +3,7 @@ CropShield / AgriGuard — Weather Snapshot Beanie Document Model
 Stores embedded raw + engineered climate data for ML feature building
 """
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from beanie import Document, PydanticObjectId
 from pymongo import IndexModel, ASCENDING
 from pydantic import Field
@@ -15,6 +15,10 @@ class WeatherSnapshot(Document):
     source: str = "NASA_POWER"
     raw: Dict[str, Any] = Field(default_factory=dict)
     engineered: Dict[str, Any] = Field(default_factory=dict)
+    temperature_c: Optional[float] = None
+    humidity_pct: Optional[float] = None
+    rainfall_mm: Optional[float] = None
+    wind_speed_ms: Optional[float] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:

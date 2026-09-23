@@ -146,6 +146,52 @@ async def predict_today(
             "humidity_trend_7d":    round(float(fe_row.get("rh_trend_7d", 0)), 2),
         }
 
+        # ── 7b. Counterfactual Agronomic Optimization ─────────
+        from backend.services.counterfactual_service import generate_counterfactual_prescription
+        prescription = generate_counterfactual_prescription(
+            crop=request.crop,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            weather_snapshot=weather_snapshot,
+            top_features=top_features,
+        )
+
+        # ── 7c. Persist in MongoDB Beanie ──────────────────────
+        try:
+            from backend.models.pest_warning_log import PestWarningLog as MongoWarningLog
+            from backend.models.farm import Farm as MongoFarm
+            from backend.services.geospatial_service import dispatch_5km_regional_alerts
+            farm_doc = await MongoFarm.find_one(MongoFarm.district == request.location) or await MongoFarm.find_one()
+            if farm_doc:
+                p_list = [{"pest_name": d["pest_name"], "confidence": d["confidence"]} for d in detected]
+                mongo_log = MongoWarningLog(
+                    farm_id=farm_doc.id,
+                    date=str(data_date),
+                    crop_type=request.crop,
+                    risk_score=round(risk_score, 4),
+                    risk_level=risk_level,
+                    model_name="xgboost_multicrop_v2",
+                    model_version=model_version,
+                    shap_explanation=[f for f in top_features],
+                    counterfactual_prescription=prescription,
+                    detected_pests=p_list,
+                    verified_by=None,
+                    verified_at=None,
+                )
+                await mongo_log.insert()
+
+                # Cross-role automatic geospatial alert: If risk is High, notify neighboring farms within 5km
+                if risk_level == "High":
+                    threat = p_list[0]["pest_name"] if p_list else "High Pest Risk"
+                    await dispatch_5km_regional_alerts(
+                        origin_farm=farm_doc,
+                        threat_name=threat,
+                        risk_level="High",
+                        radius_km=5.0
+                    )
+        except Exception as mongo_err:
+            print(f"[WARN] MongoDB warning log / alert dispatch error: {mongo_err}")
+
         return TodayWarningResponse(
             warning_id=warning.id,
             warning_date=data_date,
@@ -168,10 +214,13 @@ async def predict_today(
             ],
             top_features=[SHAPFeature(**f) for f in top_features],
             shap_interpretation=interpretation,
+            shap_explanation=[f for f in top_features],
+            counterfactual_prescription=prescription,
             weather_snapshot=weather_snapshot,
             data_date=data_date,
             model_version=model_version,
         )
+
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")

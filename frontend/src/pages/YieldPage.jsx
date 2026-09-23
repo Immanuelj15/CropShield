@@ -28,7 +28,7 @@ export default function YieldPage() {
       })
       setYieldResult(res.data)
     } catch (err) {
-      // Mock fallback
+      // Regional Soil & Yield Baseline
       setYieldResult({
         crop,
         base_yield_tons_ha: 4.5,

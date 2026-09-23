@@ -14,6 +14,8 @@ class User(Document):
     password_hash: str
     role: str = "farmer"  # "farmer" | "agronomist" | "admin"
     phone: Optional[str] = None
+    region_assigned: Optional[str] = None  # agronomist only (e.g., "Coimbatore")
+    farm_id: Optional[PydanticObjectId] = None  # farmer only (reference to farm)
     location: Optional[Dict[str, Any]] = None  # GeoJSON Point: {"type": "Point", "coordinates": [lon, lat]}
     district: Optional[str] = None
     is_active: bool = True

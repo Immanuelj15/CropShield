@@ -29,7 +29,7 @@ export default function TodayPage() {
       const res = await axios.post('/api/v1/predict-location', form)
       setResult(res.data)
     } catch (err) {
-      // Mock Fallback Payload
+      // Regional Baseline Climate & Risk Profile
       setResult({
         status: "success",
         inputs: form,

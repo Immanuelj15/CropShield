@@ -64,6 +64,46 @@ This document details all open-source and field-collected datasets utilized with
 ---
 
 ## 5. PlantVillage Leaf Pathology Dataset
-- **Source**: spMohanty / PlantVillage Dataset (CrowdAI / Penn State)
-- **License**: CC0 1.0 Universal (Public Domain)
+- **Source**: spMohanty / PlantVillage Dataset (CrowdAI / Penn State; Hughes & Salathé, 2015)
+- **License**: CC0 1.0 Universal (Public Domain) / CC-BY 4.0
 - **Description**: 54,306 images across 38 crop-pathogen pairs utilized for ResNet18 leaf disease image classification.
+
+---
+
+## 6. ISRIC SoilGrids v2.0 Global Soil Data
+- **Source**: ISRIC — World Soil Information (`https://rest.isric.org/soilgrids/v2.0/properties/query`)
+- **License**: Open Data (ODbL / CC-BY 4.0)
+- **Script**: `fetch_soilgrids.py` (or `data_collection/fetch_soilgrids.py`)
+- **Depth**: `0-5cm` (topsoil surface layer, representative of root zone interface)
+- **Parameters Fetched**:
+  - `phh2o`: Soil pH in $H_2O \times 10$
+  - `clay`: Clay content ($g/kg$ or $\%$)
+  - `sand`: Sand content ($g/kg$ or $\%$)
+  - `silt`: Silt content ($g/kg$ or $\%$)
+  - `soc`: Soil Organic Carbon ($dg/kg$ or $g/kg$)
+  - `nitrogen`: Total Nitrogen ($cg/kg$ or $g/kg$)
+  - `cec`: Cation Exchange Capacity ($cmol(c)/kg$)
+  - `bdod`: Bulk density of the fine earth fraction ($cg/cm^3$ or $kg/dm^3$)
+- **Locations**: 10 primary Tamil Nadu agricultural monitor sites (Kovilpatti, Madurai, Tirunelveli, Thanjavur, Coimbatore, Trichy, Krishnagiri, Vellore, Nagapattinam, Nilgiris).
+- **Output**: `data/soilgrids/soil_properties_by_location.csv`
+
+---
+
+## 7. India District-Wise Crop Production Dataset (Data.gov.in)
+- **Source**: Ministry of Agriculture and Farmers Welfare, Government of India (Data.gov.in)
+  - Kaggle Mirror: `pyatakov/india-agriculture-crop-production` (1997–2021)
+  - Alternate Mirror: `akshatgupta7/crop-yield-in-indian-states-dataset` (includes rainfall & inputs)
+- **Script**: `clean_crop_yield_data.py` (or `data_collection/clean_crop_yield_data.py`)
+- **Schema Mapping**:
+  - `State_Name` $\to$ `state`
+  - `District_Name` $\to$ `district`
+  - `Crop_Year` $\to$ `year`
+  - `Crop` $\to$ `crop_type`
+  - `Area` $\to$ `area_hectares`
+  - `Production` $\to$ `production_kg`
+  - Computed Yield: $\text{yield\_kg\_per\_hectare} = \frac{\text{production\_kg}}{\text{area\_hectares}}$
+- **Usage**:
+  ```bash
+  python clean_crop_yield_data.py --input path/to/raw_crop_production.csv --state "Tamil Nadu" --output data/real_crop_yield_cleaned.csv
+  ```
+

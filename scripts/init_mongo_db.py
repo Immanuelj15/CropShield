@@ -29,7 +29,11 @@ from backend.models import (
     RegionalRiskGrid,
     PestDiseaseAdvisory,
     Alert,
+    Treatment,
+    SupportRequest,
+    RetrainingLog,
 )
+
 from backend.utils.auth_utils import hash_password
 from backend.services.pest_service import PEST_DATABASE
 from backend.services.soil_service import SOIL_PROFILES
@@ -55,6 +59,7 @@ async def seed_users():
             "role": "agronomist",
             "phone": "+91 94432 67890",
             "district": "Coimbatore",
+            "region_assigned": "Coimbatore",
             "location": {"type": "Point", "coordinates": [76.9558, 11.0168]},
             "is_active": True,
         },
@@ -77,6 +82,11 @@ async def seed_users():
             user_doc = User(**u)
             await user_doc.insert()
             created += 1
+        else:
+            # Ensure region_assigned or role is updated
+            if "region_assigned" in u and not existing.region_assigned:
+                existing.region_assigned = u["region_assigned"]
+                await existing.save()
     print(f"[OK] Users ready. ({created} newly created, total: {await User.count()})")
 
 
@@ -120,13 +130,27 @@ async def seed_farms():
     ]
 
     created = 0
+    first_farm_id = None
     for f in demo_farms:
         existing = await Farm.find_one(Farm.farm_name == f["farm_name"])
         if not existing:
             farm_doc = Farm(**f)
             await farm_doc.insert()
             created += 1
+            if not first_farm_id:
+                first_farm_id = farm_doc.id
+        else:
+            if not first_farm_id:
+                first_farm_id = existing.id
+
+    # Link farmer's farm_id
+    if first_farm_id and (not farmer.farm_id or farmer.farm_id != first_farm_id):
+        farmer.farm_id = first_farm_id
+        await farmer.save()
+        print(f"[OK] Linked farmer farm_id: {first_farm_id}")
+
     print(f"[OK] Farms ready. ({created} newly created, total: {await Farm.count()})")
+
 
 
 async def seed_advisories():
@@ -157,6 +181,74 @@ async def seed_advisories():
     print(f"[OK] Pest & Disease Advisories ready. ({count} newly seeded, total: {await PestDiseaseAdvisory.count()})")
 
 
+async def seed_treatments_and_support():
+    """Seed initial treatment log, support request, and retraining log"""
+    farmer = await User.find_one(User.email == "farmer@cropshield.org")
+    agronomist = await User.find_one(User.email == "agronomist@cropshield.org")
+    admin = await User.find_one(User.email == "admin@cropshield.org")
+    farm = await Farm.find_one(Farm.farm_name == "Kovilpatti Black Soil Cotton Farm")
+
+    if farmer and farm and await Treatment.count() == 0:
+        demo_treatments = [
+            Treatment(
+                farm_id=farm.id,
+                user_id=farmer.id,
+                treatment_date="2026-09-01",
+                treatment_type="organic",
+                product_name="NeemAzal T/S 1% (Azadirachtin)",
+                target_pest="Cotton Aphids (Aphis gossypii)",
+                dosage="2.5 ml / Litre",
+                notes="Preventative foliar spray applied in early morning.",
+            ),
+            Treatment(
+                farm_id=farm.id,
+                user_id=farmer.id,
+                treatment_date="2026-09-05",
+                treatment_type="biological",
+                product_name="Chrysoperla carnea predator release",
+                target_pest="Pink Bollworm / Whiteflies",
+                dosage="50,000 eggs / hectare",
+                notes="Biocontrol agent release recommended by TNAU advisory.",
+            ),
+        ]
+        for t in demo_treatments:
+            await t.insert()
+        print(f"[OK] Seeded {len(demo_treatments)} demo treatments.")
+
+    if farmer and agronomist and await SupportRequest.count() == 0:
+        req = SupportRequest(
+            farmer_id=farmer.id,
+            farmer_name=farmer.name,
+            farmer_email=farmer.email,
+            farm_id=farm.id if farm else None,
+            district="Thoothukudi",
+            crop_type="Cotton",
+            query_text="Noticed slight yellowing on lower leaves and curled leaf tips on 2-month-old cotton. Need expert confirmation.",
+            status="resolved",
+            response_text="Symptoms indicate early stage Cotton Leaf Curl Virus or minor aphid sap sucking. Apply 2% neem extract and monitor for 48 hours.",
+            responded_by=agronomist.id,
+            agronomist_name=agronomist.name,
+        )
+        await req.insert()
+        print("[OK] Seeded demo farmer support request.")
+
+    if admin and await RetrainingLog.count() == 0:
+        log = RetrainingLog(
+            triggered_by=admin.id,
+            triggered_by_role="admin",
+            model_name="xgboost_multicrop_v2",
+            dataset_rows=10000,
+            verified_samples_ingested=24,
+            accuracy=0.7845,
+            auc_roc=0.7820,
+            status="completed",
+            metrics={"f1_weighted": 0.7220, "cv_score": 0.7274},
+            notes="Initial training baseline on 10,000 multi-crop dataset with Wadhwani AI bollworm risk calibration.",
+        )
+        await log.insert()
+        print("[OK] Seeded baseline model retraining log.")
+
+
 async def inspect_indexes(db):
     """Inspect and report all created collection indexes"""
     collections = await db.list_collection_names()
@@ -173,7 +265,7 @@ async def inspect_indexes(db):
 
 async def main():
     print("=" * 65)
-    print("  AgriGuard / CropShield - MongoDB Setup & Initialization (Phase 0)")
+    print("  AgriGuard / CropShield - MongoDB Setup & Initialization")
     print("=" * 65)
     db = await init_mongodb()
     print("Connected to MongoDB successfully.")
@@ -181,10 +273,12 @@ async def main():
     await seed_users()
     await seed_farms()
     await seed_advisories()
+    await seed_treatments_and_support()
     await inspect_indexes(db)
 
     await close_mongodb()
-    print("\n[OK] Phase 0 MongoDB initialization and index verification complete.")
+    print("\n[OK] MongoDB initialization and seed verification complete.")
+
 
 
 if __name__ == "__main__":

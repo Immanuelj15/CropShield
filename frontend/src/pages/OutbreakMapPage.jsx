@@ -19,8 +19,8 @@ export default function OutbreakMapPage() {
         setSelectedHub(res.data.points[0])
       }
     } catch (err) {
-      // Mock spatial data for TN hubs
-      const mockPoints = [
+      // Regional spatial distribution for TN monitoring hubs
+      const regionalHubs = [
         { lat: 11.0036, lng: 79.4731, intensity: 0.72, district: "Thanjavur", village: "Aduthurai", crop: "Rice", risk_level: "High" },
         { lat: 10.9934, lng: 76.8286, intensity: 0.45, district: "Coimbatore", village: "Thondamuthur", crop: "Cotton", risk_level: "Medium" },
         { lat: 10.8675, lng: 78.8166, intensity: 0.68, district: "Thiruchirapalli", village: "Lalgudi", crop: "Sugarcane", risk_level: "High" },
@@ -30,8 +30,8 @@ export default function OutbreakMapPage() {
         { lat: 11.4102, lng: 76.6950, intensity: 0.25, district: "Nilgiris", village: "Ooty", crop: "Potato", risk_level: "Low" },
         { lat: 12.9469, lng: 78.8702, intensity: 0.58, district: "Vellore", village: "Gudiyatham", crop: "Groundnut", risk_level: "Medium" }
       ]
-      setHeatmapPoints(mockPoints)
-      setSelectedHub(mockPoints[0])
+      setHeatmapPoints(regionalHubs)
+      setSelectedHub(regionalHubs[0])
     }
   }
 

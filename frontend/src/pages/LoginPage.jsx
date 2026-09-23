@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, User, Lock, ArrowRight, CheckCircle2, Sprout, ShieldAlert, Sparkles } from 'lucide-react'
 
@@ -40,12 +40,28 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const [activeUser, setActiveUser] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('cropshield_user')
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  })
 
   const handleRoleSelect = (roleKey) => {
     setSelectedRole(roleKey)
     setEmail(DEMO_ACCOUNTS[roleKey].email)
     setPassword(DEMO_ACCOUNTS[roleKey].password)
     setError(null)
+  }
+
+  const handleLogoutExisting = () => {
+    sessionStorage.clear()
+    localStorage.removeItem('cropshield_token')
+    localStorage.removeItem('cropshield_user')
+    setActiveUser(null)
+    window.dispatchEvent(new Event('cropshield_auth_changed'))
   }
 
   const handleLogin = async (e) => {
@@ -63,39 +79,44 @@ export default function LoginPage() {
 
       if (response.ok) {
         const data = await response.json()
-        localStorage.setItem('cropshield_token', data.access_token)
-        localStorage.setItem('cropshield_user', JSON.stringify({ email, role: selectedRole }))
-        setSuccess(`Logged in successfully as ${DEMO_ACCOUNTS[selectedRole].label}!`)
+        const userObj = {
+          email: data.username || email,
+          role: data.role || selectedRole,
+          name: DEMO_ACCOUNTS[selectedRole]?.label || 'User',
+        }
+        sessionStorage.setItem('cropshield_token', data.access_token)
+        sessionStorage.setItem('cropshield_user', JSON.stringify(userObj))
+        // Clean out legacy localStorage so no stale tokens persist
+        localStorage.removeItem('cropshield_token')
+        localStorage.removeItem('cropshield_user')
+
+        setActiveUser(userObj)
+        window.dispatchEvent(new Event('cropshield_auth_changed'))
+        setSuccess(`Logged in successfully! Redirecting to dashboard...`)
+        
         setTimeout(() => {
-          if (selectedRole === 'agronomist' || selectedRole === 'admin') {
-            navigate('/expert')
+          if (userObj.role === 'farmer') {
+            navigate('/farmer/today', { replace: true })
+          } else if (userObj.role === 'agronomist') {
+            navigate('/agronomist/dashboard', { replace: true })
+          } else if (userObj.role === 'admin') {
+            navigate('/admin/dashboard', { replace: true })
           } else {
-            navigate('/')
+            navigate('/farmer/today', { replace: true })
           }
-        }, 800)
+        }, 500)
+
       } else {
-        // Local demo fallback if backend auth is still pending full Phase 1 migration
-        localStorage.setItem('cropshield_token', 'demo_jwt_token_cropshield_2026')
-        localStorage.setItem('cropshield_user', JSON.stringify({ email, role: selectedRole }))
-        setSuccess(`Welcome, ${DEMO_ACCOUNTS[selectedRole].label}! (Verified session)`)
-        setTimeout(() => {
-          if (selectedRole === 'agronomist' || selectedRole === 'admin') {
-            navigate('/expert')
-          } else {
-            navigate('/')
-          }
-        }, 800)
+        const errData = await response.json().catch(() => ({}))
+        setError(errData.detail || 'Invalid email or password. Please check your credentials.')
       }
     } catch (err) {
-      // Offline / dev fallback
-      localStorage.setItem('cropshield_token', 'offline_demo_token')
-      localStorage.setItem('cropshield_user', JSON.stringify({ email, role: selectedRole }))
-      setSuccess(`Offline demo session started as ${DEMO_ACCOUNTS[selectedRole].label}.`)
-      setTimeout(() => navigate('/'), 800)
+      setError('Unable to connect to AgriGuard backend. Please check server status.')
     } finally {
       setLoading(false)
     }
   }
+
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 animate-fadeIn">
@@ -166,6 +187,36 @@ export default function LoginPage() {
               </div>
               <p className="text-xs text-stone-500 mt-1">Enter your credentials or click a role on the left to auto-fill.</p>
             </div>
+
+            {activeUser && (
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <span className="font-bold text-emerald-900 block">Currently Signed In</span>
+                  <span className="text-stone-600">{activeUser.email} ({activeUser.role})</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeUser.role === 'agronomist') navigate('/agronomist/dashboard')
+                      else if (activeUser.role === 'admin') navigate('/admin/dashboard')
+                      else navigate('/farmer/today')
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm"
+                  >
+                    Go to Dashboard
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleLogoutExisting}
+                    className="px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-700 font-semibold text-xs hover:bg-stone-50"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">

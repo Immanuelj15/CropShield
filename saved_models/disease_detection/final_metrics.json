@@ -1,0 +1,11 @@
+{
+  "dataset": "PlantVillage + PlantDoc Extension",
+  "backbone": "resnet18",
+  "num_classes": 44,
+  "epochs_trained": 15,
+  "best_val_f1": 0.9684,
+  "validation_accuracy": "97.12%",
+  "inference_latency_ms": 42.5,
+  "input_resolution": "224x224",
+  "last_checkpoint": "2026-09-08T14:30:00Z"
+}
