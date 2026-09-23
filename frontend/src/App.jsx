@@ -84,20 +84,20 @@ function HomeRedirect() {
 function getNavItemsForRole(role) {
   if (role === 'agronomist') {
     return [
-      { to: '/agronomist/dashboard', label: 'Threat Queue & Risk', icon: ShieldCheck },
-      { to: '/regional-scan', label: 'Draw-to-Scan', icon: MapPin },
-      { to: '/outbreak', label: 'Outbreak Map', icon: Map },
+      { to: '/agronomist/dashboard', label: 'Threat Queue', icon: ShieldCheck },
       { to: '/expert', label: 'AI Review Desk', icon: Compass },
+      { to: '/regional-scan', label: 'Satellite Scan', icon: MapPin },
+      { to: '/outbreak', label: 'Outbreak Map', icon: Map },
       { to: '/yield', label: 'Yield Impact', icon: Sprout },
     ]
   }
   if (role === 'admin') {
     return [
-      { to: '/admin/dashboard', label: 'Admin Command', icon: Settings },
-      { to: '/regional-scan', label: 'Draw-to-Scan', icon: MapPin },
-      { to: '/agronomist/dashboard', label: 'Agronomist Desk', icon: ShieldCheck },
-      { to: '/farmer/today', label: 'Farmer Portal', icon: AlertTriangle },
-      { to: '/outbreak', label: 'Regional Map', icon: Map },
+      { to: '/admin/dashboard', label: 'Admin Center', icon: Settings },
+      { to: '/agronomist/dashboard', label: 'Agronomist Ops', icon: ShieldCheck },
+      { to: '/farmer/today', label: 'Farmer View', icon: Leaf },
+      { to: '/regional-scan', label: 'Spatial Scan', icon: MapPin },
+      { to: '/outbreak', label: 'Outbreak Map', icon: Map },
     ]
   }
   // Default: farmer
@@ -139,63 +139,75 @@ function Navbar() {
     navigate('/login', { replace: true })
   }
 
-  const roleLabels = {
-    farmer: 'Farmer',
-    agronomist: 'Agronomist',
-    admin: 'System Admin',
+  const roleMeta = {
+    farmer: {
+      name: 'Farmer',
+      badge: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
+      dot: 'bg-emerald-500',
+    },
+    agronomist: {
+      name: 'Agronomist',
+      badge: 'bg-sky-50 text-sky-800 border-sky-300/80',
+      dot: 'bg-sky-500',
+    },
+    admin: {
+      name: 'System Admin',
+      badge: 'bg-purple-50 text-purple-800 border-purple-300/80',
+      dot: 'bg-purple-500',
+    },
   }
 
-  const roleBadges = {
-    farmer: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-    agronomist: 'bg-blue-50 text-blue-800 border-blue-200',
-    admin: 'bg-purple-50 text-purple-800 border-purple-200',
+  const currentRoleMeta = roleMeta[currentUser?.role] || {
+    name: 'User',
+    badge: 'bg-stone-100 text-stone-700 border-stone-200',
+    dot: 'bg-stone-400',
   }
 
   const navItems = getNavItemsForRole(currentUser?.role)
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-stone-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16 gap-4">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-xs">
+        <div className="w-full max-w-[1550px] mx-auto px-3 sm:px-4 lg:px-6">
+          <div className="flex items-center justify-between h-16 gap-2 xl:gap-4">
             {/* Logo */}
-            <NavLink to={currentUser ? '/' : '/login'} className="flex items-center gap-2.5 shrink-0">
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-700 to-teal-600 flex items-center justify-center shadow-md shrink-0">
-                <Leaf size={20} className="text-white" />
+            <NavLink to={currentUser ? '/' : '/login'} className="flex items-center gap-2.5 shrink-0 group">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-700 to-teal-600 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform shrink-0">
+                <Leaf size={19} className="text-white" />
               </div>
-              <div className="leading-tight">
-                <span className="font-bold text-lg sm:text-xl tracking-tight text-stone-900 whitespace-nowrap">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-lg tracking-tight text-stone-900 whitespace-nowrap">
                   AgriGuard <span className="text-emerald-600">AI</span>
                 </span>
-                <span className="hidden xl:block text-[11px] text-stone-500 whitespace-nowrap">
-                  Pure-Software Spatial Pest & Disease Warning · Tamil Nadu
+                <span className="hidden 2xl:inline-flex items-center text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full whitespace-nowrap">
+                  Tamil Nadu
                 </span>
               </div>
             </NavLink>
 
-            {/* Desktop Navigation Links — Dynamic per role */}
+            {/* Desktop Navigation Links — Dynamic per role with crisp spacing */}
             {currentUser && !isLoginPage && (
-              <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 flex-1 justify-center">
+              <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 justify-center flex-1 min-w-0 px-2">
                 {navItems.map(({ to, label, icon: Icon }) => (
                   <NavLink
                     key={to}
                     to={to}
                     className={({ isActive }) => clsx(
-                      'nav-link flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold transition-colors whitespace-nowrap',
+                      'flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-[13px] font-semibold transition-all whitespace-nowrap',
                       isActive
-                        ? 'bg-emerald-50 text-emerald-700 font-bold shadow-xs'
-                        : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+                        ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-300/80 shadow-2xs'
+                        : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80 border border-transparent'
                     )}
                   >
-                    <Icon size={16} className="shrink-0" />
+                    <Icon size={15} className="shrink-0 text-emerald-600/90" />
                     <span>{label}</span>
                   </NavLink>
                 ))}
               </nav>
             )}
 
-            {/* Right Action Buttons */}
-            <div className="hidden lg:flex items-center gap-2.5 shrink-0">
+            {/* Right Action Buttons — Always visible, properly spaced, never clipped */}
+            <div className="hidden lg:flex items-center gap-2 xl:gap-2.5 shrink-0">
               {isLoginPage ? (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200">
                   <ShieldCheck size={14} className="text-emerald-700" />
@@ -205,33 +217,39 @@ function Navbar() {
                 </div>
               ) : currentUser ? (
                 <>
-                  {/* User Role Badge */}
-                  <div className={clsx("flex items-center gap-2 px-3 py-1 rounded-xl border", roleBadges[currentUser.role] || 'bg-stone-100 border-stone-200 text-stone-700')}>
-                    <UserIcon size={14} className="shrink-0" />
-                    <div className="text-left leading-none">
-                      <span className="block text-[11px] font-bold uppercase tracking-wider">
-                        {roleLabels[currentUser.role] || 'User'}
-                      </span>
-                    </div>
+                  {/* User Role Badge with Pulse Dot */}
+                  <div className={clsx("flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold tracking-wide select-none", currentRoleMeta.badge)}>
+                    <span className={clsx("w-2 h-2 rounded-full shrink-0 animate-pulse", currentRoleMeta.dot)} />
+                    <span>{currentRoleMeta.name}</span>
                   </div>
 
                   {/* Logout Button */}
                   <button
                     onClick={handleLogout}
                     title="Sign Out"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs xl:text-sm font-semibold text-stone-600 hover:text-red-700 hover:bg-red-50 border border-stone-200 hover:border-red-200 transition-all whitespace-nowrap"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-stone-600 hover:text-red-700 hover:bg-red-50 border border-stone-200 hover:border-red-200 transition-colors whitespace-nowrap cursor-pointer"
                   >
                     <LogOut size={14} className="shrink-0" />
                     <span>Sign Out</span>
+                  </button>
+
+                  {/* Tamil Voice Assistant Button */}
+                  <button
+                    onClick={() => setVoiceOpen(true)}
+                    title="வேளாண் வழிகாட்டி — Tamil AI Voice Assistant"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs hover:shadow transition-all whitespace-nowrap shrink-0 group cursor-pointer"
+                  >
+                    <Mic size={14} className="shrink-0 group-hover:scale-110 transition-transform" />
+                    <span>குரல் AI</span>
                   </button>
                 </>
               ) : (
                 <NavLink
                   to="/login"
                   className={({ isActive }) => clsx(
-                    'flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs xl:text-sm font-bold transition-all whitespace-nowrap border',
+                    'flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border',
                     isActive
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                       : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200'
                   )}
                 >
@@ -239,27 +257,20 @@ function Navbar() {
                   <span>Sign In</span>
                 </NavLink>
               )}
-
-              {/* Tamil Voice Assistant Button */}
-              <button
-                onClick={() => setVoiceOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs xl:text-sm font-bold shadow-md hover:bg-emerald-700 transition-all whitespace-nowrap"
-              >
-                <Mic size={15} className="shrink-0" />
-                <span>வேளாண் வழிகாட்டி</span>
-              </button>
             </div>
 
             {/* Mobile / Tablet Controls */}
             <div className="flex items-center gap-2 lg:hidden">
               <button
                 onClick={() => setVoiceOpen(true)}
-                className="p-2 rounded-lg bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 whitespace-nowrap"
+                title="குரல் AI"
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs whitespace-nowrap cursor-pointer"
               >
-                <Mic size={16} /> <span className="hidden sm:inline">Voice</span>
+                <Mic size={14} />
+                <span>குரல் AI</span>
               </button>
               <button
-                className="p-2 rounded-lg text-stone-600 hover:bg-stone-100"
+                className="p-2 rounded-lg text-stone-600 hover:bg-stone-100 cursor-pointer"
                 onClick={() => setOpen(o => !o)}
                 aria-label="Toggle Menu"
               >
@@ -271,33 +282,47 @@ function Navbar() {
 
         {/* Mobile Dropdown Menu */}
         {open && (
-          <div className="lg:hidden border-t border-stone-200 bg-white px-4 py-3 flex flex-col gap-1 shadow-lg">
+          <div className="lg:hidden border-t border-stone-200 bg-white px-4 py-3 flex flex-col gap-1.5 shadow-lg animate-fadeIn">
             {currentUser ? (
               <>
-                <div className="px-3 py-2 bg-emerald-50 rounded-lg text-xs font-bold text-emerald-800 mb-1 flex items-center justify-between">
-                  <span>Signed in as: {roleLabels[currentUser.role] || 'User'}</span>
-                  <span className="text-[10px] text-stone-500">{currentUser.email}</span>
+                <div className={clsx("px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-between", currentRoleMeta.badge)}>
+                  <div className="flex items-center gap-2">
+                    <span className={clsx("w-2 h-2 rounded-full animate-pulse", currentRoleMeta.dot)} />
+                    <span>Role: {currentRoleMeta.name}</span>
+                  </div>
+                  <span className="text-[11px] font-normal opacity-75">{currentUser.email}</span>
                 </div>
-                {navItems.map(({ to, label, icon: Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    onClick={() => setOpen(false)}
-                    className={({ isActive }) => clsx(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap',
-                      isActive ? 'bg-emerald-50 text-emerald-700 font-bold' : 'text-stone-700 hover:bg-stone-50'
-                    )}
+                <div className="py-1 flex flex-col gap-1">
+                  {navItems.map(({ to, label, icon: Icon }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      onClick={() => setOpen(false)}
+                      className={({ isActive }) => clsx(
+                        'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors',
+                        isActive
+                          ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-200/80'
+                          : 'text-stone-700 hover:bg-stone-50 border border-transparent'
+                      )}
+                    >
+                      <Icon size={18} className="shrink-0 text-emerald-600" />
+                      <span>{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+                <div className="pt-2 border-t border-stone-100 flex flex-col gap-2 mt-1">
+                  <button
+                    onClick={() => { setOpen(false); setVoiceOpen(true) }}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold shadow-xs hover:bg-emerald-700 cursor-pointer"
                   >
-                    <Icon size={18} className="shrink-0" />
-                    <span>{label}</span>
-                  </NavLink>
-                ))}
-                <div className="pt-2 border-t border-stone-100 mt-1">
+                    <Mic size={15} />
+                    <span>வேளாண் வழிகாட்டி (குரல் AI Assistant)</span>
+                  </button>
                   <button
                     onClick={() => { setOpen(false); handleLogout() }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-red-600 hover:bg-red-50 text-left"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 cursor-pointer"
                   >
-                    <LogOut size={18} className="shrink-0" />
+                    <LogOut size={15} className="shrink-0" />
                     <span>Sign Out</span>
                   </button>
                 </div>
@@ -310,9 +335,9 @@ function Navbar() {
               <NavLink
                 to="/login"
                 onClick={() => setOpen(false)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white"
+                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white"
               >
-                <Lock size={18} className="shrink-0" />
+                <Lock size={16} className="shrink-0" />
                 <span>Sign In to Access Dashboard</span>
               </NavLink>
             )}
