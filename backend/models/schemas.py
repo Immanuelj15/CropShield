@@ -65,6 +65,12 @@ class TodayWarningResponse(BaseModel):
     # Weather context
     weather_snapshot: Dict[str, Any]
 
+    # Confidence calibration (Platt scaling)
+    raw_confidence:            Optional[float] = None   # Raw softmax probability from XGBoost
+    calibrated_confidence:     Optional[float] = None   # Post-hoc Platt-calibrated probability
+    confidence_band:           Optional[str]   = None   # "High" (≥0.80) | "Moderate" (≥0.55) | "Low" (<0.55)
+    model_calibration_version: Optional[str]   = None   # e.g. "1.0.0-platt"
+
     # Meta
     data_date:        date   # date of latest weather observation used
     model_version:    str

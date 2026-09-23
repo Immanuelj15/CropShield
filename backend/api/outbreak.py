@@ -16,6 +16,8 @@ from backend.models.farm import Farm as MongoFarm
 from backend.models.pest_warning_log import PestWarningLog as MongoPestWarningLog
 from backend.models.alert import Alert as MongoAlert
 from backend.models.user import User as MongoUser
+from backend.models.vegetation_snapshot import VegetationSnapshot as MongoVegetationSnapshot
+from backend.services.ndvi_service import derive_vegetation_status
 from backend.utils.auth_utils import get_optional_current_user, require_roles
 from ml.spatial_outbreak.clustering import calculate_spatial_outbreak_risk, get_full_district_heatmap_data
 
@@ -145,6 +147,15 @@ async def scan_drawn_area(
         if log.farm_id not in latest_logs_by_farm:
             latest_logs_by_farm[log.farm_id] = log
 
+    # Retrieve recent vegetation snapshots for these farms
+    veg_snapshots = await MongoVegetationSnapshot.find(
+        {"farm_id": {"$in": farm_ids}}
+    ).sort(-MongoVegetationSnapshot.date).to_list()
+    latest_veg_by_farm: Dict[PydanticObjectId, MongoVegetationSnapshot] = {}
+    for veg in veg_snapshots:
+        if veg.farm_id not in latest_veg_by_farm:
+            latest_veg_by_farm[veg.farm_id] = veg
+
     risk_breakdown = {"Low": 0, "Medium": 0, "High": 0}
     farms_output: List[Dict[str, Any]] = []
     pest_counts: Counter = Counter()
@@ -176,6 +187,10 @@ async def scan_drawn_area(
         if threat_name not in ["Nil", "Optimal Canopy"]:
             pest_counts[threat_name] += 1
 
+        veg = latest_veg_by_farm.get(farm.id)
+        ndvi_val = veg.ndvi_value if veg else None
+        ndvi_stat = derive_vegetation_status(ndvi_val, veg.ndvi_trend if veg else 0.0) if veg else "healthy"
+
         coords = farm.location.get("coordinates", [77.8710, 9.1728]) if isinstance(farm.location, dict) else [77.8710, 9.1728]
         farms_output.append({
             "farm_id": str(farm.id),
@@ -183,7 +198,10 @@ async def scan_drawn_area(
             "location": coords,  # [lon, lat]
             "risk_level": r_level,
             "crop_type": farm.crop_type,
-            "threat_name": threat_name
+            "threat_name": threat_name,
+            "ndvi_value": ndvi_val,
+            "ndvi_status": ndvi_stat,
+            "ndvi_trend": veg.ndvi_trend if veg else 0.0,
         })
 
     # Dominant threat computation

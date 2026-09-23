@@ -12,6 +12,7 @@ from backend.db.database import get_db
 from backend.models.schemas import TodayWarningRequest, TodayWarningResponse, SHAPFeature, LikelyPest
 from backend.models.db_models import PestWarningLog, RiskLevel, ClimateZone
 from backend.services import weather_service, soil_service, pest_service, inference_service
+from backend.services.calibration_service import calibrate_prediction
 from backend.utils.serialization import sanitize_for_json
 
 router = APIRouter()
@@ -59,6 +60,32 @@ async def predict_today(
         # Subtle soil modulation
         risk_score = min(1.0, risk_score * soil_mult)
         risk_level = inference_service.score_to_risk_level(risk_score)
+
+        # ── 3b. Post-hoc Platt calibration ────────────────────
+        try:
+            from ml.data.feature_engineering import build_live_feature_row
+            mgr = inference_service.model_manager
+            X_df_cal = build_live_feature_row(weather_df, soil, request.crop, request.climate_zone)
+            for col in mgr.features:
+                if col not in X_df_cal.columns:
+                    X_df_cal[col] = 0.0
+            X_df_cal = X_df_cal[mgr.features]
+            import numpy as np
+            X_scaled_cal = mgr.scaler.transform(X_df_cal.values.astype(np.float32))
+            raw_probs = mgr.model.predict_proba(X_scaled_cal)[0]
+            calibration_result = calibrate_prediction(
+                X_scaled=X_scaled_cal,
+                raw_score=risk_score,
+                risk_level=risk_level,
+                raw_probs=raw_probs,
+            )
+        except Exception as cal_err:
+            print(f"[WARN] Calibration fallback: {cal_err}")
+            calibration_result = calibrate_prediction(
+                X_scaled=None,
+                raw_score=risk_score,
+                risk_level=risk_level,
+            )
         is_warning = risk_level in ("Medium", "High")
 
         # ── 4. Rule-based pest detection ──────────────────────
@@ -175,6 +202,10 @@ async def predict_today(
                     shap_explanation=[f for f in top_features],
                     counterfactual_prescription=prescription,
                     detected_pests=p_list,
+                    raw_confidence=calibration_result.get("raw_confidence"),
+                    calibrated_confidence=calibration_result.get("calibrated_confidence"),
+                    confidence_band=calibration_result.get("confidence_band"),
+                    model_calibration_version=calibration_result.get("model_calibration_version"),
                     verified_by=None,
                     verified_at=None,
                 )
@@ -217,6 +248,10 @@ async def predict_today(
             shap_explanation=[f for f in top_features],
             counterfactual_prescription=prescription,
             weather_snapshot=weather_snapshot,
+            raw_confidence=calibration_result.get("raw_confidence"),
+            calibrated_confidence=calibration_result.get("calibrated_confidence"),
+            confidence_band=calibration_result.get("confidence_band"),
+            model_calibration_version=calibration_result.get("model_calibration_version"),
             data_date=data_date,
             model_version=model_version,
         )

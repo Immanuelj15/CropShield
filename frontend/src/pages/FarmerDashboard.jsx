@@ -9,6 +9,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import clsx from 'clsx'
 import RiskGauge from '../components/RiskGauge'
 import CounterfactualCard from '../components/CounterfactualCard'
+import VegetationHealthCard from '../components/VegetationHealthCard'
+import FusedHealthScoreCard from '../components/FusedHealthScoreCard'
+import { ConfidenceBadge } from '../components/ConfidenceBadge'
 import { WarningCardSkeleton, CounterfactualSkeleton } from '../components/SkeletonLoader'
 import FarmerBottomNav from '../components/FarmerBottomNav'
 
@@ -55,6 +58,7 @@ export default function FarmerDashboard() {
   const [activeTab, setActiveTab] = useState('warning') // 'warning' | 'disease' | 'treatments' | 'advisories' | 'alerts' | 'history'
   const [farm, setFarm] = useState(null)
   const [warningData, setWarningData] = useState(null)
+  const [vegetationData, setVegetationData] = useState(null)
   const [treatments, setTreatments] = useState([])
   const [advisories, setAdvisories] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -128,9 +132,25 @@ export default function FarmerDashboard() {
         const data = await res.json()
         setFarm(data)
         fetchTodayWarning(data)
+        const farmId = data._id || data.id
+        if (farmId) {
+          fetchVegetationData(farmId)
+        }
       }
     } catch (err) {
       console.error('Error loading farm:', err)
+    }
+  }
+
+  const fetchVegetationData = async (farmId) => {
+    try {
+      const res = await fetch(`${API_BASE}/vegetation/${farmId}`, { headers: authHeaders })
+      if (res.ok) {
+        const data = await res.json()
+        setVegetationData(data)
+      }
+    } catch (err) {
+      console.warn('Vegetation fetch fallback:', err)
     }
   }
 
@@ -424,11 +444,16 @@ export default function FarmerDashboard() {
               <div className="lg:col-span-8 bg-white rounded-3xl border border-stone-200 p-6 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-xl font-bold text-stone-900">Today's Pest Risk Assessment</h2>
                       <span className={`text-xs px-3 py-1 rounded-full font-extrabold border uppercase tracking-wider ${getRiskBadge(warningData.risk_level)}`}>
                         {warningData.risk_level} Risk
                       </span>
+                      <ConfidenceBadge
+                        calibratedConfidence={warningData.calibrated_confidence}
+                        confidenceBand={warningData.confidence_band}
+                        rawConfidence={warningData.raw_confidence}
+                      />
                     </div>
                     <p className="text-xs text-stone-500 mt-1">
                       NASA POWER satellite observation: {warningData.data_date} · Model: {warningData.model_version}
@@ -560,6 +585,19 @@ export default function FarmerDashboard() {
                       </p>
                     )}
                   </div>
+                </div>
+
+                {/* Multi-Modal Fusion Engine: Satellite NDVI + Climate + Vision Diagnosis (Feature 5) */}
+                <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                  <FusedHealthScoreCard
+                    fusedData={vegetationData?.fused_health_score || warningData?.fused_health_score}
+                    climateRiskScore={warningData?.risk_score}
+                    ndviValue={vegetationData?.ndvi_value}
+                    imageConfidence={scanResult?.confidence}
+                  />
+                  <VegetationHealthCard
+                    vegetationData={vegetationData}
+                  />
                 </div>
               </div>
           ) : (

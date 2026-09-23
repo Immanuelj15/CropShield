@@ -22,6 +22,7 @@ export default function RegionalScanPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [userRole, setUserRole] = useState('farmer')
+  const [colorMode, setColorMode] = useState('pest') // 'pest' | 'vegetation'
 
   useEffect(() => {
     // Determine user role from token or stored profile
@@ -170,7 +171,39 @@ export default function RegionalScanPage() {
           finalizedPolygon={finalizedPolygon}
           onShapeFinalized={handleShapeFinalized}
           onClear={handleClear}
+          colorMode={colorMode}
+          onChangeColorMode={setColorMode}
         />
+
+        {/* Dynamic Map Legend Badge */}
+        <div className="mt-2.5 p-3 rounded-2xl bg-white border border-stone-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-stone-700">Active Map Layer:</span>
+            <span className={`px-2.5 py-0.5 rounded-full font-extrabold uppercase text-[10px] ${
+              colorMode === 'vegetation'
+                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                : 'bg-red-100 text-red-800 border border-red-300'
+            }`}>
+              {colorMode === 'vegetation' ? '🛰️ Sentinel-2 NDVI Canopy Health' : '🚨 Climate Pest Outbreak Risk'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-stone-600 font-medium">
+            {colorMode === 'vegetation' ? (
+              <>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span> Vigorous (NDVI &ge; 0.60)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Moderate/Declining (0.40–0.60)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-900 inline-block"></span> Stressed Canopy (&lt; 0.40)</span>
+              </>
+            ) : (
+              <>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block"></span> High Risk (&ge; 65%)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Medium Risk (35–65%)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span> Low Risk (&lt; 35%)</span>
+              </>
+            )}
+          </div>
+        </div>
 
         {/* Bottom Sheet for Scan Results */}
         <RegionalResultSheet

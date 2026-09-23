@@ -20,6 +20,11 @@ class PestWarningLog(Document):
     shap_explanation: List[Dict[str, Any]] = Field(default_factory=list)
     counterfactual_prescription: Optional[Dict[str, Any]] = None
     detected_pests: List[Dict[str, Any]] = Field(default_factory=list)
+    fused_health_score: Optional[Dict[str, Any]] = None
+    raw_confidence: Optional[float] = None
+    calibrated_confidence: Optional[float] = None
+    confidence_band: Optional[str] = None
+    model_calibration_version: Optional[str] = None
     verified_by: Optional[PydanticObjectId] = None
     verified_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

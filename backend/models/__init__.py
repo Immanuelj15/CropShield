@@ -16,11 +16,13 @@ from backend.models.job_run_log import JobRunLog
 from backend.models.retry_queue import RetryQueue
 from backend.models.chatbot_intent import ChatbotIntent
 from backend.models.chatbot_conversation import ChatbotConversation
+from backend.models.vegetation_snapshot import VegetationSnapshot
 
 DOCUMENT_MODELS = [
     User,
     Farm,
     WeatherSnapshot,
+    VegetationSnapshot,
     PestWarningLog,
     DiseaseDetection,
     RegionalRiskGrid,
@@ -39,6 +41,7 @@ __all__ = [
     "User",
     "Farm",
     "WeatherSnapshot",
+    "VegetationSnapshot",
     "PestWarningLog",
     "DiseaseDetection",
     "RegionalRiskGrid",

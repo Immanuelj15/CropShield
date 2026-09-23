@@ -273,3 +273,72 @@ Prediction = base_value
    - **PlantDoc Fine-Tuning Capability**: `train_disease_detection.py` supports domain adaptation by pre-loading PlantVillage features and fine-tuning on PlantDoc in-field annotated datasets.
    - **Agronomist Human-in-the-Loop**: Field scans flagged with low confidence ($<80\%$) or severe pathogens can be routed directly to the Agronomist Threat Verification queue (`/agronomist/detect/pending`).
 
+---
+
+## 🛰️ Sentinel-2 Satellite Vegetation Health (NDVI) & Multi-Modal Fusion Engine
+
+### 1. Signal 3: Satellite Multi-Spectral Vegetation Health
+To augment macro-climatic weather modeling (Signal 1) and in-situ leaf pathology computer vision (Signal 2), AgriGuard incorporates an **independent, satellite-observed third signal**: the **Normalized Difference Vegetation Index (NDVI)**.
+
+Healthy, chlorophyll-dense vegetation absorbs photosynthetically active radiation in the Red band ($\sim 660\,\text{nm}$) and strongly reflects near-infrared energy in the Near-Infrared (NIR) band ($\sim 840\,\text{nm}$) through the spongy mesophyll leaf structure. As vegetation experiences water stress, vascular wilting, or pest defoliation, cellular breakdown sharply reduces NIR reflectance while unabsorbed red light increases.
+
+#### Mathematical Formulation:
+$$\text{NDVI} = \frac{\text{NIR} - \text{Red}}{\text{NIR} + \text{Red}} = \frac{\text{Band 8} - \text{Band 4}}{\text{Band 8} + \text{Band 4}}$$
+
+Values range from $-1.0$ to $+1.0$:
+- **$0.60$ to $0.90$**: Vigorous, dense, healthy crop canopy.
+- **$0.40$ to $0.60$**: Moderate crop vigor or early canopy thinning.
+- **$0.20$ to $0.40$**: Stressed, sparse vegetation, lodging, or severe leaf damage.
+- **$< 0.20$**: Bare soil, non-vegetated surfaces, or fallow land.
+
+#### Data Ingestion Pipeline & Earth Engine Specs:
+- **Constellation**: European Space Agency (ESA) Copernicus Sentinel-2A / Sentinel-2B Multi-Spectral Instrument (MSI).
+- **Collection**: `COPERNICUS/S2_SR_HARMONIZED` (Bottom-Of-Atmosphere Level-2A Surface Reflectance).
+- **Spatial Resolution**: $10\,\text{m}$ ground sample distance (B4, B8).
+- **Spatial Query**: Farm GPS centroid with a $100\,\text{m}$ spatial buffer polygon evaluated via `ee.Reducer.mean()`.
+- **Atmospheric Filter**: Cloud pixel mask discarding imagery with `CLOUDY_PIXEL_PERCENTAGE > 30%`. The least-cloudy pass within a rolling 14-day window is selected.
+- **Revisit & Temporal Resolution**: Sentinel-2 constellation provides a $\sim 5$-day orbital revisit frequency. Background ingestion (`ndvi_ingestion_job.py`) executes on a 3-day cron trigger (rather than wasteful daily polling), caching records into MongoDB collection `vegetation_snapshots`.
+
+---
+
+### 2. Multi-Modal Fusion Scoring Algorithm
+
+Most conventional agro-tech platforms operate on isolated silos: either solely analyzing leaf photos or solely displaying weather gauges. AgriGuard fuses **three distinct, mathematically orthogonal risk modalities**:
+1. **Climate Risk ($S_{\text{climate}} \in [0, 1]$)**: Derived from XGBoost on 52 NASA POWER microclimate features (temperature, VPD, humidity, precipitation lags).
+2. **Leaf Vision Diagnosis ($S_{\text{image}} \in [0, 1]$)**: Derived from PyTorch transfer learning CNN leaf disease probability (None if no photo uploaded).
+3. **Satellite Canopy Vigor ($S_{\text{ndvi}} \in [-1, 1]$)**: Derived from Sentinel-2 Multi-Spectral Surface Reflectance (None if cloudy pass unavailable).
+
+#### Step 1: Healthiness Normalization
+Each input is mapped into an aligned, unidimensional healthiness scale $H \in [0, 1]$ (where $1.0 = \text{optimal health}, 0.0 = \text{extreme hazard}$):
+$$H_{\text{climate}} = 1 - S_{\text{climate}}$$
+$$H_{\text{image}} = 1 - S_{\text{image}} \quad (\text{if photo analyzed})$$
+$$H_{\text{ndvi}} = \max\left(0, \min\left(1, \frac{S_{\text{ndvi}} + 1}{2}\right)\right) \quad (\text{if satellite pass available})$$
+
+#### Step 2: Proportional Weight Redistribution (No Silent Assumptions)
+Baseline design weights reflect signal availability and coverage:
+$$W_{\text{climate}} = 0.50, \quad W_{\text{image}} = 0.30, \quad W_{\text{ndvi}} = 0.20$$
+
+A critical flaw in naive systems is treating missing signals as "zero risk" or "healthy". AgriGuard implements **proportional weight redistribution** across the set of actively available modalities $\mathcal{A} \subseteq \{\text{climate}, \text{image}, \text{ndvi}\}$:
+
+$$\bar{w}_k = \frac{W_k}{\sum_{j \in \mathcal{A}} W_j}, \quad \forall k \in \mathcal{A}$$
+
+$$\text{Fused Health Score} = \left(\sum_{k \in \mathcal{A}} H_k \cdot \bar{w}_k\right) \times 100$$
+
+| Available Signals | Effective Climate Weight ($\bar{w}_c$) | Effective Image Weight ($\bar{w}_i$) | Effective NDVI Weight ($\bar{w}_n$) |
+|---|---|---|---|
+| **All 3 Signals** | $0.50$ ($50\%$) | $0.30$ ($30\%$) | $0.20$ ($20\%$) |
+| **Climate + NDVI** (No photo) | $\frac{0.5}{0.7} \approx 0.714$ ($71.4\%$) | $0.00$ ($0\%$) | $\frac{0.2}{0.7} \approx 0.286$ ($28.6\%$) |
+| **Climate + Image** (Cloudy pass) | $\frac{0.5}{0.8} = 0.625$ ($62.5\%$) | $\frac{0.3}{0.8} = 0.375$ ($37.5\%$) | $0.00$ ($0\%$) |
+| **Climate Only** (Baseline) | $1.00$ ($100\%$) | $0.00$ ($0\%$) | $0.00$ ($0\%$) |
+
+#### Step 3: Explainable Point Contributions & Natural Language Synthesis
+Each modality's point contribution is computed and stored alongside the composite score:
+$$C_k = H_k \cdot \bar{w}_k \times 100$$
+Accompanied by auditable plain-language explanations:
+> *"Health score 74.2/100 from weather-based risk contributes 38.5pts, satellite vegetation health contributes 18.2pts, leaf photo diagnosis contributes 17.5pts."*
+
+---
+
+### 3. Patent & Intellectual Property Defense Claim
+**Claim 1 (Multi-Modal Asynchronous Agro-Health Fusion)**:
+> *"A computer-implemented agricultural early warning system comprising: (a) a microclimate reanalysis ingestion engine computing pest emergence probability from daily orbital atmospheric datasets; (b) a convolutional neural network classifying foliar disease symptoms from user-submitted mobile imagery; (c) a multi-spectral earth observation engine computing canopy vegetative vigor from Sentinel-2 surface reflectance bands; and (d) a multi-modal fusion scoring processor that dynamically re-normalizes weighting vectors across asynchronous observation frequencies without imputing synthetic health values to missing sensor streams."*

@@ -579,3 +579,20 @@ async def get_model_history(
         }
         for l in logs
     ]
+
+
+# ── 9. Model Calibration Report ───────────────────────────────
+
+@router.get("/model-calibration")
+async def get_model_calibration_report(
+    current_user: MongoUser = Depends(require_roles(["admin"]))
+):
+    """
+    Admin: Returns the Platt-scaling calibration report including reliability diagram
+    data (mean predicted confidence vs fraction actually correct per bin), Expected
+    Calibration Error (ECE), Brier score, confidence bands, and methodology details.
+    """
+    from backend.services.calibration_service import get_calibration_report
+    report = get_calibration_report()
+    return report
+

@@ -185,9 +185,23 @@ export default function DrawableMap({
   finalizedPolygon = null,
   onShapeFinalized,
   onClear,
+  colorMode = 'pest',
+  onChangeColorMode,
 }) {
   const [drawMode, setDrawMode] = useState('rectangle') // 'rectangle' | 'polygon'
   const [isDrawing, setIsDrawing] = useState(false)
+  const [internalColorMode, setInternalColorMode] = useState(colorMode)
+
+  useEffect(() => {
+    setInternalColorMode(colorMode)
+  }, [colorMode])
+
+  const handleColorModeChange = (mode) => {
+    setInternalColorMode(mode)
+    if (onChangeColorMode) {
+      onChangeColorMode(mode)
+    }
+  }
 
   // Convert GeoJSON coordinates [[[lon, lat], ...]] to Leaflet [[lat, lon], ...]
   const leafletPolygonPositions = finalizedPolygon
@@ -196,38 +210,66 @@ export default function DrawableMap({
 
   return (
     <div className="relative w-full h-full min-h-[580px] rounded-3xl overflow-hidden border border-stone-200 shadow-inner">
-      {/* Interactive Drawing Toolbar */}
-      <div className="absolute top-4 left-4 z-[990] bg-white/95 backdrop-blur-md rounded-2xl shadow-lg border border-stone-200/90 p-1.5 flex items-center gap-1 text-xs">
-        <button
-          onClick={() => setDrawMode('rectangle')}
-          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
-            drawMode === 'rectangle'
-              ? 'bg-emerald-700 text-white shadow-sm'
-              : 'text-stone-600 hover:bg-stone-100'
-          }`}
-        >
-          <Square size={14} /> Drag Rectangle
-        </button>
-
-        <button
-          onClick={() => setDrawMode('polygon')}
-          className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
-            drawMode === 'polygon'
-              ? 'bg-emerald-700 text-white shadow-sm'
-              : 'text-stone-600 hover:bg-stone-100'
-          }`}
-        >
-          <Pentagon size={14} /> Polygon Points
-        </button>
-
-        {finalizedPolygon && (
+      {/* Interactive Drawing & Layer Toolbar */}
+      <div className="absolute top-4 left-4 z-[990] flex flex-wrap items-center gap-2">
+        <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-lg border border-stone-200/90 p-1.5 flex items-center gap-1 text-xs">
           <button
-            onClick={onClear}
-            className="px-2.5 py-1.5 rounded-xl text-stone-500 hover:text-stone-800 hover:bg-stone-100 font-medium flex items-center gap-1 ml-1 border-l border-stone-200 pl-2"
+            onClick={() => setDrawMode('rectangle')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              drawMode === 'rectangle'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'text-stone-600 hover:bg-stone-100'
+            }`}
           >
-            <RotateCcw size={13} /> Clear
+            <Square size={14} /> Drag Rectangle
           </button>
-        )}
+
+          <button
+            onClick={() => setDrawMode('polygon')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              drawMode === 'polygon'
+                ? 'bg-emerald-700 text-white shadow-sm'
+                : 'text-stone-600 hover:bg-stone-100'
+            }`}
+          >
+            <Pentagon size={14} /> Polygon Points
+          </button>
+
+          {finalizedPolygon && (
+            <button
+              onClick={onClear}
+              className="px-2.5 py-1.5 rounded-xl text-stone-500 hover:text-stone-800 hover:bg-stone-100 font-medium flex items-center gap-1 ml-1 border-l border-stone-200 pl-2"
+            >
+              <RotateCcw size={13} /> Clear
+            </button>
+          )}
+        </div>
+
+        {/* Data Layer Color-Scale Switcher: Pest Outbreak vs NDVI Vegetation Health */}
+        <div className="bg-stone-900/90 backdrop-blur-md text-white rounded-2xl shadow-lg border border-stone-700/80 p-1 flex items-center text-xs">
+          <button
+            type="button"
+            onClick={() => handleColorModeChange('pest')}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+              internalColorMode === 'pest'
+                ? 'bg-red-600 text-white shadow-sm'
+                : 'text-stone-400 hover:text-white'
+            }`}
+          >
+            🚨 Pest Risk Map
+          </button>
+          <button
+            type="button"
+            onClick={() => handleColorModeChange('vegetation')}
+            className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+              internalColorMode === 'vegetation'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-stone-400 hover:text-white'
+            }`}
+          >
+            🛰️ Sentinel-2 NDVI
+          </button>
+        </div>
       </div>
 
       {/* Helper Instructional Banner */}
@@ -265,9 +307,9 @@ export default function DrawableMap({
           <Polygon
             positions={leafletPolygonPositions}
             pathOptions={{
-              color: '#047857',
+              color: internalColorMode === 'vegetation' ? '#047857' : '#047857',
               weight: 2.5,
-              fillColor: '#10b981',
+              fillColor: internalColorMode === 'vegetation' ? '#10b981' : '#10b981',
               fillOpacity: 0.18,
             }}
           />
@@ -275,7 +317,7 @@ export default function DrawableMap({
 
         {/* Farm Markers Inside Polygon */}
         {farms.map((f) => (
-          <RiskPin key={f.farm_id} farm={f} />
+          <RiskPin key={f.farm_id} farm={f} colorMode={internalColorMode} />
         ))}
       </MapContainer>
     </div>

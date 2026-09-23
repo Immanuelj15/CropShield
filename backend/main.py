@@ -12,7 +12,7 @@ from pathlib import Path
 from backend.api import (
     predict, detect, features, weather, history, auth, disease,
     yield_api, outbreak, chatbot, alerts, location_predict,
-    farmer, agronomist, admin
+    farmer, agronomist, admin, vegetation
 )
 from backend.db.database import engine, Base
 
@@ -70,6 +70,7 @@ app.include_router(farmer.router,         prefix="/api/v1", tags=["Farmer Crop I
 app.include_router(agronomist.router,     prefix="/api/v1", tags=["Agronomist Expert Portal"])
 app.include_router(admin.router,          prefix="/api/v1", tags=["Admin Platform Management"])
 app.include_router(predict.router,        prefix="/api/v1", tags=["Pest Early Warning"])
+app.include_router(vegetation.router,     prefix="/api/v1", tags=["Satellite Vegetation & Multi-Modal Fusion"])
 
 app.include_router(disease.router,        prefix="/api/v1", tags=["Crop Disease Vision Scan"])
 app.include_router(yield_api.router,      prefix="/api/v1", tags=["Crop Yield Forecasting"])

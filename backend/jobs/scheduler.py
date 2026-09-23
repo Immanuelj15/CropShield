@@ -11,6 +11,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from backend.jobs.daily_ingestion_job import run_daily_ingestion_job
 from backend.jobs.retry_queue import run_retry_queue_worker
+from backend.jobs.ndvi_ingestion_job import run_ndvi_ingestion_job
 
 logger = logging.getLogger("cropshield.scheduler")
 
@@ -18,7 +19,7 @@ scheduler = AsyncIOScheduler()
 
 
 def start_scheduler():
-    """Starts the background AsyncIOScheduler with daily and hourly jobs."""
+    """Starts the background AsyncIOScheduler with daily, 3-day NDVI, and hourly jobs."""
     try:
         # 1. Daily Climate Ingestion at 5:00 AM IST (Asia/Kolkata)
         scheduler.add_job(
@@ -38,8 +39,17 @@ def start_scheduler():
             replace_existing=True
         )
 
+        # 3. Sentinel-2 NDVI Satellite Ingestion Every 3 Days at 4:00 AM IST
+        scheduler.add_job(
+            run_ndvi_ingestion_job,
+            CronTrigger(day="*/3", hour=4, minute=0, timezone="Asia/Kolkata"),
+            id="sentinel2_ndvi_satellite_ingestion",
+            name="3-Day Sentinel-2 NDVI Satellite Vegetation Ingestion",
+            replace_existing=True
+        )
+
         scheduler.start()
-        logger.info("APScheduler started: Daily 5:00 AM IST ingestion & Hourly retry sweep active.")
+        logger.info("APScheduler started: Daily 5:00 AM IST ingestion, 3-Day NDVI ingestion & Hourly retry sweep active.")
     except Exception as e:
         logger.warning(f"Could not start APScheduler: {e}")
 
