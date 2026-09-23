@@ -58,6 +58,18 @@ async def predict_location_early_warning(req: LocationPredictRequest, db: Sessio
         location_str=location_str
     )
 
+    # 6. Economic Impact Advisor (₹ Optimization)
+    from backend.services.economic_impact_service import get_economic_impact_for_prediction
+    economic_impact_data = await get_economic_impact_for_prediction(
+        crop=req.crop,
+        location=req.district,
+        risk_level=model_results["risk_level"],
+        calibrated_confidence=model_results.get("confidence_score") or 0.85,
+        detected_pests=[{"pest_name": model_results["predicted_pathogen"], "confidence": model_results.get("pest_probability", 0.75)}],
+        weather_snapshot=feature_dict,
+        soil={"nitrogen": 180.0, "phosphorus": 45.0, "potassium": 150.0, "ph": 6.8, "organic_carbon": 0.65},
+    )
+
     return {
         "status": "success",
         "inputs": {
@@ -73,5 +85,6 @@ async def predict_location_early_warning(req: LocationPredictRequest, db: Sessio
         "environment_snapshot": feature_dict,
         "prediction": model_results,
         "recommendations": recommendable,
-        "alert_system": recommendable["alert_system"]
+        "alert_system": recommendable["alert_system"],
+        "economic_impact": economic_impact_data,
     }

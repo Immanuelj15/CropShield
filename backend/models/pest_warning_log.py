@@ -25,6 +25,7 @@ class PestWarningLog(Document):
     calibrated_confidence: Optional[float] = None
     confidence_band: Optional[str] = None
     model_calibration_version: Optional[str] = None
+    economic_impact: Optional[Dict[str, Any]] = None
     verified_by: Optional[PydanticObjectId] = None
     verified_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)

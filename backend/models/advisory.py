@@ -21,6 +21,9 @@ class PestDiseaseAdvisory(Document):
     favorable_temp_max: Optional[float] = None
     favorable_rh_min: Optional[float] = None
     favorable_rh_max: Optional[float] = None
+    treatment_cost_per_acre: Optional[float] = None
+    treatment_effectiveness_pct: Optional[float] = 0.75
+    cost_source_note: Optional[str] = None
     uploaded_by: Optional[PydanticObjectId] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

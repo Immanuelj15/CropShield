@@ -17,6 +17,7 @@ from backend.models.retry_queue import RetryQueue
 from backend.models.chatbot_intent import ChatbotIntent
 from backend.models.chatbot_conversation import ChatbotConversation
 from backend.models.vegetation_snapshot import VegetationSnapshot
+from backend.models.market_price import MarketPrice
 
 DOCUMENT_MODELS = [
     User,
@@ -35,6 +36,7 @@ DOCUMENT_MODELS = [
     RetryQueue,
     ChatbotIntent,
     ChatbotConversation,
+    MarketPrice,
 ]
 
 __all__ = [
@@ -54,6 +56,8 @@ __all__ = [
     "RetryQueue",
     "ChatbotIntent",
     "ChatbotConversation",
+    "MarketPrice",
     "DOCUMENT_MODELS",
 ]
+
 

@@ -56,6 +56,9 @@ class PestDiseaseCreate(BaseModel):
     favorable_temp_max: Optional[float] = None
     favorable_rh_min: Optional[float] = None
     favorable_rh_max: Optional[float] = None
+    treatment_cost_per_acre: Optional[float] = None
+    treatment_effectiveness_pct: Optional[float] = 0.75
+    cost_source_note: Optional[str] = None
 
 
 class FarmGPSRegister(BaseModel):
@@ -114,6 +117,9 @@ async def list_pests_diseases(
             "chemical_treatment": r.chemical_treatment,
             "organic_treatment": r.organic_treatment,
             "prevention": r.prevention,
+            "treatment_cost_per_acre": r.treatment_cost_per_acre,
+            "treatment_effectiveness_pct": r.treatment_effectiveness_pct,
+            "cost_source_note": r.cost_source_note,
             "created_at": r.created_at,
         }
         for r in records
@@ -138,6 +144,9 @@ async def create_pest_disease(
         favorable_temp_max=req.favorable_temp_max,
         favorable_rh_min=req.favorable_rh_min,
         favorable_rh_max=req.favorable_rh_max,
+        treatment_cost_per_acre=req.treatment_cost_per_acre,
+        treatment_effectiveness_pct=req.treatment_effectiveness_pct,
+        cost_source_note=req.cost_source_note,
         uploaded_by=current_user.id,
     )
     await advisory.insert()

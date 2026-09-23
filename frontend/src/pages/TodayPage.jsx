@@ -3,6 +3,7 @@ import { MapPin, Calendar, Send, ShieldAlert, Cpu, CheckCircle2, AlertTriangle, 
 import axios from 'axios'
 import VegetationHealthCard from '../components/VegetationHealthCard'
 import FusedHealthScoreCard from '../components/FusedHealthScoreCard'
+import EconomicImpactCard from '../components/EconomicImpactCard'
 import { ConfidenceBadge } from '../components/ConfidenceBadge'
 
 export default function TodayPage() {
@@ -94,6 +95,20 @@ export default function TodayPage() {
           title: `🚨 HIGH RISK ALERT for ${form.crop} at ${form.district}`,
           message: `High risk of Cotton Whitefly detected today. Recommended spray: Imidacloprid 17.8 SL.`,
           channels: ["Dashboard", "SMS", "WhatsApp", "Push Notification"]
+        },
+        economic_impact: {
+          crop_value_at_stake: 64500,
+          expected_loss_if_untreated: 18800,
+          treatment_cost: 650,
+          net_benefit: 14014,
+          recommendation: "Treat Now",
+          calculation_basis: "Crop value at stake: ₹64,500 (860 kg/acre @ ₹75.00/kg). ~35% potential loss at High risk (87% confidence-adjusted) = ₹18,800 expected loss. Recommended treatment (₹650) prevents ~₹14,664 with 78% efficacy, yielding ₹14,014 net savings.",
+          expected_yield_kg_per_acre: 860,
+          market_price_per_kg: 75.0,
+          market_price_source: "Agmarknet (Kovilpatti Mandi)",
+          treatment_effectiveness_pct: 0.78,
+          cost_source_note: "TNAU Crop Protection Guide 2024",
+          damage_fraction: 0.35
         }
       })
     } finally {
@@ -316,6 +331,11 @@ export default function TodayPage() {
                   }}
                 />
               </div>
+
+              {/* Economic Impact Advisor (₹ Decision Optimization) */}
+              {result.economic_impact && (
+                <EconomicImpactCard economicImpact={result.economic_impact} />
+              )}
 
               {/* SHAP Feature Importances */}
               <div className="card p-6 space-y-4">

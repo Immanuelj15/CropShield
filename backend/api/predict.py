@@ -137,26 +137,7 @@ async def predict_today(
             for d in detected
         ])
 
-        warning = PestWarningLog(
-            warning_date=data_date,
-            location=request.location,
-            latitude=request.latitude,
-            longitude=request.longitude,
-            crop=request.crop,
-            climate_zone=zone_enum,
-            risk_score=risk_score,
-            risk_level=RiskLevel(risk_level),
-            likely_pests=likely_pests_data,
-            shap_values={f["feature"]: f["shap_value"] for f in top_features},
-            shap_interpretation=interpretation,
-            weather_snapshot=today_weather,
-            model_version=model_version,
-        )
-        db.add(warning)
-        db.commit()
-        db.refresh(warning)
-
-        # ── 8. Build response ─────────────────────────────────
+        # ── 7. Build weather snapshot ─────────────────────────
         weather_snapshot = {
             "temperature_c":        round(float(today_weather.get("t2m",   0)), 1),
             "max_temp_c":           round(float(today_weather.get("t2m_max",0)), 1),
@@ -183,7 +164,55 @@ async def predict_today(
             top_features=top_features,
         )
 
-        # ── 7c. Persist in MongoDB Beanie ──────────────────────
+        # ── 7c. Economic Impact Advisor (₹ Optimization) ──────
+        from backend.services.economic_impact_service import get_economic_impact_for_prediction
+        economic_impact_data = await get_economic_impact_for_prediction(
+            crop=request.crop,
+            location=request.location,
+            risk_level=risk_level,
+            calibrated_confidence=calibration_result.get("calibrated_confidence") or (risk_score * 0.95),
+            detected_pests=detected,
+            weather_snapshot=weather_snapshot,
+            soil=soil,
+        )
+
+        # ── 7d. Persist Warning in SQLite ─────────────────────
+        zone_enum = None
+        try:
+            zone_enum = ClimateZone(request.climate_zone)
+        except ValueError:
+            pass
+
+        likely_pests_data = sanitize_for_json([
+            {
+                "pest_name":   d["pest_name"],
+                "confidence":  d["confidence"],
+                "status":      d["detection_status"],
+            }
+            for d in detected
+        ])
+
+        warning = PestWarningLog(
+            warning_date=data_date,
+            location=request.location,
+            latitude=request.latitude,
+            longitude=request.longitude,
+            crop=request.crop,
+            climate_zone=zone_enum,
+            risk_score=risk_score,
+            risk_level=RiskLevel(risk_level),
+            likely_pests=likely_pests_data,
+            shap_values={f["feature"]: f["shap_value"] for f in top_features},
+            shap_interpretation=interpretation,
+            weather_snapshot=today_weather,
+            economic_impact=economic_impact_data,
+            model_version=model_version,
+        )
+        db.add(warning)
+        db.commit()
+        db.refresh(warning)
+
+        # ── 7e. Persist in MongoDB Beanie ──────────────────────
         try:
             from backend.models.pest_warning_log import PestWarningLog as MongoWarningLog
             from backend.models.farm import Farm as MongoFarm
@@ -202,6 +231,7 @@ async def predict_today(
                     shap_explanation=[f for f in top_features],
                     counterfactual_prescription=prescription,
                     detected_pests=p_list,
+                    economic_impact=economic_impact_data,
                     raw_confidence=calibration_result.get("raw_confidence"),
                     calibrated_confidence=calibration_result.get("calibrated_confidence"),
                     confidence_band=calibration_result.get("confidence_band"),
@@ -247,6 +277,7 @@ async def predict_today(
             shap_interpretation=interpretation,
             shap_explanation=[f for f in top_features],
             counterfactual_prescription=prescription,
+            economic_impact=economic_impact_data,
             weather_snapshot=weather_snapshot,
             raw_confidence=calibration_result.get("raw_confidence"),
             calibrated_confidence=calibration_result.get("calibrated_confidence"),

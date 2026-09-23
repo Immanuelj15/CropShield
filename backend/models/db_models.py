@@ -160,6 +160,9 @@ class PestWarningLog(Base):
     # Weather snapshot for this warning date
     weather_snapshot = Column(JSON)
 
+    # Economic Impact Advisor
+    economic_impact  = Column(JSON, nullable=True)
+
     model_version = Column(String(50))
     created_at    = Column(DateTime, default=datetime.utcnow)
 

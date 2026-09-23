@@ -40,6 +40,21 @@ class LikelyPest(BaseModel):
     management_advice: str
 
 
+class EconomicImpactResponse(BaseModel):
+    crop_value_at_stake:        float
+    expected_loss_if_untreated: float
+    treatment_cost:             Optional[float] = None
+    net_benefit:                Optional[float] = None
+    recommendation:             str  # "Treat Now" | "Treat Soon" | "Monitor Only" | "No Action Needed"
+    calculation_basis:          str
+    expected_yield_kg_per_acre: Optional[float] = None
+    market_price_per_kg:        Optional[float] = None
+    market_price_source:        Optional[str]   = "Agmarknet"
+    treatment_effectiveness_pct: Optional[float] = None
+    cost_source_note:           Optional[str]   = None
+    damage_fraction:            Optional[float] = None
+
+
 class TodayWarningResponse(BaseModel):
     warning_id:       int
     warning_date:     date
@@ -61,6 +76,9 @@ class TodayWarningResponse(BaseModel):
     shap_interpretation: str
     shap_explanation: Optional[List[Dict[str, Any]]] = None
     counterfactual_prescription: Optional[Dict[str, Any]] = None
+
+    # Economic Impact Advisor (₹ Optimization)
+    economic_impact:  Optional[EconomicImpactResponse] = None
 
     # Weather context
     weather_snapshot: Dict[str, Any]

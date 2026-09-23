@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import clsx from 'clsx'
 import RiskGauge from '../components/RiskGauge'
 import CounterfactualCard from '../components/CounterfactualCard'
+import EconomicImpactCard from '../components/EconomicImpactCard'
 import VegetationHealthCard from '../components/VegetationHealthCard'
 import FusedHealthScoreCard from '../components/FusedHealthScoreCard'
 import { ConfidenceBadge } from '../components/ConfidenceBadge'
@@ -552,6 +553,11 @@ export default function FarmerDashboard() {
                 <CounterfactualCard
                   prescription={warningData.counterfactual_prescription}
                   currentRiskScore={warningData.risk_score}
+                />
+
+                {/* Economic Impact Advisor (Feature 6 — Patent Novelty 2: ₹ Decision Optimization) */}
+                <EconomicImpactCard
+                  economicImpact={warningData.economic_impact}
                 />
 
                   {/* Ask Agronomist Card */}
