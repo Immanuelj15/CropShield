@@ -12,7 +12,7 @@ from pathlib import Path
 from backend.api import (
     predict, detect, features, weather, history, auth, disease,
     yield_api, outbreak, chatbot, alerts, location_predict,
-    farmer, agronomist, admin, vegetation
+    farmer, agronomist, admin, vegetation, notifications
 )
 from backend.db.database import engine, Base
 
@@ -81,6 +81,7 @@ app.include_router(detect.router,         prefix="/api/v1", tags=["Rule-based Pe
 app.include_router(features.router,       prefix="/api/v1", tags=["Live Feature Inspector"])
 app.include_router(weather.router,        prefix="/api/v1", tags=["Weather Integration"])
 app.include_router(history.router,        prefix="/api/v1", tags=["Warning History"])
+app.include_router(notifications.router,  prefix="/api/v1", tags=["Notification Delivery & PWA"])
 
 uploads_path = Path("uploads")
 uploads_path.mkdir(parents=True, exist_ok=True)
@@ -98,5 +99,6 @@ async def root():
     }
 
 @app.get("/health", tags=["Health"])
+@app.get("/api/v1/health", tags=["Health"])
 async def health():
     return {"status": "healthy"}

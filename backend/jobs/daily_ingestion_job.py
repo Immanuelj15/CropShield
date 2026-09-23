@@ -199,6 +199,18 @@ async def process_single_farm_ingestion(farm: MongoFarm) -> Dict[str, Any]:
         )
         alerts_dispatched = len(alerts)
 
+        # Multi-Channel Alert Delivery: Notify farm owner immediately
+        try:
+            from backend.services.notification_service import notify_farmer
+            target_owner = getattr(farm, "owner_id", None) or farm.id
+            await notify_farmer(target_owner, "high_risk", {
+                "en": f"AgriGuard: High pest risk detected for your {farm.crop_type}. Open the app for details.",
+                "ta": f"AgriGuard: உங்கள் {farm.crop_type} பயிரில் அதிக ஆபத்து கண்டறியப்பட்டது. விவரங்களுக்கு பயன்பாட்டைத் திறக்கவும்.",
+                "hi": f"AgriGuard: आपकी {farm.crop_type} फसल में उच्च जोखिम पाया गया। विवरण के लिए ऐप खोलें।",
+            })
+        except Exception as notif_err:
+            logger.warning(f"Failed to dispatch high risk notification for farm {farm.id}: {notif_err}")
+
     return {
         "status": "success",
         "farm_id": str(farm.id),

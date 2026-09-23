@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { NavLink } from 'react-router-dom'
 import {
   AlertTriangle, Shield, Sprout, Clock, FileText, Bell,
   Camera, CheckCircle2, ChevronRight, Activity, Droplets,
@@ -15,6 +16,7 @@ import FusedHealthScoreCard from '../components/FusedHealthScoreCard'
 import { ConfidenceBadge } from '../components/ConfidenceBadge'
 import { WarningCardSkeleton, CounterfactualSkeleton } from '../components/SkeletonLoader'
 import FarmerBottomNav from '../components/FarmerBottomNav'
+import { queueOfflineAction } from '../utils/offlineQueue'
 
 const API_BASE = 'http://localhost:8000/api/v1'
 
@@ -232,6 +234,32 @@ export default function FarmerDashboard() {
 
   const handleSaveTreatment = async (e) => {
     e.preventDefault()
+    if (!navigator.onLine) {
+      try {
+        await queueOfflineAction({
+          type: 'treatment_log',
+          payload: newTreatment,
+        })
+        setTreatmentSuccess(true)
+        setTimeout(() => {
+          setShowTreatmentModal(false)
+          setTreatmentSuccess(false)
+          setNewTreatment({
+            treatment_date: new Date().toISOString().split('T')[0],
+            treatment_type: 'organic',
+            product_name: '',
+            target_pest: '',
+            dosage: '',
+            notes: '',
+          })
+          alert("📡 You are offline. Treatment log saved to offline queue and will auto-sync when connected!")
+        }, 800)
+      } catch (err) {
+        console.error('Offline queue failed:', err)
+      }
+      return
+    }
+
     try {
       const res = await fetch(`${API_BASE}/treatments`, {
         method: 'POST',
@@ -254,7 +282,19 @@ export default function FarmerDashboard() {
           })
         }, 800)
       }
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.warn("Network error during treatment log, falling back to offline queue:", e)
+      await queueOfflineAction({
+        type: 'treatment_log',
+        payload: newTreatment,
+      })
+      setTreatmentSuccess(true)
+      setTimeout(() => {
+        setShowTreatmentModal(false)
+        setTreatmentSuccess(false)
+        alert("📡 Network unavailable. Treatment log queued in IndexedDB for auto-sync.")
+      }, 800)
+    }
   }
 
   const handleFileChange = async (e) => {
@@ -280,6 +320,26 @@ export default function FarmerDashboard() {
     }
     setScanLoading(true)
     setScanError(null)
+
+    if (!navigator.onLine) {
+      try {
+        await queueOfflineAction({
+          type: 'leaf_photo',
+          payload: {
+            blob: selectedFile,
+            filename: selectedFile.name || 'leaf_scan.jpg',
+            farm_id: farm?.id ? String(farm.id) : null,
+          }
+        })
+        setScanError("📡 Offline Mode: Leaf photo saved to offline queue. Diagnosis will automatically run once internet connection returns.")
+      } catch (err) {
+        setScanError("Failed to store image offline: " + err.message)
+      } finally {
+        setScanLoading(false)
+      }
+      return
+    }
+
     try {
       const formData = new FormData()
       formData.append('file', selectedFile)
@@ -297,8 +357,16 @@ export default function FarmerDashboard() {
         setScanError(data?.detail?.message || data?.detail || "Diagnosis failed. Please check image format.")
       }
     } catch (e) {
-      console.error(e)
-      setScanError("Network connection error. Operating in offline mode.")
+      console.warn("Disease scan network error, storing offline:", e)
+      await queueOfflineAction({
+        type: 'leaf_photo',
+        payload: {
+          blob: selectedFile,
+          filename: selectedFile.name || 'leaf_scan.jpg',
+          farm_id: farm?.id ? String(farm.id) : null,
+        }
+      })
+      setScanError("📡 Field connection dropped. Photo safely queued in IndexedDB. Will auto-sync when online.")
     } finally {
       setScanLoading(false)
     }
@@ -364,6 +432,12 @@ export default function FarmerDashboard() {
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Active 2026 Feed
               </span>
             </div>
+            <NavLink
+              to="/farmer/notifications"
+              className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/10"
+            >
+              <Bell size={14} /> Alert Channels & PWA
+            </NavLink>
             <button
               onClick={() => farm && fetchTodayWarning(farm)}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5"

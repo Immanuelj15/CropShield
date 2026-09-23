@@ -18,6 +18,8 @@ from backend.models.chatbot_intent import ChatbotIntent
 from backend.models.chatbot_conversation import ChatbotConversation
 from backend.models.vegetation_snapshot import VegetationSnapshot
 from backend.models.market_price import MarketPrice
+from backend.models.notification_preference import NotificationPreference
+from backend.models.notification_log import NotificationLog
 
 DOCUMENT_MODELS = [
     User,
@@ -37,6 +39,8 @@ DOCUMENT_MODELS = [
     ChatbotIntent,
     ChatbotConversation,
     MarketPrice,
+    NotificationPreference,
+    NotificationLog,
 ]
 
 __all__ = [
@@ -57,7 +61,10 @@ __all__ = [
     "ChatbotIntent",
     "ChatbotConversation",
     "MarketPrice",
+    "NotificationPreference",
+    "NotificationLog",
     "DOCUMENT_MODELS",
 ]
+
 
 

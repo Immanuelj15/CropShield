@@ -250,6 +250,20 @@ async def predict_today(
                         risk_level="High",
                         radius_km=5.0
                     )
+
+                # Multi-Channel Alert Delivery: When Economic Impact Advisor computes "Treat Now"
+                if economic_impact_data and economic_impact_data.get("recommendation") == "Treat Now":
+                    try:
+                        from backend.services.notification_service import notify_farmer
+                        target_user = getattr(farm_doc, "owner_id", None) or farm_doc.id
+                        net_benefit = economic_impact_data.get("net_benefit_treat_now_inr", 0)
+                        await notify_farmer(target_user, "treat_now_recommendation", {
+                            "en": f"AgriGuard Advisory: 'Treat Now' recommended for your {request.crop}. Estimated net benefit of treating now: ₹{net_benefit:,.0f}.",
+                            "ta": f"அக்ரிகார்ட் ஆலோசனைக் குறிப்பு: உங்கள் {request.crop} பயிருக்கு உடனடியாக சிகிச்சையளிக்க பரிந்துரைக்கப்படுகிறது. எதிர்பார்க்கப்படும் நிகர லாபம்: ₹{net_benefit:,.0f}.",
+                            "hi": f"एग्रीगार्ड सलाह: आपकी {request.crop} फसल के लिए 'अभी उपचार करें' अनुशंसित है। कुल अनुमानित लाभ: ₹{net_benefit:,.0f}।",
+                        })
+                    except Exception as treat_err:
+                        print(f"[WARN] Failed to deliver Treat Now notification: {treat_err}")
         except Exception as mongo_err:
             print(f"[WARN] MongoDB warning log / alert dispatch error: {mongo_err}")
 

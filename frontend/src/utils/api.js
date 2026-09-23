@@ -42,4 +42,26 @@ export const getCurrentWeather = (params) =>
 export const getHistory = (params) =>
   api.get('/history', { params }).then(r => r.data)
 
+// ── Multi-Channel Notification Delivery & PWA Web Push ────────
+export const getVapidPublicKey = () =>
+  api.get('/notifications/vapid-public-key').then(r => r.data)
+
+export const getNotificationPreferences = () =>
+  api.get('/notifications/preferences').then(r => r.data)
+
+export const updateNotificationPreferences = (payload) =>
+  api.put('/notifications/preferences', payload).then(r => r.data)
+
+export const subscribePush = (subscription) =>
+  api.post('/notifications/subscribe', subscription).then(r => r.data)
+
+export const unsubscribePush = () =>
+  api.post('/notifications/unsubscribe').then(r => r.data)
+
+export const sendTestNotification = (payload = {}) =>
+  api.post('/notifications/test', payload).then(r => r.data)
+
+export const getNotificationLogs = (limit = 20) =>
+  api.get('/notifications/logs', { params: { limit } }).then(r => r.data)
+
 export default api

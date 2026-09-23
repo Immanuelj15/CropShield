@@ -206,12 +206,63 @@ docker-compose up --build
 
 ---
 
-## Future Improvements
+---
 
-1. **Real pest incidence labels** — integrate TNAU/ICAR surveillance data to replace rule-derived labels
-2. **High-Resolution Satellite Remote Sensing** — integration of 1km gridded reanalysis (ERA5-Land / Sentinel-2 surface reflectance) via cloud REST API
-3. **Image-based CNN** — MobileNetV3 for photo-based pest confirmation
-4. **SMS/WhatsApp alerts** — Twilio integration for High risk warnings
-5. **Geospatial heatmap** — district-level risk overlay with Leaflet.js
-6. **Phenology-aware model** — separate risk curves per crop growth stage
-7. **Ensemble model** — XGBoost + LightGBM + CatBoost soft voting
+## Delivery Infrastructure — Closing the Loop ("System Knows" → "Farmer Finds Out")
+
+A common point of failure for agricultural AI systems in real deployments is the **last-mile delivery gap**:
+The scheduled daily ingestion pipeline runs at 5:00 AM, NASA satellite reanalysis updates the feature pipeline, the XGBoost + SHAP engine flags an outbreak, and the Economic Impact Advisor calculates a positive ROI on immediate treatment. **However, none of that protects a crop if the farmer does not manually open the app that day or happens to be in a rural field zone with zero data connectivity.**
+
+AgriGuard closes this gap through a dual-layer delivery infrastructure:
+
+```
+                  ┌────────────────────────────────────────────────────────┐
+                  │              ALERT-WORTHY TRIGGER POINTS               │
+                  │ 1. Daily Ingestion crosses into High Risk              │
+                  │ 2. Haversine 5km Regional Outbreak detected            │
+                  │ 3. Economic Impact Advisor computes "Treat Now"        │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │ notify_farmer()
+                                              ▼
+                  ┌────────────────────────────────────────────────────────┐
+                  │                 QUIET HOURS EVALUATION                 │
+                  │   21:00 to 06:00 window?                               │
+                  │   - Urgent 'high_risk' & regional outbreaks: BYPASS    │
+                  │   - Non-urgent advisories: QUEUE for morning           │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │
+                      ┌───────────────────────┴───────────────────────┐
+                      ▼                                               ▼
+      ┌───────────────────────────────┐               ┌───────────────────────────────┐
+      │     PWA SUBSCRIBED & ONLINE?  │               │      NO PWA / PUSH FAILED     │
+      │   Web Push via VAPID ECDSA    │               │  Universal SMS Fallback (GSM) │
+      │   (Zero SMS carrier cost)     │               │  + WhatsApp Advisory          │
+      └───────────────────────────────┘               └───────────────────────────────┘
+                      │                                               │
+                      └───────────────────────┬───────────────────────┘
+                                              ▼
+                              ┌───────────────────────────────┐
+                              │    AUDITABLE DELIVERY LOG     │
+                              │   MongoDB: notification_log   │
+                              │   (push | sms | whatsapp)     │
+                              └───────────────────────────────┘
+```
+
+### 1. Offline-First PWA Architecture
+- **Vite PWA & Workbox Engine**: Service Worker caching strategies:
+  - **App Shell**: Cache-First for instant page load under spotty 2G/3G conditions.
+  - **Warning Data (`/api/v1/predict-today`)**: Network-First with Cache Fallback. If offline, the interface displays the last cached snapshot with an active banner: *"Offline Mode: Showing cached data from 10:30 AM — reconnecting..."*
+  - **Advisory Library**: Cache-First with 7-day TTL.
+- **IndexedDB Action Queue**:
+  - Treatments recorded and leaf images photographed in offline fields are stored in `AgriGuardOfflineDB`.
+  - Leaf images are compressed client-side via canvas before queueing to preserve storage and bandwidth.
+  - Submissions automatically flush to the backend via Background Sync API (`window.addEventListener('online')`).
+
+### 2. Multi-Channel Notification Router
+- **Web Push**: Utilizes standard W3C Push API and VAPID (Voluntary Application Server Identification) ECDSA P-256 keys. Dispatches notifications directly to Android, iOS (PWA), and desktop devices.
+- **Universal SMS**: Universal fallback for rural smallholders without smartphones or cellular data. Works on standard feature phones.
+- **WhatsApp Integration**: Sends structured agronomic advisories with localized text (Tamil `ta`, Hindi `hi`, English `en`) and direct links.
+- **Strict Separation of Concerns**: No duplicate trigger logic. `notify_farmer()` is invoked strictly at the 3 established decision junctures:
+  1. `daily_ingestion_job.py` when a farm's risk transitions to `High`.
+  2. `geospatial_service.py` when neighboring farms are generated within a 5km radius.
+  3. `predict.py` when the Economic Impact Advisor recommends `Treat Now`.

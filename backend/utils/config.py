@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     DEFAULT_LONGITUDE: float = 77.8710
     DEFAULT_LOCATION: str = "Kovilpatti"
 
+    # Multi-Channel Delivery: Web Push (VAPID)
+    VAPID_PUBLIC_KEY: str = "BLTr3VWEsgyLojk6spmf-bvbCQDI0Tc3lGE8VeMK1nwToCSnUwZA--ym1fzPa7LAPQgVePGlP0j_IaFbhgBbezE"
+    VAPID_PRIVATE_KEY: str = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgLmmRCu/ByDADrjcv\nKcYPmVgpgWowRuV5l3p/PGWkb3KhRANCAAS0691VhLIMi6I5OrKZn/m72wkAyNE3\nN5RhPFXjCtZ8E6Akp1MGQPvsptX8z2uywD0IFXjxpT9I/yGhW4YAW3sx\n-----END PRIVATE KEY-----"
+    VAPID_CLAIMS_SUB: str = "mailto:admin@agriguard.in"
+
+    # SMS / WhatsApp Gateway (Twilio / MSG91 fallback)
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_PHONE_NUMBER: str = ""
+    TWILIO_WHATSAPP_NUMBER: str = ""
+
 
 @lru_cache()
 def get_settings() -> Settings:

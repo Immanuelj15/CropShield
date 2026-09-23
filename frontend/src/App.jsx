@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin } from 'lucide-react'
+import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import TodayPage from './pages/TodayPage'
 import YieldPage from './pages/YieldPage'
@@ -12,8 +12,10 @@ import LoginPage from './pages/LoginPage'
 import FarmerDashboard from './pages/FarmerDashboard'
 import AgronomistDashboard from './pages/AgronomistDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import NotificationSettingsPage from './pages/NotificationSettingsPage'
 import VoiceAssistantModal from './components/VoiceAssistantModal'
 import ChatbotWidget from './components/ChatbotWidget'
+import OfflineBanner from './components/OfflineBanner'
 import clsx from 'clsx'
 
 // Ensure stale localStorage tokens from previous sessions do not bypass login
@@ -98,6 +100,7 @@ function getNavItemsForRole(role) {
       { to: '/farmer/today', label: 'Farmer View', icon: Leaf },
       { to: '/regional-scan', label: 'Spatial Scan', icon: MapPin },
       { to: '/outbreak', label: 'Outbreak Map', icon: Map },
+      { to: '/farmer/notifications', label: 'Delivery & PWA', icon: Bell },
     ]
   }
   // Default: farmer
@@ -107,6 +110,7 @@ function getNavItemsForRole(role) {
     { to: '/yield', label: 'Yield Predictor', icon: Sprout },
     { to: '/outbreak', label: 'Outbreak Map', icon: Map },
     { to: '/history', label: 'Field History', icon: Clock },
+    { to: '/farmer/notifications', label: 'Alert Channels', icon: Bell },
   ]
 }
 
@@ -365,6 +369,7 @@ function Footer() {
 export default function App() {
   return (
     <BrowserRouter>
+      <OfflineBanner />
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Routes>
@@ -381,6 +386,14 @@ export default function App() {
               <RoleRoute allowedRoles={['farmer', 'admin']}>
                 <FarmerDashboard />
               </RoleRoute>
+            }
+          />
+          <Route
+            path="/farmer/notifications"
+            element={
+              <ProtectedRoute>
+                <NotificationSettingsPage />
+              </ProtectedRoute>
             }
           />
           <Route
