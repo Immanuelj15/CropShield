@@ -41,7 +41,14 @@ BASE_URL = "https://rest.isric.org/soilgrids/v2.0/properties/query"
 
 
 def fetch_location(name, lat, lon):
-    params = [("lon", lon), ("lat", lat), ("depth", DEPTH), ("value", "mean")]
+    params = [
+        ("lon", lon),
+        ("lat", lat),
+        ("depth", DEPTH),
+        ("value", "mean"),
+        ("value", "Q0.05"),
+        ("value", "Q0.95"),
+    ]
     for prop in PROPERTIES:
         params.append(("property", prop))
 
@@ -56,8 +63,10 @@ def fetch_location(name, lat, lon):
         unit = layer.get("unit_measure", {}).get("target_units", "")
         for depth_entry in layer.get("depths", []):
             if depth_entry["label"] == DEPTH:
-                mean_val = depth_entry["values"].get("mean")
-                row[f"{prop_name}_{DEPTH}"] = mean_val
+                vals = depth_entry.get("values", {})
+                row[f"{prop_name}_{DEPTH}_mean"] = vals.get("mean")
+                row[f"{prop_name}_{DEPTH}_q05"] = vals.get("Q0.05")
+                row[f"{prop_name}_{DEPTH}_q95"] = vals.get("Q0.95")
                 row[f"{prop_name}_unit"] = unit
     return row
 

@@ -16,6 +16,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import NotificationSettingsPage from './pages/NotificationSettingsPage'
 import CropRecommendationPage from './pages/CropRecommendationPage'
 import FarmActivityPlannerPage from './pages/FarmActivityPlannerPage'
+import SoilHealthAnalyzerPage from './pages/SoilHealthAnalyzerPage'
 import VoiceAssistantModal from './components/VoiceAssistantModal'
 import ChatbotWidget from './components/ChatbotWidget'
 import OfflineBanner from './components/OfflineBanner'
@@ -110,6 +111,7 @@ function getNavItemsForRole(role, t) {
   // Default: farmer
   return [
     { to: '/farmer/today', label: t('nav_today', "Today's Warning"), icon: AlertTriangle },
+    { to: '/farmer/soil-health', label: t('nav_soil_health', 'Soil Health'), icon: Compass },
     { to: '/farmer/crop-recommendation', label: t('nav_crop_advisor', 'Crop Advisor'), icon: Sparkles },
     { to: '/farmer/activity-planner', label: t('nav_activity_planner', 'Activity Planner'), icon: Calendar },
     { to: '/regional-scan', label: t('nav_draw_scan', 'Draw-to-Scan'), icon: MapPin },
@@ -409,6 +411,18 @@ export default function App() {
                 <NotificationSettingsPage />
               </ProtectedRoute>
             }
+          />
+          <Route
+            path="/farmer/soil-health"
+            element={
+              <RoleRoute allowedRoles={['farmer', 'admin']}>
+                <SoilHealthAnalyzerPage />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="/soil-health"
+            element={<Navigate to="/farmer/soil-health" replace />}
           />
           <Route
             path="/farmer/crop-recommendation"

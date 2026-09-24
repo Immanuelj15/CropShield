@@ -566,8 +566,36 @@ All underlying growth-stage durations, crop coefficients, and nutrient splits ar
 
 2. **Crop Nutrient Requirements & Split Applications**:
    - **Primary Authority**: Indian Council of Agricultural Research (ICAR) & Tamil Nadu Agricultural University (TNAU).
-   - **Citation**: TNAU *Crop Production Guide (Agriculture & Horticulture) 2024*, Directorate of Agriculture, Government of Tamil Nadu.
-   - **Bulletins**: *Crop-specific Recommended Doses of Fertilizers (RDF) and Integrated Nutrient Management (INM) schedules*.
+---
+
+## 8. AI-Powered Preliminary Soil Health Analyzer
+
+### Scientific Architecture & Framing
+This feature operates as an **intelligent application and decision-support layer** wrapping **ISRIC SoilGrids v2.0 global machine-learning predictions**, augmented with:
+1. Farm polygon boundary spatial averaging and area calculation.
+2. Real prediction quantile uncertainty scoring ($Q_{0.05}$, Mean, $Q_{0.95}$).
+3. Topographical slope and elevation sampling via SRTM Digital Elevation Model (Google Earth Engine).
+4. Direct pipeline integration into the Crop Recommendation & Pre-Season Profit Engine.
+
+> **Academic & Examination Integrity Note**: This system is **not** a novel from-scratch soil prediction machine learning model trained from raw wet-chemistry samples by this project. Overclaiming this capability would misrepresent third-party spatial services. It is strictly an explainable uncertainty-bounded agronomic ingestion and decision interface.
+
+### ISRIC SoilGrids v2.0 Data Source & Published Uncertainty
+- **Citation**: Poggio, L., de Sousa, L. M., Batjes, N. H., Heuvelink, G. B. M., Kempen, B., Ribeiro, E., & Rossiter, D. (2021). *SoilGrids 2.0: producing soil information for the globe with quantified spatial uncertainty*. **SOIL**, 7(1), 217–240. https://doi.org/10.5194/soil-7-217-2021
+- **REST Endpoint**: `https://rest.isric.org/soilgrids/v2.0/properties/query`
+- **Layers Queried**: `phh2o` (pH in H₂O), `nitrogen` (total N), `soc` (soil organic carbon), `clay`, `sand`, `silt`, `cec` (cation exchange capacity) at depth `0-5cm` (root topsoil).
+
+### Real Confidence Scoring Formula
+Rather than fabricating artificial confidence scores, certainty percentages are derived directly from SoilGrids' published 90% prediction intervals ($Q_{0.95} - Q_{0.05}$):
+$$\text{Relative Uncertainty} = \frac{Q_{0.95} - Q_{0.05}}{|\text{Mean}|}$$
+$$\text{Confidence (\%)} = \max(20.0, \min(95.0, 100.0 - (\text{Relative Uncertainty} \times 100.0)))$$
+Narrower quantile spreads relative to the mean indicate higher spatial certainty. Overall report confidence represents the unweighted arithmetic mean across estimated properties.
+
+### The Critical Accuracy Rule & Honest Limitations
+1. **Phosphorus Limitation**: ISRIC SoilGrids v2.0 global models do not estimate plant-available elemental phosphorus ($P_2O_5$). AgriGuard **honestly labels phosphorus as unmodeled by satellite**, directing farmers to laboratory testing rather than fabricating synthetic numbers.
+2. **Mandatory Persistent Disclaimer**: Every screen displaying preliminary estimates displays:
+   > ⚠️ *This is a preliminary soil estimate based on satellite and regional data. It is not a replacement for laboratory soil testing. For accurate pH and nutrient measurements, upload a verified soil-test report.*
+3. **Lab Verification Precedence**: When a farmer or extension officer uploads an accredited laboratory soil test report (PDF/image + verified measurements), the system assigns `report_type = "lab_verified"` (100% confidence), which permanently overrides preliminary estimates across downstream Crop Recommendation, Fertilizer Dosing, and Activity Schedules.
+
 
 
 

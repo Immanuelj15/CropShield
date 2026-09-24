@@ -72,21 +72,35 @@ async def get_fertilizer_recommendation(farm_id: str) -> Dict[str, Any]:
         splits = requirement.application_split
         source_note = requirement.source_note
 
-    # 2. Retrieve Soil Nutrient Baseline
-    climate_zone = getattr(farm, "climate_zone", "Dryland") or "Dryland"
-    soil_profile = get_soil_profile(climate_zone)
+    # 2. Retrieve Soil Nutrient Baseline (Lab Verified > Preliminary > Regional)
+    from backend.services.soil_health_service import get_effective_soil_data
+    effective_soil = await get_effective_soil_data(str(farm.id))
 
-    # Extract available nutrients (kg/ha)
-    soil_n_ha = float(soil_profile.get("nitrogen", 220.0))
-    soil_p_ha = float(soil_profile.get("phosphorus", 20.0))
-    soil_k_ha = float(soil_profile.get("potassium", 190.0))
-
-    # Convert available soil pool to kg/acre
-    # Note: Only a fractional percentage of total soil reservoir is actively available to roots per season
-    # Standard agronomic availability indices: ~10% for N, ~15% for P, ~12% for K
-    n_avail_acre = round(soil_n_ha * HA_TO_ACRE_NUTRIENT_FACTOR * 0.12, 1)
-    p_avail_acre = round(soil_p_ha * HA_TO_ACRE_NUTRIENT_FACTOR * 0.15, 1)
-    k_avail_acre = round(soil_k_ha * HA_TO_ACRE_NUTRIENT_FACTOR * 0.12, 1)
+    if effective_soil and effective_soil.get("is_lab_verified"):
+        n_avail_acre = float(effective_soil.get("nitrogen_kg_per_acre", 12.0))
+        p_avail_acre = float(effective_soil.get("phosphorus_kg_per_acre", 8.0))
+        k_avail_acre = float(effective_soil.get("potassium_kg_per_acre", 15.0))
+        soil_source_label = f"Verified Lab Soil Report ({effective_soil.get('lab_name', 'Soil Testing Lab')})"
+        is_lab_verified = True
+    elif effective_soil and not effective_soil.get("is_lab_verified"):
+        n_band = effective_soil.get("nitrogen_band", "Medium")
+        k_band = effective_soil.get("potassium_band", "Medium")
+        n_avail_acre = 14.0 if n_band == "High" else 10.0 if n_band == "Medium" else 6.0
+        p_avail_acre = 8.0  # conservative baseline since P is not modeled by SoilGrids
+        k_avail_acre = 18.0 if k_band == "High" else 12.0 if k_band == "Medium" else 7.0
+        soil_source_label = f"Preliminary Satellite Estimate ({effective_soil.get('overall_confidence_pct', 60)}% confidence)"
+        is_lab_verified = False
+    else:
+        climate_zone = getattr(farm, "climate_zone", "Dryland") or "Dryland"
+        soil_profile = get_soil_profile(climate_zone)
+        soil_n_ha = float(soil_profile.get("nitrogen", 220.0))
+        soil_p_ha = float(soil_profile.get("phosphorus", 20.0))
+        soil_k_ha = float(soil_profile.get("potassium", 190.0))
+        n_avail_acre = round(soil_n_ha * HA_TO_ACRE_NUTRIENT_FACTOR * 0.12, 1)
+        p_avail_acre = round(soil_p_ha * HA_TO_ACRE_NUTRIENT_FACTOR * 0.15, 1)
+        k_avail_acre = round(soil_k_ha * HA_TO_ACRE_NUTRIENT_FACTOR * 0.12, 1)
+        soil_source_label = f"Regional Agro-Climatic Baseline ({climate_zone})"
+        is_lab_verified = False
 
     # 3. Calculate Deficits (kg/acre)
     n_deficit = max(0.0, round(n_req - n_avail_acre, 1))
@@ -180,6 +194,8 @@ async def get_fertilizer_recommendation(farm_id: str) -> Dict[str, Any]:
         },
         "application_schedule": application_schedule,
         "source_note": source_note,
+        "soil_data_source": soil_source_label,
+        "is_lab_verified": is_lab_verified,
         "reason": reason_text,
         "evaluated_at": datetime.utcnow().isoformat(),
     }

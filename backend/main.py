@@ -13,7 +13,8 @@ from backend.api import (
     predict, detect, features, weather, history, auth, disease,
     yield_api, outbreak, chatbot, alerts, location_predict,
     farmer, agronomist, admin, vegetation, notifications,
-    crop_recommendation, irrigation, fertilizer, activity_planner
+    crop_recommendation, irrigation, fertilizer, activity_planner,
+    soil_health
 )
 from backend.db.database import engine, Base
 
@@ -87,6 +88,7 @@ app.include_router(crop_recommendation.router, prefix="/api/v1", tags=["AI Crop 
 app.include_router(irrigation.router,      prefix="/api/v1", tags=["Smart Irrigation Advisory"])
 app.include_router(fertilizer.router,      prefix="/api/v1", tags=["Fertilizer NPK Recommendation"])
 app.include_router(activity_planner.router, prefix="/api/v1", tags=["AI Farm Activity Planner"])
+app.include_router(soil_health.router,      prefix="/api/v1", tags=["Preliminary Soil Health Analyzer"])
 
 uploads_path = Path("uploads")
 uploads_path.mkdir(parents=True, exist_ok=True)

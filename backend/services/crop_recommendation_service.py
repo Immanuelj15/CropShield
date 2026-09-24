@@ -232,12 +232,29 @@ async def generate_crop_recommendations(
             except Exception:
                 pass
 
-    # Resolve farm parameters
+    # Resolve soil via get_effective_soil_data (Lab Verified > Preliminary > Farm Default)
+    effective_soil = None
+    if farm_id or farm:
+        try:
+            from backend.services.soil_health_service import get_effective_soil_data
+            target_fid = str(farm.id) if farm else str(farm_id)
+            effective_soil = await get_effective_soil_data(target_fid)
+        except Exception:
+            pass
+
     resolved_district = district or (farm.district if farm else "Thoothukudi")
-    resolved_soil = soil_type or (farm.soil_type if farm else "Black Cotton Soil")
+    if soil_type:
+        resolved_soil = soil_type
+    elif effective_soil and effective_soil.get("soil_type"):
+        resolved_soil = effective_soil["soil_type"]
+    else:
+        resolved_soil = farm.soil_type if farm else "Black Cotton Soil"
+
     # Area: if farm specifies area_hectares, convert to acres (1 ha = 2.471 acres)
     if land_area_acres and land_area_acres > 0:
         resolved_area = float(land_area_acres)
+    elif effective_soil and effective_soil.get("area_acres"):
+        resolved_area = float(effective_soil["area_acres"])
     elif farm and farm.area_hectares:
         resolved_area = round(farm.area_hectares * 2.471, 2)
     else:
@@ -411,6 +428,7 @@ async def generate_crop_recommendations(
             "season": resolved_season,
             "water_availability": resolved_water,
             "budget": budget,
+            "effective_soil_data": effective_soil,
         },
         "recommendations": top_recommendations,
         "total_candidates_analyzed": len(candidate_rules),
