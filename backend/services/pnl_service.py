@@ -161,24 +161,26 @@ async def recompute_pnl_summary(farm_id: str, season: str, crop_type: Optional[s
 
 async def log_expense(farm_id: str, expense_data: dict) -> FarmExpense:
     """Logs a new farm expense and recomputes the seasonal P&L summary."""
-    expense = FarmExpense(farm_id=str(farm_id), **expense_data)
+    data = {**expense_data, "farm_id": str(farm_id)}
+    expense = FarmExpense(**data)
     await expense.insert()
-    season = expense_data.get("season", "Kharif 2026")
-    crop_type = expense_data.get("crop_type")
+    season = data.get("season", "Kharif 2026")
+    crop_type = data.get("crop_type")
     await recompute_pnl_summary(farm_id, season, crop_type=crop_type)
     return expense
 
 
 async def log_revenue(farm_id: str, revenue_data: dict) -> FarmRevenue:
     """Logs crop harvest revenue and recomputes the seasonal P&L summary."""
-    qty = float(revenue_data.get("quantity_sold_kg", 0.0))
-    price = float(revenue_data.get("price_per_kg", 0.0))
-    revenue_data["total_revenue"] = round(qty * price, 2)
+    data = {**revenue_data, "farm_id": str(farm_id)}
+    qty = float(data.get("quantity_sold_kg", 0.0))
+    price = float(data.get("price_per_kg", 0.0))
+    data["total_revenue"] = round(qty * price, 2)
 
-    revenue = FarmRevenue(farm_id=str(farm_id), **revenue_data)
+    revenue = FarmRevenue(**data)
     await revenue.insert()
-    season = revenue_data.get("season", "Kharif 2026")
-    crop_type = revenue_data.get("crop_type")
+    season = data.get("season", "Kharif 2026")
+    crop_type = data.get("crop_type")
     await recompute_pnl_summary(farm_id, season, crop_type=crop_type)
     return revenue
 

@@ -38,6 +38,9 @@ def test_sms_whatsapp_gateway():
     assert res_wa is True
     print("[PASS] send_whatsapp_gateway simulation passed")
 
+import pytest
+
+@pytest.mark.asyncio
 async def test_notify_farmer_logic():
     from backend.services.notification_service import notify_farmer, get_or_create_preferences
     from backend.db.mongodb import init_mongodb, close_mongodb

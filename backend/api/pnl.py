@@ -64,7 +64,7 @@ def serialize_doc(doc) -> dict:
 
 # ── 1. Expenses Endpoints ─────────────────────────────────────
 
-@router.post("/expenses", summary="Log a farm expense")
+@router.post("/expenses", status_code=status.HTTP_201_CREATED, summary="Log a farm expense")
 async def create_expense_endpoint(payload: CreateExpenseRequest):
     """
     Logs an expense transaction and triggers automatic seasonal P&L re-computation.
@@ -146,7 +146,7 @@ async def delete_expense_endpoint(expense_id: str):
 
 # ── 2. Revenue Endpoints ──────────────────────────────────────
 
-@router.post("/revenue", summary="Log crop sale revenue")
+@router.post("/revenue", status_code=status.HTTP_201_CREATED, summary="Log crop sale revenue")
 async def create_revenue_endpoint(payload: CreateRevenueRequest):
     """
     Logs actual crop harvest sales / mandi revenue and recalculates actual profit.
