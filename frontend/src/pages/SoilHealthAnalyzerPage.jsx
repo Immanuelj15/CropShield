@@ -11,7 +11,7 @@ import BoundaryDrawingStep from '../components/BoundaryDrawingStep'
 import SoilReportCard from '../components/SoilReportCard'
 import LabReportUpload from '../components/LabReportUpload'
 
-const API_BASE = 'http://localhost:8000/api/v1'
+const API_BASE = '/api/v1'
 
 const STEP_TITLES = [
   '1. Draw Field Boundary',
@@ -46,7 +46,7 @@ export default function SoilHealthAnalyzerPage() {
   useEffect(() => {
     const fetchFarms = async () => {
       try {
-        const token = localStorage.getItem('token')
+        const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('token')
         const headers = token ? { Authorization: `Bearer ${token}` } : {}
         const res = await fetch(`${API_BASE}/farmer/farms`, { headers })
         if (res.ok) {

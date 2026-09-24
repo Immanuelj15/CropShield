@@ -4,6 +4,7 @@ Orchestrates seasonal timeline: Smart Irrigation, Fertilizer, Pest Monitoring, H
 and Sustainable Farming Advisor recommendations.
 """
 from fastapi import APIRouter, HTTPException, Body
+from fastapi.encoders import jsonable_encoder
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 
@@ -39,7 +40,7 @@ async def create_activity_plan(payload: GeneratePlanRequest):
             crop_type=payload.crop_type,
             sowing_date_input=payload.sowing_date,
         )
-        data = plan.dict()
+        data = jsonable_encoder(plan)
         data["id"] = str(plan.id)
         data["farm_id"] = str(plan.farm_id)
         return data
@@ -59,7 +60,10 @@ async def get_activity_plan(farm_id: str):
         plan = await get_active_activity_plan(farm_id)
         if not plan:
             return {"active": False, "message": "No active activity plan found for this farm."}
-        return {"active": True, "plan": plan}
+        data = jsonable_encoder(plan)
+        data["id"] = str(plan.id)
+        data["farm_id"] = str(plan.farm_id)
+        return {"active": True, "plan": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving plan: {str(e)}")
 

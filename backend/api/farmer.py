@@ -13,7 +13,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from backend.utils.auth_utils import require_roles
+from backend.utils.auth_utils import require_roles, get_optional_current_user
 from backend.models.user import User as MongoUser
 from backend.models.farm import Farm as MongoFarm
 from backend.models.pest_warning_log import PestWarningLog as MongoWarningLog
@@ -70,6 +70,73 @@ async def get_my_farm(
         "location": farm.location,
         "created_at": farm.created_at,
     }
+
+
+@router.get("/farmer/profile")
+async def get_farmer_profile(
+    current_user: Optional[MongoUser] = Depends(get_optional_current_user)
+):
+    """Returns profile and farm details for auto-fill in Crop Recommendation and Planner."""
+    farm = None
+    if current_user:
+        if current_user.farm_id:
+            farm = await MongoFarm.get(current_user.farm_id)
+        if not farm:
+            farm = await MongoFarm.find_one(MongoFarm.owner_id == current_user.id)
+    if not farm:
+        farm = await MongoFarm.find_one()
+
+    farm_data = None
+    if farm:
+        farm_data = {
+            "id": str(farm.id),
+            "farm_name": farm.farm_name,
+            "district": farm.district,
+            "soil_type": farm.soil_type,
+            "crop_type": farm.crop_type,
+            "area_hectares": farm.area_hectares,
+            "water_availability": getattr(farm, "water_availability", "Medium"),
+            "climate_zone": getattr(farm, "climate_zone", "Southern Semi-Arid"),
+        }
+
+    return {
+        "status": "success",
+        "user": {
+            "email": current_user.email,
+            "role": current_user.role,
+            "full_name": getattr(current_user, "full_name", current_user.email.split("@")[0]),
+        } if current_user else None,
+        "farm": farm_data,
+    }
+
+
+@router.get("/farms")
+@router.get("/farmer/farms")
+async def list_user_farms(
+    current_user: Optional[MongoUser] = Depends(get_optional_current_user)
+):
+    """Returns available farms for the user or platform demo farm."""
+    farms = []
+    if current_user:
+        farms = await MongoFarm.find(MongoFarm.owner_id == current_user.id).to_list()
+    if not farms:
+        farms = await MongoFarm.find().limit(20).to_list()
+
+    return [
+        {
+            "id": str(f.id),
+            "_id": str(f.id),
+            "farm_name": f.farm_name,
+            "owner_id": str(f.owner_id),
+            "district": f.district,
+            "crop_type": f.crop_type,
+            "soil_type": f.soil_type,
+            "area_hectares": f.area_hectares,
+            "water_availability": getattr(f, "water_availability", "Medium"),
+            "location": f.location,
+        }
+        for f in farms
+    ]
 
 
 @router.get("/history/me")

@@ -9,7 +9,7 @@ import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { useLocalizedField, getLocalizedText } from '../utils/useLocalizedField'
 
-const API_BASE = 'http://localhost:8000/api/v1'
+const API_BASE = '/api/v1'
 
 const SUPPORTED_ADVISORY_LANGS = [
   { code: 'en', label: 'English', native: 'English', required: true },

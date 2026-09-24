@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react'
 import {
   Sprout, Coins, Droplets, MapPin, Calendar, Sparkles,
   ArrowRight, RefreshCw, AlertCircle, CheckCircle2, Sliders,
-  HelpCircle, Info, ChevronRight, Layers, FileSpreadsheet
+  HelpCircle, Info, ChevronRight, Layers, FileSpreadsheet, Scale
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import CropRecommendationCard from '../components/CropRecommendationCard'
 import { formatINR } from '../components/ProfitRangeDisplay'
 
-const API_BASE = 'http://localhost:8000/api/v1'
+const API_BASE = '/api/v1'
 
 const BUDGET_PRESETS = [
   { label: '₹25,000', value: 25000 },

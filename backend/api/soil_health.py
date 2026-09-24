@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query, status
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
 from backend.models.soil_health_report import SoilHealthReport
@@ -42,6 +43,13 @@ class GenerateSoilReportRequest(BaseModel):
     district: Optional[str] = None
 
 
+def serialize_report(r: SoilHealthReport) -> dict:
+    d = jsonable_encoder(r)
+    d["id"] = str(r.id)
+    d["_id"] = str(r.id)
+    return d
+
+
 @router.post("/generate", response_model=Dict[str, Any], summary="Generate Preliminary Soil Report from Boundary")
 async def generate_soil_report_endpoint(req: GenerateSoilReportRequest):
     """
@@ -61,7 +69,7 @@ async def generate_soil_report_endpoint(req: GenerateSoilReportRequest):
         return {
             "status": "success",
             "report_id": str(report.id),
-            "report": report.dict(),
+            "report": serialize_report(report),
         }
     except Exception as e:
         logger.error("Failed to generate preliminary soil report: %s", e)
@@ -160,7 +168,7 @@ async def upload_lab_report_endpoint(
         "status": "success",
         "message": "Verified lab soil test report processed successfully. Downstream recommendations updated.",
         "report_id": str(lab_report.id),
-        "report": lab_report.dict(),
+        "report": serialize_report(lab_report),
     }
 
 
@@ -190,7 +198,7 @@ async def get_soil_history_endpoint(farm_id: str):
     return {
         "farm_id": farm_id,
         "count": len(reports),
-        "reports": [r.dict() for r in reports],
+        "reports": [serialize_report(r) for r in reports],
     }
 
 

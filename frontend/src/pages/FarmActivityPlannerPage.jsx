@@ -12,7 +12,7 @@ import IrrigationCard from '../components/IrrigationCard'
 import FertilizerCard from '../components/FertilizerCard'
 import ActivityTimelineItem from '../components/ActivityTimelineItem'
 
-const API_BASE = 'http://localhost:8000/api/v1'
+const API_BASE = '/api/v1'
 
 const TAMIL_NADU_15_CROPS = [
   'Cotton', 'Rice', 'Sorghum', 'Millets', 'Sugarcane',
@@ -47,7 +47,9 @@ export default function FarmActivityPlannerPage() {
   const fetchFarms = async () => {
     setLoadingFarms(true)
     try {
-      const res = await fetch(`${API_BASE}/farms`)
+      const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('token')
+      const headers = token ? { Authorization: `Bearer ${token}` } : {}
+      const res = await fetch(`${API_BASE}/farms`, { headers })
       if (res.ok) {
         const data = await res.json()
         setFarms(data)

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 
-const API_BASE = 'http://localhost:8000/api/v1'
+const API_BASE = '/api/v1'
 
 export default function AgronomistDashboard() {
   const [activeTab, setActiveTab] = useState('threats') // 'threats' | 'weather' | 'support' | 'grid' | 'reports' | 'feedback'

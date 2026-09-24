@@ -20,7 +20,7 @@ import { WarningCardSkeleton, CounterfactualSkeleton } from '../components/Skele
 import FarmerBottomNav from '../components/FarmerBottomNav'
 import { queueOfflineAction } from '../utils/offlineQueue'
 
-const API_BASE = 'http://localhost:8000/api/v1'
+const API_BASE = '/api/v1'
 
 const compressImage = (file, maxWidth = 1024, quality = 0.8) => {
   return new Promise((resolve) => {

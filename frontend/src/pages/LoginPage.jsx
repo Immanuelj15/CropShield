@@ -74,7 +74,7 @@ export default function LoginPage() {
     setSuccess(null)
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/login', {
+      const response = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: email, email: email, password: password }),
