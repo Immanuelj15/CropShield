@@ -237,6 +237,7 @@ class TokenResponse(BaseModel):
     name:         Optional[str] = None
     region_assigned: Optional[str] = None
     farm_id:      Optional[str] = None
+    preferred_language: Optional[str] = "en"
 
 class UserProfile(BaseModel):
     id:        Optional[Any] = 1
@@ -248,6 +249,10 @@ class UserProfile(BaseModel):
     district:  Optional[str] = None
     region_assigned: Optional[str] = None
     farm_id:   Optional[str] = None
+    preferred_language: Optional[str] = "en"
+
+class UserLanguageUpdate(BaseModel):
+    language: str = "en"
 
 
 

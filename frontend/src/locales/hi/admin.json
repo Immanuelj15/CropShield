@@ -1,0 +1,14 @@
+{
+  "admin_center": "एग्रीगार्ड AI सिस्टम प्रशासन केंद्र",
+  "system_health": "सिस्टम और सेवा स्वास्थ्य",
+  "knowledge_base": "कीट एवं रोग सलाह ज्ञानकोष",
+  "manage_advisories": "कृषि सलाह प्रबंधित करें",
+  "add_advisory": "नई सलाह जोड़ें",
+  "registered_farms": "GPS पंजीकृत खेत क्षेत्र",
+  "user_accounts": "उपयोगकर्ता और भूमिका प्रबंधन",
+  "retraining_pipeline": "मॉडल पुनः प्रशिक्षण और ड्रिफ्ट ऑडिटिंग",
+  "run_ingestion_now": "सुबह 5 बजे का डेटा संग्रह अभी चलाएं",
+  "trigger_retraining": "XGBoost पुनः प्रशिक्षण शुरू करें",
+  "model_accuracy": "उत्पादन मॉडल सटीकता",
+  "drift_status": "कोवेरिएट शिफ्ट / ड्रिफ्ट स्थिति"
+}

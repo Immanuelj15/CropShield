@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import TodayPage from './pages/TodayPage'
 import YieldPage from './pages/YieldPage'
 import OutbreakMapPage from './pages/OutbreakMapPage'
@@ -16,6 +17,7 @@ import NotificationSettingsPage from './pages/NotificationSettingsPage'
 import VoiceAssistantModal from './components/VoiceAssistantModal'
 import ChatbotWidget from './components/ChatbotWidget'
 import OfflineBanner from './components/OfflineBanner'
+import LanguageSelector from './components/LanguageSelector'
 import clsx from 'clsx'
 
 // Ensure stale localStorage tokens from previous sessions do not bypass login
@@ -83,38 +85,39 @@ function HomeRedirect() {
   return <Navigate to="/farmer/today" replace />
 }
 
-function getNavItemsForRole(role) {
+function getNavItemsForRole(role, t) {
   if (role === 'agronomist') {
     return [
-      { to: '/agronomist/dashboard', label: 'Threat Queue', icon: ShieldCheck },
-      { to: '/expert', label: 'AI Review Desk', icon: Compass },
-      { to: '/regional-scan', label: 'Satellite Scan', icon: MapPin },
-      { to: '/outbreak', label: 'Outbreak Map', icon: Map },
-      { to: '/yield', label: 'Yield Impact', icon: Sprout },
+      { to: '/agronomist/dashboard', label: t('nav_threat_queue', 'Threat Queue'), icon: ShieldCheck },
+      { to: '/expert', label: t('nav_review_desk', 'AI Review Desk'), icon: Compass },
+      { to: '/regional-scan', label: t('nav_satellite_scan', 'Satellite Scan'), icon: MapPin },
+      { to: '/outbreak', label: t('nav_outbreak', 'Outbreak Map'), icon: Map },
+      { to: '/yield', label: t('nav_yield', 'Yield Impact'), icon: Sprout },
     ]
   }
   if (role === 'admin') {
     return [
-      { to: '/admin/dashboard', label: 'Admin Center', icon: Settings },
-      { to: '/agronomist/dashboard', label: 'Agronomist Ops', icon: ShieldCheck },
-      { to: '/farmer/today', label: 'Farmer View', icon: Leaf },
-      { to: '/regional-scan', label: 'Spatial Scan', icon: MapPin },
-      { to: '/outbreak', label: 'Outbreak Map', icon: Map },
-      { to: '/farmer/notifications', label: 'Delivery & PWA', icon: Bell },
+      { to: '/admin/dashboard', label: t('nav_admin_center', 'Admin Center'), icon: Settings },
+      { to: '/agronomist/dashboard', label: t('nav_agronomist_ops', 'Agronomist Ops'), icon: ShieldCheck },
+      { to: '/farmer/today', label: t('nav_farmer_view', 'Farmer View'), icon: Leaf },
+      { to: '/regional-scan', label: t('nav_satellite_scan', 'Spatial Scan'), icon: MapPin },
+      { to: '/outbreak', label: t('nav_outbreak', 'Outbreak Map'), icon: Map },
+      { to: '/farmer/notifications', label: t('nav_delivery_pwa', 'Delivery & PWA'), icon: Bell },
     ]
   }
   // Default: farmer
   return [
-    { to: '/farmer/today', label: "Today's Warning", icon: AlertTriangle },
-    { to: '/regional-scan', label: 'Draw-to-Scan', icon: MapPin },
-    { to: '/yield', label: 'Yield Predictor', icon: Sprout },
-    { to: '/outbreak', label: 'Outbreak Map', icon: Map },
-    { to: '/history', label: 'Field History', icon: Clock },
-    { to: '/farmer/notifications', label: 'Alert Channels', icon: Bell },
+    { to: '/farmer/today', label: t('nav_today', "Today's Warning"), icon: AlertTriangle },
+    { to: '/regional-scan', label: t('nav_draw_scan', 'Draw-to-Scan'), icon: MapPin },
+    { to: '/yield', label: t('nav_yield', 'Yield Predictor'), icon: Sprout },
+    { to: '/outbreak', label: t('nav_outbreak', 'Outbreak Map'), icon: Map },
+    { to: '/history', label: t('nav_history', 'Field History'), icon: Clock },
+    { to: '/farmer/notifications', label: t('nav_alert_channels', 'Alert Channels'), icon: Bell },
   ]
 }
 
 function Navbar() {
+  const { t } = useTranslation(['common', 'auth'])
   const navigate = useNavigate()
   const location = useLocation()
   const isLoginPage = location.pathname === '/login'
@@ -145,17 +148,17 @@ function Navbar() {
 
   const roleMeta = {
     farmer: {
-      name: 'Farmer',
+      name: t('role_farmer', 'Farmer'),
       badge: 'bg-emerald-50 text-emerald-800 border-emerald-300/80',
       dot: 'bg-emerald-500',
     },
     agronomist: {
-      name: 'Agronomist',
+      name: t('role_agronomist', 'Agronomist'),
       badge: 'bg-sky-50 text-sky-800 border-sky-300/80',
       dot: 'bg-sky-500',
     },
     admin: {
-      name: 'System Admin',
+      name: t('role_admin', 'System Admin'),
       badge: 'bg-purple-50 text-purple-800 border-purple-300/80',
       dot: 'bg-purple-500',
     },
@@ -167,7 +170,7 @@ function Navbar() {
     dot: 'bg-stone-400',
   }
 
-  const navItems = getNavItemsForRole(currentUser?.role)
+  const navItems = getNavItemsForRole(currentUser?.role, t)
 
   return (
     <>
@@ -210,8 +213,9 @@ function Navbar() {
               </nav>
             )}
 
-            {/* Right Action Buttons — Always visible, properly spaced, never clipped */}
+            {/* Right Action Buttons — Language selector, role badge, voice, sign in/out */}
             <div className="hidden lg:flex items-center gap-2 xl:gap-2.5 shrink-0">
+              <LanguageSelector />
               {isLoginPage ? (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-xl border border-emerald-200">
                   <ShieldCheck size={14} className="text-emerald-700" />
@@ -234,7 +238,7 @@ function Navbar() {
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-stone-600 hover:text-red-700 hover:bg-red-50 border border-stone-200 hover:border-red-200 transition-colors whitespace-nowrap cursor-pointer"
                   >
                     <LogOut size={14} className="shrink-0" />
-                    <span>Sign Out</span>
+                    <span>{t('auth:sign_out', 'Sign Out')}</span>
                   </button>
 
                   {/* Tamil Voice Assistant Button */}
@@ -258,7 +262,7 @@ function Navbar() {
                   )}
                 >
                   <Lock size={14} className="shrink-0" />
-                  <span>Sign In</span>
+                  <span>{t('auth:sign_in', 'Sign In')}</span>
                 </NavLink>
               )}
             </div>
@@ -286,7 +290,12 @@ function Navbar() {
 
         {/* Mobile Dropdown Menu */}
         {open && (
-          <div className="lg:hidden border-t border-stone-200 bg-white px-4 py-3 flex flex-col gap-1.5 shadow-lg animate-fadeIn">
+          <div className="lg:hidden border-t border-stone-200 bg-white px-4 py-3 flex flex-col gap-2 shadow-lg animate-fadeIn">
+            {/* Language Selector in mobile menu */}
+            <div className="pb-1.5 border-b border-stone-100">
+              <LanguageSelector variant="pill" className="w-full" />
+            </div>
+
             {currentUser ? (
               <>
                 <div className={clsx("px-3 py-2 rounded-xl text-xs font-bold border flex items-center justify-between", currentRoleMeta.badge)}>
@@ -327,7 +336,7 @@ function Navbar() {
                     className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 border border-red-200 cursor-pointer"
                   >
                     <LogOut size={15} className="shrink-0" />
-                    <span>Sign Out</span>
+                    <span>{t('auth:sign_out', 'Sign Out')}</span>
                   </button>
                 </div>
               </>
@@ -342,7 +351,7 @@ function Navbar() {
                 className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 text-white"
               >
                 <Lock size={16} className="shrink-0" />
-                <span>Sign In to Access Dashboard</span>
+                <span>{t('auth:sign_in', 'Sign In to Access Dashboard')}</span>
               </NavLink>
             )}
           </div>
@@ -355,11 +364,12 @@ function Navbar() {
 }
 
 function Footer() {
+  const { t } = useTranslation('common')
   return (
     <footer className="mt-16 border-t border-stone-200 bg-white py-8 text-center text-xs text-stone-500 space-y-1">
-      <p className="font-semibold text-stone-700">AgriGuard AI — Pure Software Multi-Role Architecture v2.0.0 · Tamil Nadu & India</p>
+      <p className="font-semibold text-stone-700">AgriGuard AI — {t('footer_subtitle', 'Pure Software Multi-Role Architecture v2.0.0 · Tamil Nadu & India')}</p>
       <p>
-        NASA POWER Satellite Reanalysis (1980–2025) · Tree-SHAP XAI · Prescriptive Counterfactual Engine · Haversine Spatial Clustering
+        {t('footer_tech', 'NASA POWER Satellite Reanalysis (1980–2025) · Tree-SHAP XAI · Prescriptive Counterfactual Engine · Haversine Spatial Clustering')}
       </p>
       <p className="text-[11px] text-stone-400">Pure-Software Implementation · No Hardware/IoT Sensor Dependencies · TNAU & ICAR Knowledge Integrations</p>
     </footer>

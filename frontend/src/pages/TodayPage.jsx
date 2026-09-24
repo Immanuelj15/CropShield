@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react'
 import { MapPin, Calendar, Send, ShieldAlert, Cpu, CheckCircle2, AlertTriangle, Droplets, Wind, Thermometer, Sun, Info, BellRing, Sparkles } from 'lucide-react'
 import axios from 'axios'
+import { useTranslation } from 'react-i18next'
+import { useLocalizedField, getLocalizedText } from '../utils/useLocalizedField'
 import VegetationHealthCard from '../components/VegetationHealthCard'
 import FusedHealthScoreCard from '../components/FusedHealthScoreCard'
 import EconomicImpactCard from '../components/EconomicImpactCard'
 import { ConfidenceBadge } from '../components/ConfidenceBadge'
 
 export default function TodayPage() {
+  const { t } = useTranslation(['farmer', 'common', 'validation'])
+  const { currentLang } = useLocalizedField()
   const [form, setForm] = useState({
     state: 'Tamil Nadu',
     district: 'Thoothukudi',
@@ -138,12 +142,12 @@ export default function TodayPage() {
       <div className="bg-gradient-to-r from-emerald-900 via-teal-800 to-emerald-950 rounded-3xl p-8 text-white shadow-xl">
         <div className="flex items-center gap-2 mb-2">
           <span className="px-3 py-1 bg-emerald-500/30 text-emerald-200 text-xs font-bold rounded-full border border-emerald-400/30">
-            Location-Based AI Prediction Engine (No Image Required)
+            {t('common:app_name')} · {t('farmer:today_warning_title')}
           </span>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">Location AI Early Warning & Advisory</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('farmer:today_warning_title')} & {t('farmer:counterfactual_title')}</h1>
         <p className="mt-2 text-emerald-100 text-sm max-w-3xl leading-relaxed">
-          Predicts pest and disease risks based on farm location, crop variety, historical climate reanalysis (NASA POWER 1980–2025), and 12+ engineered microclimate indicators.
+          {t('common:app_tagline')}
         </p>
       </div>
 

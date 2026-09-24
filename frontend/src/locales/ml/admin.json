@@ -1,0 +1,14 @@
+{
+  "admin_center": "അഗ്രിഗാർഡ് AI സിസ്റ്റം അഡ്മിനിസ്ട്രേഷൻ സെന്റർ",
+  "system_health": "സിസ്റ്റം ആരോഗ്യസ്ഥിതി",
+  "knowledge_base": "കീട-രോഗ വിവരശേഖരം",
+  "manage_advisories": "കാർഷിക ഉപദേശങ്ങൾ കൈകാര്യം ചെയ്യുക",
+  "add_advisory": "പുതിയ ഉപദേശം ചേർക്കുക",
+  "registered_farms": "GPS രജിസ്റ്റർ ചെയ്ത ഫാമുകൾ",
+  "user_accounts": "ഉപയോക്തൃ മാനേജ്മെന്റ്",
+  "retraining_pipeline": "മോഡൽ പുനഃപരിശീലനം",
+  "run_ingestion_now": "ഡാറ്റ ശേഖരണം ഇപ്പോൾ പ്രവർത്തിപ്പിക്കുക",
+  "trigger_retraining": "XGBoost പുനഃപരിശീലനം ആരംഭിക്കുക",
+  "model_accuracy": "പ്രൊഡക്ഷൻ മോഡൽ കൃത്യത",
+  "drift_status": "ഡാറ്റാ വ്യതിയാന നില"
+}

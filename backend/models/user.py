@@ -18,6 +18,7 @@ class User(Document):
     farm_id: Optional[PydanticObjectId] = None  # farmer only (reference to farm)
     location: Optional[Dict[str, Any]] = None  # GeoJSON Point: {"type": "Point", "coordinates": [lon, lat]}
     district: Optional[str] = None
+    preferred_language: str = "en"  # "en" | "ta" | "hi" | "te" | "ml"
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -1,0 +1,12 @@
+{
+  "portal_title": "Agronomist Verification & Outbreak Operations Portal",
+  "threat_queue": "High-Risk Threat Queue",
+  "pending_reviews": "Predictions Requiring Human Verification",
+  "verify_warning": "Verify Warning",
+  "approve_alert": "Approve Community Alert",
+  "modify_prescription": "Modify Agronomic Prescription",
+  "verified_success": "Warning reviewed and approved successfully!",
+  "expert_notes": "Agronomist Expert Notes",
+  "field_scouting_required": "Field Scouting Recommended",
+  "community_outbreak_risk": "Community Outbreak Risk (5km Radius)"
+}

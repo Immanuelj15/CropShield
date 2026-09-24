@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
+import { useLocalizedField, getLocalizedText } from '../utils/useLocalizedField'
 import RiskGauge from '../components/RiskGauge'
 import CounterfactualCard from '../components/CounterfactualCard'
 import EconomicImpactCard from '../components/EconomicImpactCard'
@@ -58,6 +60,8 @@ const compressImage = (file, maxWidth = 1024, quality = 0.8) => {
 }
 
 export default function FarmerDashboard() {
+  const { t } = useTranslation(['farmer', 'common', 'validation'])
+  const { currentLang } = useLocalizedField()
   const [activeTab, setActiveTab] = useState('warning') // 'warning' | 'disease' | 'treatments' | 'advisories' | 'alerts' | 'history'
   const [farm, setFarm] = useState(null)
   const [warningData, setWarningData] = useState(null)
@@ -394,11 +398,19 @@ export default function FarmerDashboard() {
   }
 
   const filteredAdvisories = advisories.filter(a => {
-    const matchesCrop = advisoryCrop === 'All' || a.crop_type.toLowerCase().includes(advisoryCrop.toLowerCase())
+    const pestName = getLocalizedText(a.pest_or_disease, currentLang).toLowerCase()
+    const cropName = getLocalizedText(a.crop_type, currentLang).toLowerCase()
+    const chem = getLocalizedText(a.chemical_treatment, currentLang).toLowerCase()
+    const org = getLocalizedText(a.organic_treatment, currentLang).toLowerCase()
+    const sym = getLocalizedText(a.symptoms, currentLang).toLowerCase()
+
+    const matchesCrop = advisoryCrop === 'All' || cropName.includes(advisoryCrop.toLowerCase())
+    const q = (advisorySearch || '').toLowerCase()
     const matchesSearch = !advisorySearch ||
-      a.pest_or_disease.toLowerCase().includes(advisorySearch.toLowerCase()) ||
-      (a.chemical_treatment && a.chemical_treatment.toLowerCase().includes(advisorySearch.toLowerCase())) ||
-      (a.organic_treatment && a.organic_treatment.toLowerCase().includes(advisorySearch.toLowerCase()))
+      pestName.includes(q) ||
+      chem.includes(q) ||
+      org.includes(q) ||
+      sym.includes(q)
     return matchesCrop && matchesSearch
   })
 
@@ -415,7 +427,7 @@ export default function FarmerDashboard() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-semibold rounded-full border border-emerald-400/30 mb-2">
-              <Sprout size={14} /> Self-Service Farmer Crop Intelligence Portal
+              <Sprout size={14} /> {t('common:app_name')} · {t('common:role_farmer')}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               {farm ? farm.farm_name : "Kovilpatti Black Soil Cotton Farm"}
@@ -436,13 +448,13 @@ export default function FarmerDashboard() {
               to="/farmer/notifications"
               className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/10"
             >
-              <Bell size={14} /> Alert Channels & PWA
+              <Bell size={14} /> {t('common:nav_alert_channels') || 'Alert Channels'}
             </NavLink>
             <button
               onClick={() => farm && fetchTodayWarning(farm)}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
             >
-              <Activity size={14} /> Refresh AI
+              <Activity size={14} /> {t('common:refresh')}
             </button>
           </div>
         </div>
@@ -450,12 +462,12 @@ export default function FarmerDashboard() {
         {/* Feature Navigation Tabs */}
         <div className="flex items-center gap-2 mt-6 overflow-x-auto pb-1 scrollbar-thin">
           {[
-            { id: 'warning', label: "Today's Warning & SHAP", icon: AlertTriangle },
-            { id: 'disease', label: "Disease Photo Scan", icon: Camera },
-            { id: 'treatments', label: "Treatment Log", icon: FileText, badge: treatments.length },
-            { id: 'advisories', label: "Digital Advisories", icon: Shield },
-            { id: 'alerts', label: "Regional Alerts", icon: Bell, badge: alerts.length },
-            { id: 'history', label: "Prediction History", icon: Clock },
+            { id: 'warning', label: t('farmer:today_warning_title') || "Today's Warning", icon: AlertTriangle },
+            { id: 'disease', label: t('farmer:disease_scan_title') || "Disease Photo Scan", icon: Camera },
+            { id: 'treatments', label: t('farmer:treatment_log_title') || "Treatment Log", icon: FileText, badge: treatments.length },
+            { id: 'advisories', label: t('farmer:advisories_tab') || "Digital Advisories", icon: Shield },
+            { id: 'alerts', label: t('farmer:regional_alerts_title') || "Regional Alerts", icon: Bell, badge: alerts.length },
+            { id: 'history', label: t('farmer:field_history_title') || "Prediction History", icon: Clock },
           ].map(tab => {
             const Icon = tab.icon
             const isActive = activeTab === tab.id
@@ -924,38 +936,48 @@ export default function FarmerDashboard() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredAdvisories.map((adv) => (
-              <div key={adv.id} className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm space-y-3 hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">{adv.crop_type} Advisory</span>
-                    <h3 className="font-bold text-base text-stone-900">{adv.pest_or_disease}</h3>
+            {filteredAdvisories.map((adv) => {
+              const cropName = getLocalizedText(adv.crop_type, currentLang)
+              const pestName = getLocalizedText(adv.pest_or_disease, currentLang)
+              const org = getLocalizedText(adv.organic_treatment, currentLang)
+              const chem = getLocalizedText(adv.chemical_treatment, currentLang)
+              const symp = Array.isArray(adv.symptoms)
+                ? adv.symptoms.map(s => getLocalizedText(s, currentLang)).filter(Boolean).join(', ')
+                : getLocalizedText(adv.symptoms, currentLang)
+
+              return (
+                <div key={adv.id} className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm space-y-3 hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">{cropName} {t('farmer:advisories_tab')}</span>
+                      <h3 className="font-bold text-base text-stone-900">{pestName}</h3>
+                    </div>
+                    <span className="text-[11px] px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 font-bold">{adv.season || 'All Seasons'}</span>
                   </div>
-                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 font-bold">{adv.season || 'All Seasons'}</span>
-                </div>
 
-                <div className="space-y-2 text-xs">
-                  {adv.symptoms?.[0] && (
-                    <p className="text-stone-600"><strong>Symptoms:</strong> {adv.symptoms[0]}</p>
-                  )}
-                  {adv.organic_treatment && (
-                    <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-900">
-                      <strong>🌿 Organic:</strong> {adv.organic_treatment}
-                    </div>
-                  )}
-                  {adv.chemical_treatment && (
-                    <div className="p-2.5 bg-stone-50 rounded-xl text-stone-800">
-                      <strong>🧪 Chemical:</strong> {adv.chemical_treatment}
-                    </div>
-                  )}
-                </div>
+                  <div className="space-y-2 text-xs">
+                    {symp && (
+                      <p className="text-stone-600"><strong>Symptoms:</strong> {symp}</p>
+                    )}
+                    {org && (
+                      <div className="p-2.5 bg-emerald-50 rounded-xl text-emerald-900">
+                        <strong>🌿 Organic:</strong> {org}
+                      </div>
+                    )}
+                    {chem && (
+                      <div className="p-2.5 bg-stone-50 rounded-xl text-stone-800">
+                        <strong>🧪 Chemical:</strong> {chem}
+                      </div>
+                    )}
+                  </div>
 
-                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-400">
-                  <span>Temp: {adv.favorable_temp_range}</span>
-                  <span>RH: {adv.favorable_humidity_range}</span>
+                  <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-400">
+                    <span>Temp: {adv.favorable_temp_range || '24-34°C'}</span>
+                    <span>RH: {adv.favorable_humidity_range || '65-85%'}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

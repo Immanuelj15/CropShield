@@ -1,0 +1,14 @@
+{
+  "admin_center": "AgriGuard AI System Administration Center",
+  "system_health": "System & Service Health",
+  "knowledge_base": "Pest & Disease Advisory Knowledge Base",
+  "manage_advisories": "Manage Agronomic Advisories",
+  "add_advisory": "Add New Advisory",
+  "registered_farms": "GPS Registered Farm Zones",
+  "user_accounts": "User & Role Management",
+  "retraining_pipeline": "Model Retraining & Drift Auditing",
+  "run_ingestion_now": "Execute 5 AM Ingestion Job Now",
+  "trigger_retraining": "Trigger XGBoost Retraining",
+  "model_accuracy": "Production Model Accuracy",
+  "drift_status": "Covariate Shift / Drift Status"
+}

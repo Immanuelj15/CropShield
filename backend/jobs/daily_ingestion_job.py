@@ -207,6 +207,8 @@ async def process_single_farm_ingestion(farm: MongoFarm) -> Dict[str, Any]:
                 "en": f"AgriGuard: High pest risk detected for your {farm.crop_type}. Open the app for details.",
                 "ta": f"AgriGuard: உங்கள் {farm.crop_type} பயிரில் அதிக ஆபத்து கண்டறியப்பட்டது. விவரங்களுக்கு பயன்பாட்டைத் திறக்கவும்.",
                 "hi": f"AgriGuard: आपकी {farm.crop_type} फसल में उच्च जोखिम पाया गया। विवरण के लिए ऐप खोलें।",
+                "te": f"AgriGuard: మీ {farm.crop_type} పంటలో అధిక తెగులు ప్రమాదం గుర్తించబడింది. వివరాల కోసం యాప్‌ని తెరవండి.",
+                "ml": f"AgriGuard: നിങ്ങളുടെ {farm.crop_type} വിളയിൽ ഉയർന്ന കീട സാധ്യത കണ്ടെത്തി. വിവരങ്ങൾക്കായി ആപ്പ് തുറക്കുക.",
             })
         except Exception as notif_err:
             logger.warning(f"Failed to dispatch high risk notification for farm {farm.id}: {notif_err}")

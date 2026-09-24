@@ -12,7 +12,7 @@ Platform governance, system configuration, and data management:
 """
 import time
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from beanie import PydanticObjectId
@@ -45,13 +45,13 @@ PLATFORM_THRESHOLDS = {
 # ── Schemas ───────────────────────────────────────────────────
 
 class PestDiseaseCreate(BaseModel):
-    pest_or_disease: str
-    crop_type: str
+    pest_or_disease: Union[Dict[str, str], str]
+    crop_type: Union[Dict[str, str], str]
     season: Optional[str] = "All"
-    symptoms: List[str] = Field(default_factory=list)
-    chemical_treatment: Optional[str] = None
-    organic_treatment: Optional[str] = None
-    prevention: Optional[str] = None
+    symptoms: Union[List[str], Dict[str, Any], str] = Field(default_factory=list)
+    chemical_treatment: Optional[Union[Dict[str, str], str]] = None
+    organic_treatment: Optional[Union[Dict[str, str], str]] = None
+    prevention: Optional[Union[Dict[str, str], str]] = None
     favorable_temp_min: Optional[float] = None
     favorable_temp_max: Optional[float] = None
     favorable_rh_min: Optional[float] = None

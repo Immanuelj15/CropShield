@@ -261,6 +261,8 @@ async def predict_today(
                             "en": f"AgriGuard Advisory: 'Treat Now' recommended for your {request.crop}. Estimated net benefit of treating now: ₹{net_benefit:,.0f}.",
                             "ta": f"அக்ரிகார்ட் ஆலோசனைக் குறிப்பு: உங்கள் {request.crop} பயிருக்கு உடனடியாக சிகிச்சையளிக்க பரிந்துரைக்கப்படுகிறது. எதிர்பார்க்கப்படும் நிகர லாபம்: ₹{net_benefit:,.0f}.",
                             "hi": f"एग्रीगार्ड सलाह: आपकी {request.crop} फसल के लिए 'अभी उपचार करें' अनुशंसित है। कुल अनुमानित लाभ: ₹{net_benefit:,.0f}।",
+                            "te": f"అగ్రిగార్డ్ సలహా: మీ {request.crop} పంటకు 'ఇప్పుడే చికిత్స చేయండి' అని సిఫార్సు చేయబడింది. అంచనా నికర ప్రయోజనం: ₹{net_benefit:,.0f}.",
+                            "ml": f"അഗ്രിഗാർഡ് ഉപദേശം: നിങ്ങളുടെ {request.crop} വിളയ്ക്ക് 'ഉടൻ ചികിത്സിക്കുക' എന്ന് ശുപാർശ ചെയ്യുന്നു. പ്രതീക്ഷിക്കുന്ന അറ്റാദായം: ₹{net_benefit:,.0f}.",
                         })
                     except Exception as treat_err:
                         print(f"[WARN] Failed to deliver Treat Now notification: {treat_err}")

@@ -64,4 +64,8 @@ export const sendTestNotification = (payload = {}) =>
 export const getNotificationLogs = (limit = 20) =>
   api.get('/notifications/logs', { params: { limit } }).then(r => r.data)
 
+// ── User Language Preference ──────────────────────────────────
+export const updateUserLanguage = (language) =>
+  api.put('/users/me/language', { language }).then(r => r.data)
+
 export default api

@@ -131,6 +131,8 @@ async def dispatch_5km_regional_alerts(
                 "en": f"AgriGuard Outbreak Alert: High pest threat ({threat_name}) detected at neighboring {origin_farm.farm_name} ({dist:.1f}km away). Preemptive scouting advised.",
                 "ta": f"அக்ரிகார்ட் எச்சரிக்கை: அருகில் உள்ள பண்ணையில் ({dist:.1f} கி.மீ) பூச்சி தாக்குதல் ({threat_name}) கண்டறியப்பட்டுள்ளது. முன்கூட்டியே கண்காணிக்கவும்.",
                 "hi": f"एग्रीगार्ड अलर्ट: पास के खेत में ({dist:.1f} किमी) कीट का प्रकोप ({threat_name}) पाया गया है। सतर्कता बरतें।",
+                "te": f"అగ్రిగార్డ్ హెచ్చరిక: సమీపంలోని పొలంలో ({dist:.1f} కి.మీ దూరంలో) తెగులు ముప్పు ({threat_name}) గుర్తించబడింది. ముందస్తు పరిశీలన చేయండి.",
+                "ml": f"അഗ്രിഗാർഡ് മുന്നറിയിപ്പ്: സമീപത്തെ കൃഷിയിടത്തിൽ ({dist:.1f} കി.മീ അകലെ) കീട ഭീഷണി ({threat_name}) കണ്ടെത്തി. മുൻകരുതൽ നിരീക്ഷണം നടത്തുക.",
             })
         except Exception as notif_err:
             logger.warning(f"Failed to dispatch regional outbreak notification for farm {neighbor.id}: {notif_err}")

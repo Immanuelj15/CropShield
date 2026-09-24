@@ -1,38 +1,41 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shield, User, Lock, ArrowRight, CheckCircle2, Sprout, ShieldAlert, Sparkles } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import LanguageSelector from '../components/LanguageSelector'
 
 const DEMO_ACCOUNTS = {
   farmer: {
-    label: 'Farmer',
+    labelKey: 'role_farmer',
     email: 'farmer@cropshield.org',
     password: 'farmer123',
     role: 'farmer',
-    desc: 'Access personal farm warning cards, satellite microclimate, and counterfactual advice.',
+    descKey: 'farmer_desc',
     icon: Sprout,
     badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
   },
   agronomist: {
-    label: 'Agronomist / Expert',
+    labelKey: 'role_agronomist',
     email: 'agronomist@cropshield.org',
     password: 'agro123',
     role: 'agronomist',
-    desc: 'Verify field pest outbreaks, review image scans, and approve district advisories.',
+    descKey: 'agronomist_desc',
     icon: Shield,
     badgeColor: 'bg-blue-100 text-blue-800 border-blue-300',
   },
   admin: {
-    label: 'System Admin',
+    labelKey: 'role_admin',
     email: 'admin@cropshield.org',
     password: 'admin123',
     role: 'admin',
-    desc: 'Manage regional risk grids, user permissions, and institutional data pipelines.',
+    descKey: 'admin_desc',
     icon: ShieldAlert,
     badgeColor: 'bg-purple-100 text-purple-800 border-purple-300',
   },
 }
 
 export default function LoginPage() {
+  const { t } = useTranslation(['auth', 'common', 'validation'])
   const navigate = useNavigate()
   const [selectedRole, setSelectedRole] = useState('farmer')
   const [email, setEmail] = useState(DEMO_ACCOUNTS.farmer.email)
@@ -82,7 +85,7 @@ export default function LoginPage() {
         const userObj = {
           email: data.username || email,
           role: data.role || selectedRole,
-          name: DEMO_ACCOUNTS[selectedRole]?.label || 'User',
+          name: t(`common:${DEMO_ACCOUNTS[selectedRole]?.labelKey}`) || 'User',
         }
         sessionStorage.setItem('cropshield_token', data.access_token)
         sessionStorage.setItem('cropshield_user', JSON.stringify(userObj))
@@ -92,7 +95,7 @@ export default function LoginPage() {
 
         setActiveUser(userObj)
         window.dispatchEvent(new Event('cropshield_auth_changed'))
-        setSuccess(`Logged in successfully! Redirecting to dashboard...`)
+        setSuccess(t('auth:signing_in'))
         
         setTimeout(() => {
           if (userObj.role === 'farmer') {
@@ -108,10 +111,10 @@ export default function LoginPage() {
 
       } else {
         const errData = await response.json().catch(() => ({}))
-        setError(errData.detail || 'Invalid email or password. Please check your credentials.')
+        setError(errData.detail || t('auth:invalid_credentials'))
       }
     } catch (err) {
-      setError('Unable to connect to AgriGuard backend. Please check server status.')
+      setError(t('validation:network_error'))
     } finally {
       setLoading(false)
     }
@@ -120,18 +123,25 @@ export default function LoginPage() {
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 animate-fadeIn">
+      {/* Prominent Language Bar for First-Launch / Pre-Login */}
+      <div className="flex flex-col sm:flex-row items-center justify-between bg-white/80 backdrop-blur-sm border border-stone-200/80 rounded-2xl p-3 px-5 mb-6 shadow-sm gap-3">
+        <span className="text-xs font-bold text-stone-600 uppercase tracking-wider">
+          {t('common:select_language')}:
+        </span>
+        <LanguageSelector variant="pill" />
+      </div>
+
       {/* Hero Banner */}
       <div className="bg-gradient-to-r from-stone-900 via-emerald-950 to-stone-900 rounded-3xl p-8 sm:p-10 text-white shadow-2xl relative overflow-hidden mb-8 border border-emerald-900/40">
         <div className="relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-semibold rounded-full border border-emerald-400/30 mb-3">
-            <Sparkles size={14} /> AgriGuard AI Security & Role-Based Access
+            <Sparkles size={14} /> {t('common:app_name')}
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-            Sign In to <span className="text-emerald-400">AgriGuard</span>
+            {t('auth:login_title')}
           </h1>
           <p className="mt-3 text-stone-300 text-sm leading-relaxed">
-            Explainable AI-based pest risk prediction, NASA POWER climate intelligence, and
-            counterfactual agronomic decision support for farmers and experts across India.
+            {t('auth:login_subtitle')}
           </p>
         </div>
       </div>
@@ -141,7 +151,7 @@ export default function LoginPage() {
         <div className="lg:col-span-5 space-y-4">
           <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm">
             <h3 className="font-bold text-stone-900 text-sm uppercase tracking-wider mb-4">
-              Select Demo Role
+              {t('auth:role')}
             </h3>
             <div className="space-y-3">
               {Object.entries(DEMO_ACCOUNTS).map(([key, item]) => {
@@ -163,10 +173,10 @@ export default function LoginPage() {
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm text-stone-900">{item.label}</span>
+                        <span className="font-bold text-sm text-stone-900">{t(`common:${item.labelKey}`)}</span>
                         {isSelected && <CheckCircle2 size={16} className="text-emerald-600" />}
                       </div>
-                      <p className="text-xs text-stone-500 mt-1 leading-snug">{item.desc}</p>
+                      <p className="text-xs text-stone-500 mt-1 leading-snug">{item.descKey ? t(`common:${item.descKey}`, item.desc) : item.desc}</p>
                     </div>
                   </button>
                 )
@@ -180,19 +190,19 @@ export default function LoginPage() {
           <div className="bg-white rounded-2xl border border-stone-200 p-8 shadow-sm space-y-6">
             <div>
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-stone-900">Sign In</h2>
+                <h2 className="text-xl font-bold text-stone-900">{t('auth:sign_in')}</h2>
                 <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${DEMO_ACCOUNTS[selectedRole].badgeColor}`}>
-                  {DEMO_ACCOUNTS[selectedRole].label}
+                  {t(`common:${DEMO_ACCOUNTS[selectedRole].labelKey}`)}
                 </span>
               </div>
-              <p className="text-xs text-stone-500 mt-1">Enter your credentials or click a role on the left to auto-fill.</p>
+              <p className="text-xs text-stone-500 mt-1">{t('auth:login_subtitle')}</p>
             </div>
 
             {activeUser && (
               <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
-                  <span className="font-bold text-emerald-900 block">Currently Signed In</span>
-                  <span className="text-stone-600">{activeUser.email} ({activeUser.role})</span>
+                  <span className="font-bold text-emerald-900 block">{t('common:status') || 'Status'}</span>
+                  <span className="text-stone-600">{activeUser.email} ({t(`common:role_${activeUser.role}`, activeUser.role)})</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -204,7 +214,7 @@ export default function LoginPage() {
                     }}
                     className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm"
                   >
-                    Go to Dashboard
+                    {t('common:next')}
                   </button>
 
                   <button
@@ -212,7 +222,7 @@ export default function LoginPage() {
                     onClick={handleLogoutExisting}
                     className="px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-700 font-semibold text-xs hover:bg-stone-50"
                   >
-                    Sign Out
+                    {t('auth:sign_out')}
                   </button>
                 </div>
               </div>
@@ -233,7 +243,7 @@ export default function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Email Address / Username
+                  {t('auth:email_or_username')}
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-stone-400">
@@ -252,7 +262,7 @@ export default function LoginPage() {
 
               <div>
                 <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Password
+                  {t('auth:password')}
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-stone-400">
@@ -274,7 +284,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-sm shadow-md hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2 mt-2"
               >
-                {loading ? 'Authenticating...' : `Sign In as ${DEMO_ACCOUNTS[selectedRole].label}`}
+                {loading ? t('auth:signing_in') : `${t('auth:sign_in')} (${t('common:' + DEMO_ACCOUNTS[selectedRole].labelKey)})`}
                 <ArrowRight size={16} />
               </button>
             </form>

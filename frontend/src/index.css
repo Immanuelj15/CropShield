@@ -1,11 +1,26 @@
 @import 'leaflet/dist/leaflet.css';
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --font-en: 'Noto Sans', 'Inter', system-ui, sans-serif;
+  --font-ta: 'Noto Sans Tamil', system-ui, sans-serif;
+  --font-hi: 'Noto Sans Devanagari', system-ui, sans-serif;
+  --font-te: 'Noto Sans Telugu', system-ui, sans-serif;
+  --font-ml: 'Noto Sans Malayalam', system-ui, sans-serif;
+}
+
+body[data-lang="en"], body:not([data-lang]) { font-family: var(--font-en); }
+body[data-lang="ta"] { font-family: var(--font-ta); }
+body[data-lang="hi"] { font-family: var(--font-hi); }
+body[data-lang="te"] { font-family: var(--font-te); }
+body[data-lang="ml"] { font-family: var(--font-ml); }
+
 @layer base {
   html {
-    font-family: 'Source Sans 3', system-ui, sans-serif;
+    font-family: inherit;
     -webkit-font-smoothing: antialiased;
   }
 

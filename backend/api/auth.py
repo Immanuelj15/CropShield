@@ -3,13 +3,14 @@ AgriGuard AI — Auth Router
 Endpoints for user registration, authentication (JWT), and profile retrieval.
 """
 
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from backend.db.database import get_db
 from backend.models.db_models import User as SqlUser, UserRole
 from backend.models.user import User as MongoUser
-from backend.models.schemas import UserRegister, UserLogin, TokenResponse, UserProfile
-from backend.utils.auth_utils import hash_password, verify_password, create_access_token
+from backend.models.schemas import UserRegister, UserLogin, TokenResponse, UserProfile, UserLanguageUpdate
+from backend.utils.auth_utils import hash_password, verify_password, create_access_token, oauth2_scheme
 
 router = APIRouter()
 
@@ -71,6 +72,7 @@ async def login_user(user_in: UserLogin, db: Session = Depends(get_db)):
                 "name": mongo_user.name,
                 "region_assigned": getattr(mongo_user, "region_assigned", None),
                 "farm_id": str(mongo_user.farm_id) if getattr(mongo_user, "farm_id", None) else None,
+                "preferred_language": getattr(mongo_user, "preferred_language", "en") or "en",
             }
     except Exception as e:
         print(f"[AUTH] MongoDB lookup warning: {e}")
@@ -88,6 +90,7 @@ async def login_user(user_in: UserLogin, db: Session = Depends(get_db)):
             "role": sql_user.role.value,
             "user_id": str(sql_user.id),
             "name": sql_user.full_name,
+            "preferred_language": "en",
         }
 
     raise HTTPException(status_code=401, detail="Invalid email or password.")
@@ -109,8 +112,8 @@ async def get_me(username: str = "farmer@cropshield.org", db: Session = Depends(
             "district": mongo_user.district or "Tamil Nadu",
             "region_assigned": getattr(mongo_user, "region_assigned", None),
             "farm_id": str(mongo_user.farm_id) if getattr(mongo_user, "farm_id", None) else None,
+            "preferred_language": getattr(mongo_user, "preferred_language", "en") or "en",
         }
-
 
     # Check SQLite
     sql_user = db.query(SqlUser).filter(
@@ -123,7 +126,8 @@ async def get_me(username: str = "farmer@cropshield.org", db: Session = Depends(
             "email": sql_user.email,
             "role": sql_user.role.value,
             "full_name": sql_user.full_name,
-            "district": sql_user.district
+            "district": sql_user.district,
+            "preferred_language": "en",
         }
 
     return {
@@ -132,6 +136,36 @@ async def get_me(username: str = "farmer@cropshield.org", db: Session = Depends(
         "email": username,
         "role": "farmer",
         "full_name": "AgriGuard Farmer",
-        "district": "Tamil Nadu"
+        "district": "Tamil Nadu",
+        "preferred_language": "en",
+    }
+
+
+@router.put("/users/me/language")
+async def update_my_language(
+    payload: UserLanguageUpdate,
+    token: Optional[str] = Depends(oauth2_scheme)
+):
+    """Updates the user's preferred language (en, ta, hi, te, ml) across sessions."""
+    from backend.utils.localized_errors import resolve_lang, localized_error
+    lang = resolve_lang(payload.language)
+
+    if token:
+        try:
+            from backend.utils.auth_utils import decode_access_token
+            decoded = decode_access_token(token)
+            email = decoded.get("sub")
+            if email:
+                mongo_user = await MongoUser.find_one({"email": email.lower()})
+                if mongo_user:
+                    mongo_user.preferred_language = lang
+                    await mongo_user.save()
+        except Exception as e:
+            print(f"[WARN] Error saving user language: {e}")
+
+    return {
+        "status": "success",
+        "preferred_language": lang,
+        "message": localized_error("language_updated", lang)
     }
 
