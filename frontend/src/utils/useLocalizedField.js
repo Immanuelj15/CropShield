@@ -10,15 +10,18 @@ export function getLocalizedText(field, lang = 'en') {
   if (!field) return '';
   if (typeof field === 'string') return field;
   if (Array.isArray(field)) {
-    return field.map((item) => getLocalizedText(item, lang));
+    return field.map((item) => getLocalizedText(item, lang)).filter(Boolean).join(', ');
   }
   if (typeof field === 'object') {
     const cleanLang = (lang || 'en').split('-')[0].toLowerCase();
-    if (field[cleanLang]) return field[cleanLang];
-    if (field['en']) return field['en'];
-    // Fallback to first available value
-    const firstVal = Object.values(field)[0];
-    return typeof firstVal === 'string' ? firstVal : '';
+    const val = field[cleanLang] || field['en'] || Object.values(field)[0];
+    if (val !== undefined && val !== null) {
+      if (Array.isArray(val)) {
+        return val.map((item) => getLocalizedText(item, lang)).filter(Boolean).join(', ');
+      }
+      return typeof val === 'string' ? val : String(val);
+    }
+    return '';
   }
   return String(field);
 }

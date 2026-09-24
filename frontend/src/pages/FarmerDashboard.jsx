@@ -398,11 +398,11 @@ export default function FarmerDashboard() {
   }
 
   const filteredAdvisories = advisories.filter(a => {
-    const pestName = getLocalizedText(a.pest_or_disease, currentLang).toLowerCase()
-    const cropName = getLocalizedText(a.crop_type, currentLang).toLowerCase()
-    const chem = getLocalizedText(a.chemical_treatment, currentLang).toLowerCase()
-    const org = getLocalizedText(a.organic_treatment, currentLang).toLowerCase()
-    const sym = getLocalizedText(a.symptoms, currentLang).toLowerCase()
+    const pestName = String(getLocalizedText(a.pest_or_disease, currentLang) || '').toLowerCase()
+    const cropName = String(getLocalizedText(a.crop_type, currentLang) || '').toLowerCase()
+    const chem = String(getLocalizedText(a.chemical_treatment, currentLang) || '').toLowerCase()
+    const org = String(getLocalizedText(a.organic_treatment, currentLang) || '').toLowerCase()
+    const sym = String(getLocalizedText(a.symptoms, currentLang) || '').toLowerCase()
 
     const matchesCrop = advisoryCrop === 'All' || cropName.includes(advisoryCrop.toLowerCase())
     const q = (advisorySearch || '').toLowerCase()
