@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell, Sparkles, Calendar } from 'lucide-react'
+import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell, Sparkles, Calendar, Wallet } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import TodayPage from './pages/TodayPage'
@@ -17,6 +17,8 @@ import NotificationSettingsPage from './pages/NotificationSettingsPage'
 import CropRecommendationPage from './pages/CropRecommendationPage'
 import FarmActivityPlannerPage from './pages/FarmActivityPlannerPage'
 import SoilHealthAnalyzerPage from './pages/SoilHealthAnalyzerPage'
+import ExpenseTrackerPage from './pages/ExpenseTrackerPage'
+import ManageMyFarmPage from './pages/ManageMyFarmPage'
 import VoiceAssistantModal from './components/VoiceAssistantModal'
 import ChatbotWidget from './components/ChatbotWidget'
 import OfflineBanner from './components/OfflineBanner'
@@ -111,6 +113,8 @@ function getNavItemsForRole(role, t) {
   // Default: farmer
   return [
     { to: '/farmer/today', label: t('nav_today', "Today's Warning"), icon: AlertTriangle },
+    { to: '/farmer/expenses', label: t('nav_pnl_tracker', 'P&L Tracker'), icon: Wallet },
+    { to: '/farmer/manage-farms', label: t('nav_manage_farms', 'Manage Farms'), icon: MapPin },
     { to: '/farmer/soil-health', label: t('nav_soil_health', 'Soil Health'), icon: Compass },
     { to: '/farmer/crop-recommendation', label: t('nav_crop_advisor', 'Crop Advisor'), icon: Sparkles },
     { to: '/farmer/activity-planner', label: t('nav_activity_planner', 'Activity Planner'), icon: Calendar },
@@ -436,6 +440,30 @@ export default function App() {
           <Route
             path="/crop-recommendation"
             element={<Navigate to="/farmer/crop-recommendation" replace />}
+          />
+          <Route
+            path="/farmer/expenses"
+            element={
+              <RoleRoute allowedRoles={['farmer', 'admin']}>
+                <ExpenseTrackerPage />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="/expenses"
+            element={<Navigate to="/farmer/expenses" replace />}
+          />
+          <Route
+            path="/farmer/manage-farms"
+            element={
+              <RoleRoute allowedRoles={['farmer', 'admin']}>
+                <ManageMyFarmPage />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="/manage-farms"
+            element={<Navigate to="/farmer/manage-farms" replace />}
           />
           <Route
             path="/farmer/activity-planner"

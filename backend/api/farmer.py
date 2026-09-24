@@ -110,6 +110,18 @@ async def get_farmer_profile(
     }
 
 
+class FarmCreateOrUpdateRequest(BaseModel):
+    farm_name: str = Field(..., example="Kovilpatti North Field")
+    district: str = Field("Thoothukudi", example="Thoothukudi")
+    climate_zone: Optional[str] = Field("Dryland", example="Dryland")
+    crop_type: Optional[str] = Field("Cotton", example="Cotton")
+    soil_type: Optional[str] = Field("Black Cotton Soil", example="Black Cotton Soil")
+    area_hectares: Optional[float] = Field(1.0, example=1.0)
+    water_availability: Optional[str] = Field("Medium", example="Medium")
+    location: Optional[Dict[str, Any]] = None  # GeoJSON Point
+    boundary_geojson: Optional[Dict[str, Any]] = None  # GeoJSON Polygon
+
+
 @router.get("/farms")
 @router.get("/farmer/farms")
 async def list_user_farms(
@@ -129,14 +141,154 @@ async def list_user_farms(
             "farm_name": f.farm_name,
             "owner_id": str(f.owner_id),
             "district": f.district,
+            "climate_zone": getattr(f, "climate_zone", "Dryland"),
             "crop_type": f.crop_type,
             "soil_type": f.soil_type,
             "area_hectares": f.area_hectares,
             "water_availability": getattr(f, "water_availability", "Medium"),
             "location": f.location,
+            "boundary_geojson": getattr(f, "boundary_geojson", None),
         }
         for f in farms
     ]
+
+
+@router.post("/farms", status_code=status.HTTP_201_CREATED)
+async def create_user_farm(
+    payload: FarmCreateOrUpdateRequest,
+    current_user: Optional[MongoUser] = Depends(get_optional_current_user)
+):
+    """Creates a new registered farm with GPS centroid and boundary polygon."""
+    owner_id = current_user.id if current_user else None
+
+    # Calculate centroid if boundary is provided and location is not
+    location = payload.location
+    if not location and payload.boundary_geojson and "coordinates" in payload.boundary_geojson:
+        coords = payload.boundary_geojson["coordinates"][0]
+        lons = [c[0] for c in coords]
+        lats = [c[1] for c in coords]
+        centroid_lon = sum(lons) / len(lons) if lons else 77.8710
+        centroid_lat = sum(lats) / len(lats) if lats else 9.1728
+        location = {"type": "Point", "coordinates": [centroid_lon, centroid_lat]}
+    elif not location:
+        location = {"type": "Point", "coordinates": [77.8710, 9.1728]}
+
+    farm = MongoFarm(
+        owner_id=owner_id,
+        farm_name=payload.farm_name,
+        district=payload.district,
+        climate_zone=payload.climate_zone or "Dryland",
+        crop_type=payload.crop_type or "Cotton",
+        soil_type=payload.soil_type or "Black Soil (Vertisol)",
+        area_hectares=payload.area_hectares or 1.0,
+        water_availability=payload.water_availability or "Medium",
+        location=location,
+        boundary_geojson=payload.boundary_geojson,
+    )
+    await farm.insert()
+
+    if current_user and not current_user.farm_id:
+        current_user.farm_id = farm.id
+        await current_user.save()
+
+    return {
+        "status": "success",
+        "farm_id": str(farm.id),
+        "farm": {
+            "id": str(farm.id),
+            "farm_name": farm.farm_name,
+            "district": farm.district,
+            "crop_type": farm.crop_type,
+            "soil_type": farm.soil_type,
+            "area_hectares": farm.area_hectares,
+            "water_availability": farm.water_availability,
+            "boundary_geojson": farm.boundary_geojson,
+            "location": farm.location,
+        }
+    }
+
+
+@router.put("/farms/{farm_id}")
+async def update_user_farm(
+    farm_id: str,
+    payload: FarmCreateOrUpdateRequest,
+    current_user: Optional[MongoUser] = Depends(get_optional_current_user)
+):
+    """Updates farm details, boundary polygon, or crop/soil configurations."""
+    farm = None
+    try:
+        from beanie import PydanticObjectId
+        if PydanticObjectId.is_valid(farm_id):
+            farm = await MongoFarm.get(PydanticObjectId(farm_id))
+    except Exception:
+        pass
+    if not farm:
+        farm = await MongoFarm.find_one({"_id": farm_id})
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found.")
+
+    if payload.farm_name:
+        farm.farm_name = payload.farm_name
+    if payload.district:
+        farm.district = payload.district
+    if payload.climate_zone:
+        farm.climate_zone = payload.climate_zone
+    if payload.crop_type:
+        farm.crop_type = payload.crop_type
+    if payload.soil_type:
+        farm.soil_type = payload.soil_type
+    if payload.area_hectares is not None:
+        farm.area_hectares = payload.area_hectares
+    if payload.water_availability:
+        farm.water_availability = payload.water_availability
+    if payload.boundary_geojson:
+        farm.boundary_geojson = payload.boundary_geojson
+        coords = payload.boundary_geojson.get("coordinates", [[]])[0]
+        if coords:
+            centroid_lon = sum(c[0] for c in coords) / len(coords)
+            centroid_lat = sum(c[1] for c in coords) / len(coords)
+            farm.location = {"type": "Point", "coordinates": [centroid_lon, centroid_lat]}
+    if payload.location:
+        farm.location = payload.location
+
+    await farm.save()
+    return {
+        "status": "success",
+        "message": "Farm updated successfully.",
+        "farm": {
+            "id": str(farm.id),
+            "farm_name": farm.farm_name,
+            "district": farm.district,
+            "crop_type": farm.crop_type,
+            "soil_type": farm.soil_type,
+            "area_hectares": farm.area_hectares,
+            "water_availability": farm.water_availability,
+            "boundary_geojson": farm.boundary_geojson,
+            "location": farm.location,
+        }
+    }
+
+
+@router.delete("/farms/{farm_id}")
+async def delete_user_farm(
+    farm_id: str,
+    current_user: Optional[MongoUser] = Depends(get_optional_current_user)
+):
+    """Deletes a registered farm."""
+    farm = None
+    try:
+        from beanie import PydanticObjectId
+        if PydanticObjectId.is_valid(farm_id):
+            farm = await MongoFarm.get(PydanticObjectId(farm_id))
+    except Exception:
+        pass
+    if not farm:
+        farm = await MongoFarm.find_one({"_id": farm_id})
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found.")
+
+    await farm.delete()
+    return {"status": "success", "message": f"Farm {farm_id} deleted."}
 
 
 @router.get("/history/me")

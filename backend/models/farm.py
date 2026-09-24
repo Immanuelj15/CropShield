@@ -12,6 +12,7 @@ class Farm(Document):
     owner_id: Optional[PydanticObjectId] = None
     farm_name: str
     location: Dict[str, Any]  # GeoJSON Point: {"type": "Point", "coordinates": [lon, lat]}
+    boundary_geojson: Optional[Dict[str, Any]] = None  # GeoJSON Polygon
     district: str
     climate_zone: str = "Dryland"  # "Delta" | "Dryland" | "Coastal" | "Hills"
     crop_type: str = "Cotton"  # "Cotton" | "Rice" | "Sorghum" | "Millets" | "Sugarcane" | "Pulses"

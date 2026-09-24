@@ -27,6 +27,9 @@ from backend.models.crop_water_coefficient import CropWaterCoefficient
 from backend.models.crop_nutrient_requirement import CropNutrientRequirement
 from backend.models.farm_activity_plan import FarmActivityPlan
 from backend.models.soil_health_report import SoilHealthReport
+from backend.models.farm_expense import FarmExpense
+from backend.models.farm_revenue import FarmRevenue
+from backend.models.season_pnl_summary import SeasonPnlSummary
 
 DOCUMENT_MODELS = [
     User,
@@ -55,6 +58,9 @@ DOCUMENT_MODELS = [
     CropNutrientRequirement,
     FarmActivityPlan,
     SoilHealthReport,
+    FarmExpense,
+    FarmRevenue,
+    SeasonPnlSummary,
 ]
 
 __all__ = [
@@ -84,6 +90,9 @@ __all__ = [
     "CropNutrientRequirement",
     "FarmActivityPlan",
     "SoilHealthReport",
+    "FarmExpense",
+    "FarmRevenue",
+    "SeasonPnlSummary",
     "DOCUMENT_MODELS",
 ]
 

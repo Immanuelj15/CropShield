@@ -14,7 +14,7 @@ from backend.api import (
     yield_api, outbreak, chatbot, alerts, location_predict,
     farmer, agronomist, admin, vegetation, notifications,
     crop_recommendation, irrigation, fertilizer, activity_planner,
-    soil_health
+    soil_health, pnl
 )
 from backend.db.database import engine, Base, auto_migrate_sqlite
 
@@ -32,6 +32,8 @@ async def lifespan(app: FastAPI):
     # 1. Initialize MongoDB & Beanie collections/indexes
     try:
         await init_mongodb()
+        from backend.services.pnl_service import seed_pnl_demo_data
+        await seed_pnl_demo_data()
     except Exception as e:
         print(f"[WARN] MongoDB startup init error: {e}")
 
@@ -90,6 +92,7 @@ app.include_router(irrigation.router,      prefix="/api/v1", tags=["Smart Irriga
 app.include_router(fertilizer.router,      prefix="/api/v1", tags=["Fertilizer NPK Recommendation"])
 app.include_router(activity_planner.router, prefix="/api/v1", tags=["AI Farm Activity Planner"])
 app.include_router(soil_health.router,      prefix="/api/v1", tags=["Preliminary Soil Health Analyzer"])
+app.include_router(pnl.router,              prefix="/api/v1", tags=["Farm Profit & Expense Tracker"])
 
 uploads_path = Path("uploads")
 uploads_path.mkdir(parents=True, exist_ok=True)

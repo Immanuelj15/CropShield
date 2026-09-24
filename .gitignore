@@ -65,3 +65,4 @@ Thumbs.db
 uploads/*
 !uploads/.gitkeep
 
+*.db
