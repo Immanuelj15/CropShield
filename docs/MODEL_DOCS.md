@@ -387,3 +387,86 @@ $$\text{Recommendation} = \begin{cases}
 > 
 > In a production deployment or accredited patent demonstration, these parameters **must undergo empirical calibration** via local randomized block microplot trials across specific crop-pest pairs (e.g. *Helicoverpa armigera* in Bt-Cotton vs *Scirpophaga incertulas* in Samba Rice) before being presented to commercial farming communities as legally authoritative loss guarantees.
 
+---
+
+## 🌾 Pre-Season Decision Support: AI Crop Recommendation & Profit Prediction Engine
+
+### 1. Where This Fits: Full Agronomic Lifecycle Alignment
+
+The AI Crop Recommendation & Profit Prediction Engine provides **pre-season decision support**, completing the farm lifecycle alongside existing in-season diagnostic and counterfactual features:
+
+| Agronomic Stage | Feature Name | Core Farmer Question | Decision Horizon |
+|---|---|---|---|
+| **Pre-Season (Planning)** | **Crop Recommendation Engine** (This Feature) | *"Which crop should I even plant given my soil, water, season, and budget?"* | Before sowing (Months 0–1) |
+| **In-Season (Monitoring)** | **Multi-Crop Pest/Disease Risk Pipeline** | *"Is my standing crop at risk of imminent outbreak?"* | Vegetative / Reproductive phases |
+| **In-Season (Economic)** | **Economic Impact Advisor** | *"Is treating this infected crop economically justified right now?"* | Outbreak detection (Hours–Days) |
+| **Prescriptive (Intervention)** | **Counterfactual Prescriptive Engine** | *"What is the minimum environmental/soil fix required to drop my risk?"* | Immediate corrective action |
+
+All four features share the same underlying data pipelines (NASA POWER meteorological history, SoilGrids edaphic properties, Agmarknet mandi price series, and biophysical yield modeling), but answer fundamentally different questions at distinct points in the agricultural calendar.
+
+---
+
+### 2. Multi-Factor Suitability Scoring Function
+
+For any candidate crop rule $R$ evaluated for farm $F$ under season $S$ with 365-day weather history $W$, the composite suitability score $S(F, R, S, W) \in [0, 100]$ is computed as:
+
+$$S(F, R, S, W) = \text{clamp}_{[0, 100]}\Big( w_{\text{soil}} \cdot I_{\text{soil}} + w_{\text{water}} \cdot I_{\text{water}} + w_{\text{season}} \cdot I_{\text{season}} - P_{\text{rotation}} + B_{\text{climate}} \Big)$$
+
+Where:
+- **Soil Compatibility ($w_{\text{soil}} = 35$)**:
+  $$I_{\text{soil}} = \begin{cases} 1 & \text{if } \text{farm.soil\_type} \in R.\text{suitable\_soil\_types} \\ 0 & \text{otherwise} \end{cases}$$
+- **Water Availability Match ($w_{\text{water}} = 25$)**:
+  $$I_{\text{water}} = \begin{cases} 1.0 & \text{if } \text{farm.water\_tier} = R.\text{water\_req} \\ 0.4 & \text{if } |\text{tier}(F) - \text{tier}(R)| = 1 \text{ (adjacent tier partial credit, } +10\text{ pts)} \\ 0.0 & \text{otherwise} \end{cases}$$
+- **Seasonal Window Match ($w_{\text{season}} = 25$)**:
+  $$I_{\text{season}} = \begin{cases} 1 & \text{if } S \in R.\text{suitable\_seasons} \\ 0 & \text{otherwise} \end{cases}$$
+- **Crop-Rotation Degradation Penalty ($P_{\text{rotation}}$)**:
+  $$P_{\text{rotation}} = \min(30, 10 \times \sum_{k=1}^{N_{\text{guard}}} \mathbb{I}(\text{history}[-k].\text{crop} = R.\text{crop}))$$
+  Penalizes mono-cropping the same botanical species across consecutive seasons to safeguard soil microbiome diversity and nitrogen cycling.
+- **Climate-Fit Bonus ($B_{\text{climate}} \in [0, 15]$)**:
+  Scores cumulative rainfall and mean thermal regimes over the preceding 365 days against optimal agronomic envelope bounds.
+
+**Suitability Cutoff**: Any crop scoring $S < 30$ or exceeding available capital $(C_{\text{total}} > 1.10 \times \text{Budget})$ is automatically filtered out before final ranking.
+
+---
+
+### 3. Estimated Range Paradigm: Zero False-Precision Guarantee
+
+> [!IMPORTANT]
+> **Strict Non-Negotiable Requirement**: Profit and revenue are **ALWAYS presented as an estimated range ($\min - \max$)**, never as a single deterministic point estimate.
+> 
+> Smallholder farming outcomes are exposed to systemic, irreducible aleatoric uncertainties:
+> 1. **Yield stochasticity**: Weather volatility, unseasonal monsoon onset, and localized micro-climates.
+> 2. **Market volatility**: Agmarknet mandi auction prices fluctuate weekly with regional supply gluts.
+> 3. **Input and labor variation**: Local wage rates and seed germination rates vary.
+>
+> Presenting a false single-number profit estimate (e.g. *"You will make ₹42,500"*) is agronomically dishonest and violates AgriGuard's transparent AI commitment. Every card renders with the persistent disclaimer:
+> *"Estimated range — actual results depend on weather, market prices, and farming practices."*
+
+#### Mathematical Range Formulation
+
+$$\text{Yield Range (kg)}: \quad \left[ Y_{\min}, Y_{\max} \right] = \left[ Y_{\text{base}} \times (1 - v), \; Y_{\text{base}} \times (1 + v) \right] \times \text{Acres}$$
+$$\text{Price Range (₹/kg)}: \quad \left[ P_{\min}, P_{\max} \right] = \left[ \text{recent\_low}_{\text{Agmarknet}}, \; \text{recent\_high}_{\text{Agmarknet}} \right]$$
+$$\text{Revenue Range (₹)}: \quad \left[ R_{\min}, R_{\max} \right] = \left[ Y_{\min} \times P_{\min}, \; Y_{\max} \times P_{\max} \right]$$
+$$\text{Cultivation Cost (₹)}: \quad C_{\text{total}} = \sum (\text{Seeds} + \text{Fertilizer} + \text{Labor} + \text{Irrigation} + \text{Pesticides}) \times \text{Acres}$$
+$$\text{Profit Range (₹)}: \quad \left[ \Pi_{\min}, \Pi_{\max} \right] = \left[ R_{\min} - C_{\text{total}}, \; R_{\max} - C_{\text{total}} \right]$$
+
+---
+
+### 4. Authoritative Agronomic Citations & Extension Ground Truth
+
+All underlying seed rules and cost matrices implemented in `crop_suitability_rules_REAL_15crops.csv` and `crop_cost_templates_REAL_15crops.csv` are derived from peer-reviewed agricultural extension sources:
+
+1. **Crop Suitability & Biophysical Parameters (15 Crops)**:
+   - **Primary Authority**: Tamil Nadu Agricultural University (TNAU) Agritech Portal — *Crop Production Guides (Horticulture & Agriculture)*. Accessible at: [agritech.tnau.ac.in](https://agritech.tnau.ac.in).
+   - **Co-Authority**: Indian Council of Agricultural Research (ICAR) — *Handbook of Agriculture (Agronomy & Soil Science)*, Krishi Anusandhan Bhavan, New Delhi.
+   - **Parameters Covered**: Base quintal yields per acre, variance bounds ($v \in [15\%, 30\%]$), edaphic soil textures, water tiers, and rotational barriers.
+
+2. **Cultivation Cost Breakdowns (15 Crops)**:
+   - **Primary Authority**: Commission for Agricultural Costs and Prices (CACP), Ministry of Agriculture & Farmers Welfare, Government of India.
+   - **Report**: *Price Policy for Kharif and Rabi Crops — Comprehensive Scheme for Studying the Cost of Cultivation of Principal Crops in India* (`desagri.gov.in`).
+   - **Parameters Covered**: Itemized expenditures (Seeds, Chemical/Bio-fertilizers, Human & Bullock Labor, Irrigation charges, Plant protection chemicals).
+
+3. **Validation Scenarios Benchmark**:
+   - 10,000 synthetic-empirical validation scenarios across Tamil Nadu districts (`crop_recommendation_demo_scenarios_10000rows.csv`) testing budget edge cases, drought regimes, and historical Agmarknet mandi distributions.
+
+

@@ -20,6 +20,9 @@ from backend.models.vegetation_snapshot import VegetationSnapshot
 from backend.models.market_price import MarketPrice
 from backend.models.notification_preference import NotificationPreference
 from backend.models.notification_log import NotificationLog
+from backend.models.crop_suitability import CropSuitabilityRule
+from backend.models.crop_cost_template import CropCostTemplate
+from backend.models.crop_recommendation import CropRecommendation
 
 DOCUMENT_MODELS = [
     User,
@@ -41,6 +44,9 @@ DOCUMENT_MODELS = [
     MarketPrice,
     NotificationPreference,
     NotificationLog,
+    CropSuitabilityRule,
+    CropCostTemplate,
+    CropRecommendation,
 ]
 
 __all__ = [
@@ -63,6 +69,9 @@ __all__ = [
     "MarketPrice",
     "NotificationPreference",
     "NotificationLog",
+    "CropSuitabilityRule",
+    "CropCostTemplate",
+    "CropRecommendation",
     "DOCUMENT_MODELS",
 ]
 

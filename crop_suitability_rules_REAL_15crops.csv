@@ -1,0 +1,16 @@
+crop_type,suitable_soil_types,water_requirement,suitable_seasons,base_yield_per_acre_kg,yield_variance_pct,avoid_after_same_crop_seasons,source_note
+Cotton,"Black Cotton Soil,Red Sandy Loam",Medium,Kharif,450,20,2,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Rice,"Alluvial Clay,Coastal Alluvial",High,"Kharif,Rabi",2200,15,0,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Sorghum,"Red Loam,Red Sandy Loam",Low,"Rabi,Summer",900,25,1,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Millets,"Red Sandy Loam,Lateritic Hill Soil",Low,"Kharif,Summer",700,22,0,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Sugarcane,"Alluvial Clay,Black Clay Loam",High,Kharif,28000,12,3,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Pulses,"Red Loam,Black Clay Loam",Low,Rabi,300,28,0,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Groundnut,"Red Sandy Loam,Coastal Alluvial",Medium,"Kharif,Rabi",800,18,1,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Maize,"Red Loam,Black Clay Loam",Medium,"Kharif,Rabi",2500,16,1,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Sesamum,Red Sandy Loam,Low,Summer,250,24,0,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Sunflower,"Black Cotton Soil,Red Loam",Medium,"Rabi,Summer",600,20,1,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Banana,"Alluvial Clay,Coastal Alluvial",High,"Kharif,Rabi,Summer",18000,14,2,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Turmeric,"Red Loam,Black Clay Loam",Medium,Kharif,6000,17,2,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Chili,"Black Cotton Soil,Red Sandy Loam",Medium,Rabi,500,26,1,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Onion,"Red Loam,Black Clay Loam",Medium,Rabi,4500,19,1,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing
+Coconut,"Coastal Alluvial,Red Sandy Loam",Medium,"Kharif,Rabi,Summer",8000,10,0,INDICATIVE - verify against TNAU crop production guides / CACP Cost of Cultivation reports before citing

@@ -29,6 +29,14 @@ async def init_mongodb(mongodb_url: Optional[str] = None, db_name: Optional[str]
     db = motor_client[name]
     await init_beanie(database=db, document_models=DOCUMENT_MODELS)
     logger.info("MongoDB & Beanie initialized successfully with all document models.")
+    
+    # Auto-seed crop suitability rules and cost templates from CSV if empty
+    try:
+        from backend.db.seed_crop_recommendation_data import seed_crop_recommendation_data
+        await seed_crop_recommendation_data()
+    except Exception as e:
+        logger.warning("Could not auto-seed crop recommendation data: %s", e)
+
     return db
 
 

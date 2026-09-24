@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import {
   ShieldAlert, Users, MapPin, Sliders, Upload, Activity,
   BarChart3, RefreshCw, Plus, Trash2, CheckCircle2,
-  Globe, Database, Clock, ArrowUpRight, Lock, Sparkles, AlertCircle
+  Globe, Database, Clock, ArrowUpRight, Lock, Sparkles, AlertCircle,
+  Sprout, Scale, Coins
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
@@ -21,7 +22,7 @@ const SUPPORTED_ADVISORY_LANGS = [
 export default function AdminDashboard() {
   const { t } = useTranslation(['admin', 'common', 'validation'])
   const { currentLang } = useLocalizedField()
-  const [activeTab, setActiveTab] = useState('analytics') // 'analytics' | 'pests' | 'farms' | 'users' | 'thresholds' | 'advisories' | 'api' | 'models'
+  const [activeTab, setActiveTab] = useState('analytics') // 'analytics' | 'pests' | 'farms' | 'users' | 'thresholds' | 'advisories' | 'api' | 'models' | 'crop_rules'
   const [advisoryTabLang, setAdvisoryTabLang] = useState('en')
   const [analytics, setAnalytics] = useState(null)
   const [pests, setPests] = useState([])
@@ -33,6 +34,32 @@ export default function AdminDashboard() {
   const [retraining, setRetraining] = useState(false)
   const [actionSuccess, setActionSuccess] = useState(null)
   const [calibrationReport, setCalibrationReport] = useState(null)
+
+  // Pre-Season Crop Rules & Cost Templates State
+  const [cropRules, setCropRules] = useState([])
+  const [cropCosts, setCropCosts] = useState([])
+  const [cropTabSection, setCropTabSection] = useState('rules') // 'rules' | 'costs'
+
+  const [newRule, setNewRule] = useState({
+    crop_type: '',
+    suitable_soil_types: 'Red Sandy Loam, Black Cotton Soil',
+    water_requirement: 'Medium',
+    suitable_seasons: 'Kharif, Rabi',
+    base_yield_per_acre_kg: 600,
+    yield_variance_pct: 20,
+    avoid_after_same_crop_seasons: 1,
+    source_note: 'TNAU Crop Production Guide 2024 (agritech.tnau.ac.in)',
+  })
+
+  const [newCost, setNewCost] = useState({
+    crop_type: '',
+    seeds: 2500,
+    fertilizer: 6000,
+    labor: 12000,
+    irrigation: 4000,
+    pesticides: 5000,
+    source_note: 'CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in)',
+  })
 
   // Form States
   const [newFarm, setNewFarm] = useState({
@@ -98,6 +125,8 @@ export default function AdminDashboard() {
     fetchThresholds()
     fetchApiStatus()
     fetchModelStatus()
+    fetchCropRules()
+    fetchCropCosts()
   }, [])
 
   const fetchAnalytics = async () => {
@@ -215,6 +244,129 @@ export default function AdminDashboard() {
     }
   }
 
+  const fetchCropRules = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/crop-recommendation/rules`)
+      if (res.ok) setCropRules(await res.json())
+    } catch (e) {
+      console.debug('Error fetching crop rules:', e)
+    }
+  }
+
+  const fetchCropCosts = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/crop-recommendation/cost-templates`)
+      if (res.ok) setCropCosts(await res.json())
+    } catch (e) {
+      console.debug('Error fetching crop costs:', e)
+    }
+  }
+
+  const handleCreateRule = async (e) => {
+    e.preventDefault()
+    if (!newRule.source_note || newRule.source_note.trim().length < 5) {
+      alert("Citable source_note is mandatory for agronomic compliance (e.g. TNAU guide).")
+      return
+    }
+    try {
+      const payload = {
+        crop_type: newRule.crop_type,
+        suitable_soil_types: newRule.suitable_soil_types.split(',').map(s => s.trim()).filter(Boolean),
+        water_requirement: newRule.water_requirement,
+        suitable_seasons: newRule.suitable_seasons.split(',').map(s => s.trim()).filter(Boolean),
+        base_yield_per_acre_kg: Number(newRule.base_yield_per_acre_kg),
+        yield_variance_pct: Number(newRule.yield_variance_pct),
+        avoid_after_same_crop_seasons: Number(newRule.avoid_after_same_crop_seasons),
+        source_note: newRule.source_note,
+      }
+      const res = await fetch(`${API_BASE}/crop-recommendation/rules`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        setActionSuccess(`Crop suitability rule for ${newRule.crop_type} registered.`)
+        fetchCropRules()
+        setNewRule({ ...newRule, crop_type: '' })
+        setTimeout(() => setActionSuccess(null), 3000)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.detail || 'Failed to save rule')
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleDeleteRule = async (ruleId) => {
+    if (!window.confirm("Delete this suitability rule?")) return
+    try {
+      const res = await fetch(`${API_BASE}/crop-recommendation/rules/${ruleId}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      })
+      if (res.ok) {
+        fetchCropRules()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleCreateCost = async (e) => {
+    e.preventDefault()
+    if (!newCost.source_note || newCost.source_note.trim().length < 5) {
+      alert("Citable source_note is mandatory for cost template (e.g. CACP report).")
+      return
+    }
+    try {
+      const seeds = Number(newCost.seeds)
+      const fertilizer = Number(newCost.fertilizer)
+      const labor = Number(newCost.labor)
+      const irrigation = Number(newCost.irrigation)
+      const pesticides = Number(newCost.pesticides)
+      const total = seeds + fertilizer + labor + irrigation + pesticides
+
+      const payload = {
+        crop_type: newCost.crop_type,
+        cost_breakdown_per_acre: { seeds, fertilizer, labor, irrigation, pesticides },
+        total_cost_per_acre: total,
+        source_note: newCost.source_note,
+      }
+      const res = await fetch(`${API_BASE}/crop-recommendation/cost-templates`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        setActionSuccess(`Cultivation cost template for ${newCost.crop_type} registered.`)
+        fetchCropCosts()
+        setNewCost({ ...newCost, crop_type: '' })
+        setTimeout(() => setActionSuccess(null), 3000)
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.detail || 'Failed to save cost template')
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleDeleteCost = async (templateId) => {
+    if (!window.confirm("Delete this cost template?")) return
+    try {
+      const res = await fetch(`${API_BASE}/crop-recommendation/cost-templates/${templateId}`, {
+        method: 'DELETE',
+        headers: authHeaders,
+      })
+      if (res.ok) {
+        fetchCropCosts()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   const handleTriggerRetrain = async () => {
     setRetraining(true)
     try {
@@ -267,6 +419,7 @@ export default function AdminDashboard() {
           {[
             { id: 'analytics', label: 'Platform Analytics', icon: BarChart3 },
             { id: 'pests', label: 'Pest & Disease DB', icon: Database, badge: pests.length },
+            { id: 'crop_rules', label: 'Crop Rules & Costs', icon: Sprout, badge: cropRules.length },
             { id: 'farms', label: 'Farm GPS Registry', icon: MapPin, badge: farms.length },
             { id: 'users', label: 'User Accounts', icon: Users, badge: users.length },
             { id: 'thresholds', label: 'Alert Thresholds', icon: Sliders },
@@ -1206,6 +1359,420 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Pre-Season Crop Rules & Cost Templates Management */}
+      {activeTab === 'crop_rules' && (
+        <div className="space-y-6">
+          {/* Sub-header with Section Switcher */}
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-emerald-100 text-emerald-800 rounded-xl font-bold">
+                  <Sprout size={18} />
+                </span>
+                <h3 className="text-base font-extrabold text-stone-900">
+                  Pre-Season Crop Rules & Cost Knowledge Base
+                </h3>
+              </div>
+              <p className="text-xs text-stone-500 mt-1 max-w-2xl">
+                Configured for 15 primary Tamil Nadu crops. Recommends crops and computes yield/cost/profit ranges.
+                <span className="font-semibold text-emerald-800 ml-1">
+                  Every rule & cost template strictly mandates a citable extension source (TNAU / CACP).
+                </span>
+              </p>
+            </div>
+
+            <div className="flex items-center bg-stone-100 p-1.5 rounded-2xl gap-1.5 self-start md:self-auto border border-stone-200">
+              <button
+                type="button"
+                onClick={() => setCropTabSection('rules')}
+                className={clsx(
+                  'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2',
+                  cropTabSection === 'rules'
+                    ? 'bg-emerald-700 text-white shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                )}
+              >
+                <Scale size={14} />
+                <span>Suitability Rules ({cropRules.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCropTabSection('costs')}
+                className={clsx(
+                  'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2',
+                  cropTabSection === 'costs'
+                    ? 'bg-emerald-700 text-white shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                )}
+              >
+                <Coins size={14} />
+                <span>Cost Templates ({cropCosts.length})</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Section 1: Suitability Rules */}
+          {cropTabSection === 'rules' && (
+            <div className="space-y-6">
+              {/* Add New Rule Form */}
+              <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm space-y-4">
+                <h4 className="text-xs font-black uppercase tracking-wider text-stone-700 flex items-center gap-2">
+                  <Plus size={14} className="text-emerald-600" />
+                  <span>Register or Update Suitability Rule</span>
+                </h4>
+                <form onSubmit={handleCreateRule} className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Crop Type *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Cotton, Paddy, Groundnut"
+                      value={newRule.crop_type}
+                      onChange={(e) => setNewRule({ ...newRule, crop_type: e.target.value })}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:border-emerald-600 outline-none font-semibold text-stone-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Water Requirement *</label>
+                    <select
+                      value={newRule.water_requirement}
+                      onChange={(e) => setNewRule({ ...newRule, water_requirement: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:border-emerald-600 outline-none font-semibold text-stone-800"
+                    >
+                      <option value="Low">Low (Drought-tolerant / Rainfed)</option>
+                      <option value="Medium">Medium (Moderate irrigation)</option>
+                      <option value="High">High (Abundant water / Wetland)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Suitable Seasons (comma-separated) *</label>
+                    <input
+                      type="text"
+                      placeholder="Kharif, Rabi, Summer"
+                      value={newRule.suitable_seasons}
+                      onChange={(e) => setNewRule({ ...newRule, suitable_seasons: e.target.value })}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:border-emerald-600 outline-none font-semibold text-stone-800"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Suitable Soil Types (comma-separated) *</label>
+                    <input
+                      type="text"
+                      placeholder="Red Sandy Loam, Black Cotton Soil, Clay Loam"
+                      value={newRule.suitable_soil_types}
+                      onChange={(e) => setNewRule({ ...newRule, suitable_soil_types: e.target.value })}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:border-emerald-600 outline-none font-semibold text-stone-800"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 mb-1">Yield (kg/ac)</label>
+                      <input
+                        type="number"
+                        value={newRule.base_yield_per_acre_kg}
+                        onChange={(e) => setNewRule({ ...newRule, base_yield_per_acre_kg: e.target.value })}
+                        required
+                        className="w-full px-3 py-2.5 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 mb-1">Variance (±%)</label>
+                      <input
+                        type="number"
+                        value={newRule.yield_variance_pct}
+                        onChange={(e) => setNewRule({ ...newRule, yield_variance_pct: e.target.value })}
+                        required
+                        className="w-full px-3 py-2.5 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 mb-1">Rotation Guard</label>
+                      <input
+                        type="number"
+                        value={newRule.avoid_after_same_crop_seasons}
+                        onChange={(e) => setNewRule({ ...newRule, avoid_after_same_crop_seasons: e.target.value })}
+                        required
+                        className="w-full px-3 py-2.5 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1 flex items-center gap-1.5">
+                      <span>Citable Source Note * (Mandatory for Evaluator/Patent Compliance)</span>
+                      <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-extrabold">Required</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. TNAU Agritech Portal 2024 / ICAR package of practices"
+                      value={newRule.source_note}
+                      onChange={(e) => setNewRule({ ...newRule, source_note: e.target.value })}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-amber-300 bg-amber-50/40 focus:bg-white focus:border-amber-600 outline-none font-medium text-stone-800"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold transition-all shadow-sm flex items-center justify-center gap-2"
+                    >
+                      <Plus size={15} />
+                      <span>Save Suitability Rule</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Rules Table */}
+              <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-700">
+                    Existing Suitability Rules ({cropRules.length} crops)
+                  </h4>
+                  <span className="text-[11px] text-stone-400">Yield variance builds the min/max profit range</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-stone-700">
+                    <thead className="bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-5 py-3">Crop</th>
+                        <th className="px-5 py-3">Water</th>
+                        <th className="px-5 py-3">Seasons</th>
+                        <th className="px-5 py-3">Suitable Soils</th>
+                        <th className="px-5 py-3">Base Yield (kg/ac)</th>
+                        <th className="px-5 py-3">Source Note</th>
+                        <th className="px-5 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {cropRules.map((rule) => (
+                        <tr key={rule.id || rule._id} className="hover:bg-stone-50/60 transition-colors">
+                          <td className="px-5 py-3.5 font-bold text-stone-900">{rule.crop_type}</td>
+                          <td className="px-5 py-3.5">
+                            <span className={clsx(
+                              'px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase',
+                              rule.water_requirement === 'Low' ? 'bg-amber-100 text-amber-800' :
+                              rule.water_requirement === 'Medium' ? 'bg-sky-100 text-sky-800' :
+                              'bg-blue-100 text-blue-800'
+                            )}>
+                              {rule.water_requirement}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex flex-wrap gap-1">
+                              {rule.suitable_seasons?.map((s, idx) => (
+                                <span key={idx} className="px-1.5 py-0.5 bg-stone-100 text-stone-700 rounded text-[10px] font-semibold">
+                                  {s}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 max-w-xs truncate text-[11px] text-stone-600" title={rule.suitable_soil_types?.join(', ')}>
+                            {rule.suitable_soil_types?.join(', ')}
+                          </td>
+                          <td className="px-5 py-3.5 font-mono">
+                            <span className="font-bold text-stone-900">{rule.base_yield_per_acre_kg}</span>
+                            <span className="text-stone-400 text-[10px] ml-1">±{rule.yield_variance_pct}%</span>
+                          </td>
+                          <td className="px-5 py-3.5 max-w-xs text-[11px] text-emerald-800 italic" title={rule.source_note}>
+                            {rule.source_note}
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <button
+                              onClick={() => handleDeleteRule(rule.id || rule._id)}
+                              className="p-1.5 hover:bg-red-50 text-stone-400 hover:text-red-600 rounded-lg transition-colors"
+                              title="Delete rule"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section 2: Cost Templates */}
+          {cropTabSection === 'costs' && (
+            <div className="space-y-6">
+              {/* Add New Cost Template Form */}
+              <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm space-y-4">
+                <h4 className="text-xs font-black uppercase tracking-wider text-stone-700 flex items-center gap-2">
+                  <Plus size={14} className="text-emerald-600" />
+                  <span>Register or Update Cultivation Cost Template</span>
+                </h4>
+                <form onSubmit={handleCreateCost} className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Crop Type *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Cotton, Paddy"
+                      value={newCost.crop_type}
+                      onChange={(e) => setNewCost({ ...newCost, crop_type: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:border-emerald-600 outline-none font-semibold text-stone-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Seeds (₹/ac)</label>
+                    <input
+                      type="number"
+                      value={newCost.seeds}
+                      onChange={(e) => setNewCost({ ...newCost, seeds: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Fertilizer (₹/ac)</label>
+                    <input
+                      type="number"
+                      value={newCost.fertilizer}
+                      onChange={(e) => setNewCost({ ...newCost, fertilizer: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Labor (₹/ac)</label>
+                    <input
+                      type="number"
+                      value={newCost.labor}
+                      onChange={(e) => setNewCost({ ...newCost, labor: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Irrigation (₹/ac)</label>
+                    <input
+                      type="number"
+                      value={newCost.irrigation}
+                      onChange={(e) => setNewCost({ ...newCost, irrigation: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1">Pesticides (₹/ac)</label>
+                    <input
+                      type="number"
+                      value={newCost.pesticides}
+                      onChange={(e) => setNewCost({ ...newCost, pesticides: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 font-mono text-xs outline-none"
+                    />
+                  </div>
+
+                  <div className="col-span-2 md:col-span-3">
+                    <label className="block text-[11px] font-bold text-stone-600 mb-1 flex items-center gap-1.5">
+                      <span>Citable Source Note * (Mandatory for CACP/APEDA Audit)</span>
+                      <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-extrabold">Required</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. CACP Cost of Cultivation of Principal Crops / ICAR"
+                      value={newCost.source_note}
+                      onChange={(e) => setNewCost({ ...newCost, source_note: e.target.value })}
+                      required
+                      className="w-full px-3 py-2 rounded-xl border border-amber-300 bg-amber-50/40 focus:bg-white focus:border-amber-600 outline-none font-medium text-stone-800"
+                    />
+                  </div>
+
+                  <div className="col-span-2 md:col-span-2 flex items-center justify-between px-3 py-2 bg-stone-50 rounded-xl border border-stone-200">
+                    <span className="text-[11px] font-bold text-stone-500">Calculated Total:</span>
+                    <span className="text-sm font-black text-emerald-800 font-mono">
+                      ₹{(Number(newCost.seeds) + Number(newCost.fertilizer) + Number(newCost.labor) + Number(newCost.irrigation) + Number(newCost.pesticides)).toLocaleString('en-IN')}/ac
+                    </span>
+                  </div>
+
+                  <div className="col-span-2 md:col-span-1 flex items-end">
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 px-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-bold transition-all shadow-sm flex items-center justify-center gap-1 text-xs"
+                    >
+                      <Plus size={14} />
+                      <span>Save</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Cost Templates Table */}
+              <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-stone-700">
+                    Cultivation Cost Breakdown Templates ({cropCosts.length} crops)
+                  </h4>
+                  <span className="text-[11px] text-stone-400">All costs scaled per acre for farm budget budgeting</span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-stone-700">
+                    <thead className="bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-5 py-3">Crop</th>
+                        <th className="px-5 py-3">Seeds</th>
+                        <th className="px-5 py-3">Fertilizer</th>
+                        <th className="px-5 py-3">Labor</th>
+                        <th className="px-5 py-3">Irrig.</th>
+                        <th className="px-5 py-3">Pesticides</th>
+                        <th className="px-5 py-3">Total / Acre</th>
+                        <th className="px-5 py-3">Source Note</th>
+                        <th className="px-5 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {cropCosts.map((cost) => (
+                        <tr key={cost.id || cost._id} className="hover:bg-stone-50/60 transition-colors">
+                          <td className="px-5 py-3.5 font-bold text-stone-900">{cost.crop_type}</td>
+                          <td className="px-5 py-3.5 font-mono text-stone-600">₹{cost.cost_breakdown_per_acre?.seeds?.toLocaleString('en-IN')}</td>
+                          <td className="px-5 py-3.5 font-mono text-stone-600">₹{cost.cost_breakdown_per_acre?.fertilizer?.toLocaleString('en-IN')}</td>
+                          <td className="px-5 py-3.5 font-mono text-stone-600">₹{cost.cost_breakdown_per_acre?.labor?.toLocaleString('en-IN')}</td>
+                          <td className="px-5 py-3.5 font-mono text-stone-600">₹{cost.cost_breakdown_per_acre?.irrigation?.toLocaleString('en-IN')}</td>
+                          <td className="px-5 py-3.5 font-mono text-stone-600">₹{cost.cost_breakdown_per_acre?.pesticides?.toLocaleString('en-IN')}</td>
+                          <td className="px-5 py-3.5 font-mono font-black text-emerald-800">
+                            ₹{cost.total_cost_per_acre?.toLocaleString('en-IN')}
+                          </td>
+                          <td className="px-5 py-3.5 max-w-xs text-[11px] text-emerald-800 italic" title={cost.source_note}>
+                            {cost.source_note}
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <button
+                              onClick={() => handleDeleteCost(cost.id || cost._id)}
+                              className="p-1.5 hover:bg-red-50 text-stone-400 hover:text-red-600 rounded-lg transition-colors"
+                              title="Delete template"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

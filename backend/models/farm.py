@@ -2,7 +2,7 @@
 CropShield / AgriGuard — Farm Beanie Document Model
 """
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from beanie import Document, Indexed, PydanticObjectId
 from pymongo import IndexModel, GEOSPHERE, ASCENDING
 from pydantic import Field
@@ -17,6 +17,8 @@ class Farm(Document):
     crop_type: str = "Cotton"  # "Cotton" | "Rice" | "Sorghum" | "Millets" | "Sugarcane" | "Pulses"
     soil_type: Optional[str] = "Black Soil (Vertisol)"
     area_hectares: float = 1.0
+    water_availability: Optional[str] = "Medium"  # "Low" | "Medium" | "High"
+    crop_history: List[Dict[str, Any]] = Field(default_factory=list)  # [{"crop_type": "Cotton", "season": "Kharif", "year": 2025}]
     is_reference_point: bool = False
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

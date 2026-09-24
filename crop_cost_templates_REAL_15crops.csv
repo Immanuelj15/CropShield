@@ -1,0 +1,16 @@
+crop_type,seeds,fertilizer,labor,irrigation,pesticides,total_cost_per_acre,source_note
+Cotton,2500,6000,12000,4000,5500,30000,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Rice,1800,7500,15000,8000,3500,35800,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Sorghum,900,3500,6000,1500,1800,13700,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Millets,700,2800,5000,1000,1200,10700,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Sugarcane,15000,18000,35000,20000,7000,95000,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Pulses,1200,2500,5500,1200,1500,11900,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Groundnut,4500,5000,9000,3000,3000,24500,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Maize,2200,6500,8000,3500,2500,22700,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Sesamum,600,1800,4000,800,1000,8200,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Sunflower,1500,4000,6500,2500,2000,16500,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Banana,12000,15000,25000,18000,6000,76000,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Turmeric,20000,12000,22000,10000,5000,69000,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Chili,3500,7000,14000,6000,8000,38500,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Onion,8000,6000,12000,5000,3500,34500,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
+Coconut,5000,4000,10000,6000,2000,27000,INDICATIVE - verify against CACP Cost of Cultivation of Principal Crops reports (desagri.gov.in) before citing
