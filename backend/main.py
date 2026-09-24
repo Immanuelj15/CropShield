@@ -16,7 +16,7 @@ from backend.api import (
     crop_recommendation, irrigation, fertilizer, activity_planner,
     soil_health
 )
-from backend.db.database import engine, Base
+from backend.db.database import engine, Base, auto_migrate_sqlite
 
 from backend.utils.config import settings
 
@@ -25,6 +25,7 @@ from backend.db.mongodb import init_mongodb, close_mongodb
 from backend.jobs.scheduler import start_scheduler, shutdown_scheduler
 
 Base.metadata.create_all(bind=engine)
+auto_migrate_sqlite()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

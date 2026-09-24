@@ -92,7 +92,7 @@ export default function BoundaryDrawingStep({
       </div>
 
       {/* Map Container */}
-      <div className="w-full h-[520px] rounded-3xl overflow-hidden border border-stone-200 shadow-sm relative">
+      <div className="w-full h-[580px] rounded-3xl overflow-hidden border border-stone-200 shadow-sm relative">
         <DrawableMap
           center={center}
           zoom={zoom}

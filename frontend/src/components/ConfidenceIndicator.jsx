@@ -40,6 +40,7 @@ export default function ConfidenceIndicator({
         <svg
           width={dimensions}
           height={dimensions}
+          viewBox={`0 0 ${dimensions} ${dimensions}`}
           className="transform -rotate-90"
         >
           {/* Track Circle */}

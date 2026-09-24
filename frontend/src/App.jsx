@@ -198,15 +198,16 @@ function Navbar() {
               </div>
             </NavLink>
 
-            {/* Desktop Navigation Links — Dynamic per role with crisp spacing */}
+            {/* Desktop Navigation Links — Dynamic per role with crisp spacing & horizontal auto-scroll if needed */}
             {currentUser && !isLoginPage && (
-              <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 justify-center flex-1 min-w-0 px-2">
+              <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 justify-start 2xl:justify-center flex-1 min-w-0 px-2 overflow-x-auto no-scrollbar py-1">
                 {navItems.map(({ to, label, icon: Icon }) => (
                   <NavLink
                     key={to}
                     to={to}
+                    title={label}
                     className={({ isActive }) => clsx(
-                      'flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-[13px] font-semibold transition-all whitespace-nowrap',
+                      'flex items-center gap-1.5 px-2.5 xl:px-3 py-1.5 rounded-xl text-xs xl:text-[13px] font-semibold transition-all whitespace-nowrap shrink-0',
                       isActive
                         ? 'bg-emerald-50 text-emerald-800 font-bold border border-emerald-300/80 shadow-2xs'
                         : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80 border border-transparent'
@@ -231,8 +232,8 @@ function Navbar() {
                 </div>
               ) : currentUser ? (
                 <>
-                  {/* User Role Badge with Pulse Dot */}
-                  <div className={clsx("flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold tracking-wide select-none", currentRoleMeta.badge)}>
+                  {/* User Role Badge with Pulse Dot (hidden on smaller lg screens to preserve nav space) */}
+                  <div className={clsx("hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold tracking-wide select-none", currentRoleMeta.badge)}>
                     <span className={clsx("w-2 h-2 rounded-full shrink-0 animate-pulse", currentRoleMeta.dot)} />
                     <span>{currentRoleMeta.name}</span>
                   </div>
@@ -244,7 +245,7 @@ function Navbar() {
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-stone-600 hover:text-red-700 hover:bg-red-50 border border-stone-200 hover:border-red-200 transition-colors whitespace-nowrap cursor-pointer"
                   >
                     <LogOut size={14} className="shrink-0" />
-                    <span>{t('auth:sign_out', 'Sign Out')}</span>
+                    <span className="hidden xl:inline">{t('auth:sign_out', 'Sign Out')}</span>
                   </button>
 
                   {/* Tamil Voice Assistant Button */}
