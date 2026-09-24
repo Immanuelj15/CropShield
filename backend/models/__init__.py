@@ -23,6 +23,9 @@ from backend.models.notification_log import NotificationLog
 from backend.models.crop_suitability import CropSuitabilityRule
 from backend.models.crop_cost_template import CropCostTemplate
 from backend.models.crop_recommendation import CropRecommendation
+from backend.models.crop_water_coefficient import CropWaterCoefficient
+from backend.models.crop_nutrient_requirement import CropNutrientRequirement
+from backend.models.farm_activity_plan import FarmActivityPlan
 
 DOCUMENT_MODELS = [
     User,
@@ -47,6 +50,9 @@ DOCUMENT_MODELS = [
     CropSuitabilityRule,
     CropCostTemplate,
     CropRecommendation,
+    CropWaterCoefficient,
+    CropNutrientRequirement,
+    FarmActivityPlan,
 ]
 
 __all__ = [
@@ -72,6 +78,9 @@ __all__ = [
     "CropSuitabilityRule",
     "CropCostTemplate",
     "CropRecommendation",
+    "CropWaterCoefficient",
+    "CropNutrientRequirement",
+    "FarmActivityPlan",
     "DOCUMENT_MODELS",
 ]
 

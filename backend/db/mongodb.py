@@ -37,6 +37,13 @@ async def init_mongodb(mongodb_url: Optional[str] = None, db_name: Optional[str]
     except Exception as e:
         logger.warning("Could not auto-seed crop recommendation data: %s", e)
 
+    # Auto-seed FAO-56 crop water coefficients and ICAR/TNAU nutrient requirements
+    try:
+        from backend.db.seed_agronomic_planner_data import seed_agronomic_planner_data
+        await seed_agronomic_planner_data()
+    except Exception as e:
+        logger.warning("Could not auto-seed agronomic planner data: %s", e)
+
     return db
 
 

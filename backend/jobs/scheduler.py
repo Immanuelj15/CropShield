@@ -12,6 +12,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from backend.jobs.daily_ingestion_job import run_daily_ingestion_job
 from backend.jobs.retry_queue import run_retry_queue_worker
 from backend.jobs.ndvi_ingestion_job import run_ndvi_ingestion_job
+from backend.jobs.activity_reminder_job import run_activity_reminder_job
 
 logger = logging.getLogger("cropshield.scheduler")
 
@@ -30,7 +31,16 @@ def start_scheduler():
             replace_existing=True
         )
 
-        # 2. Hourly Retry Queue Sweep for Failed Items
+        # 2. Daily Activity Reminders & Smart Farming Alerts at 6:00 AM IST (Asia/Kolkata)
+        scheduler.add_job(
+            run_activity_reminder_job,
+            CronTrigger(hour=6, minute=0, timezone="Asia/Kolkata"),
+            id="daily_farm_activity_reminders",
+            name="Daily Farm Activity Reminders & Smart Alerts",
+            replace_existing=True
+        )
+
+        # 3. Hourly Retry Queue Sweep for Failed Items
         scheduler.add_job(
             run_retry_queue_worker,
             IntervalTrigger(hours=1),
@@ -39,7 +49,7 @@ def start_scheduler():
             replace_existing=True
         )
 
-        # 3. Sentinel-2 NDVI Satellite Ingestion Every 3 Days at 4:00 AM IST
+        # 4. Sentinel-2 NDVI Satellite Ingestion Every 3 Days at 4:00 AM IST
         scheduler.add_job(
             run_ndvi_ingestion_job,
             CronTrigger(day="*/3", hour=4, minute=0, timezone="Asia/Kolkata"),
@@ -49,7 +59,7 @@ def start_scheduler():
         )
 
         scheduler.start()
-        logger.info("APScheduler started: Daily 5:00 AM IST ingestion, 3-Day NDVI ingestion & Hourly retry sweep active.")
+        logger.info("APScheduler started: Daily 5 AM climate, 6 AM activity reminders, 3-Day NDVI & Hourly retry active.")
     except Exception as e:
         logger.warning(f"Could not start APScheduler: {e}")
 

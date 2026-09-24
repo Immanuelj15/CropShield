@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell, Sparkles } from 'lucide-react'
+import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell, Sparkles, Calendar } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import TodayPage from './pages/TodayPage'
@@ -15,6 +15,7 @@ import AgronomistDashboard from './pages/AgronomistDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import NotificationSettingsPage from './pages/NotificationSettingsPage'
 import CropRecommendationPage from './pages/CropRecommendationPage'
+import FarmActivityPlannerPage from './pages/FarmActivityPlannerPage'
 import VoiceAssistantModal from './components/VoiceAssistantModal'
 import ChatbotWidget from './components/ChatbotWidget'
 import OfflineBanner from './components/OfflineBanner'
@@ -110,6 +111,7 @@ function getNavItemsForRole(role, t) {
   return [
     { to: '/farmer/today', label: t('nav_today', "Today's Warning"), icon: AlertTriangle },
     { to: '/farmer/crop-recommendation', label: t('nav_crop_advisor', 'Crop Advisor'), icon: Sparkles },
+    { to: '/farmer/activity-planner', label: t('nav_activity_planner', 'Activity Planner'), icon: Calendar },
     { to: '/regional-scan', label: t('nav_draw_scan', 'Draw-to-Scan'), icon: MapPin },
     { to: '/yield', label: t('nav_yield', 'Yield Predictor'), icon: Sprout },
     { to: '/outbreak', label: t('nav_outbreak', 'Outbreak Map'), icon: Map },
@@ -419,6 +421,18 @@ export default function App() {
           <Route
             path="/crop-recommendation"
             element={<Navigate to="/farmer/crop-recommendation" replace />}
+          />
+          <Route
+            path="/farmer/activity-planner"
+            element={
+              <RoleRoute allowedRoles={['farmer', 'admin']}>
+                <FarmActivityPlannerPage />
+              </RoleRoute>
+            }
+          />
+          <Route
+            path="/activity-planner"
+            element={<Navigate to="/farmer/activity-planner" replace />}
           />
           <Route
             path="/agronomist/dashboard"

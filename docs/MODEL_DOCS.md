@@ -469,4 +469,105 @@ All underlying seed rules and cost matrices implemented in `crop_suitability_rul
 3. **Validation Scenarios Benchmark**:
    - 10,000 synthetic-empirical validation scenarios across Tamil Nadu districts (`crop_recommendation_demo_scenarios_10000rows.csv`) testing budget edge cases, drought regimes, and historical Agmarknet mandi distributions.
 
+---
+
+## 💧 Smart Irrigation + Fertilizer Recommendation + AI Farm Activity Planner
+
+### 1. Connected Architectural Design
+
+Smart Irrigation and Fertilizer Recommendation are synthesized into the **AI Farm Activity Planner**, transforming isolated advisory cards into an actionable, season-long operational roadmap:
+
+```
+Selected Crop (from Crop Recommendation Engine)
+        ↓
+Sowing Date Recorded
+        ↓
+AI Farm Activity Planner Generates Timeline:
+   - FAO-56 Stage-Aware Weekly Irrigation Checkpoints
+   - ICAR/TNAU Basal & Top-Dressing Fertilizer Splits
+   - Multi-Modal Pest Surveillance Scans (Reusing Risk Pipeline)
+   - Target Maturity & Harvest Window
+        ↓
+Daily Automated Reminder Job (@ 6:00 AM IST)
+   - Evaluates Checkpoints: upcoming → due_today → overdue
+   - Triggers Multi-Channel Alerts (Web Push, SMS, WhatsApp)
+   - Surfaces Smart Farming Weather Alerts (Heavy Rain & Heat Warnings)
+   - Emits Sustainable Farming Tips (Rotation & Water Conservation)
+```
+
+---
+
+### 2. Smart Irrigation Methodology: FAO-56 Penman-Monteith / Hargreaves
+
+#### Mathematical Formulation
+
+$$\text{Crop Water Requirement } (\text{mm/day}) = \text{ET}_0 \times K_c$$
+
+$$\text{Net Weekly Irrigation Need } (\text{mm}) = \max\Big(0, \; (\text{ET}_0 \times K_c \times 7) - P_{\text{eff}}\Big)$$
+
+Where:
+- **Reference Evapotranspiration ($\text{ET}_0$) via Hargreaves Method**:
+  $$\text{ET}_0 = 0.0023 \times R_a \times (T_{\text{mean}} + 17.8) \times \sqrt{\max(0.5, T_{\text{max}} - T_{\text{min}})}$$
+  Derived from NASA POWER satellite reanalysis parameters:
+  - $T_{\text{max}}$: Daily maximum 2-meter air temperature (`T2M_MAX` in $^\circ\text{C}$).
+  - $T_{\text{min}}$: Daily minimum 2-meter air temperature (`T2M_MIN` in $^\circ\text{C}$).
+  - $R_a$: All-sky surface downward shortwave irradiance (`ALLSKY_SFC_SW_DWN` converted to equivalent water depth in $\text{mm/day} = \text{MJ/m}^2/\text{day} \times 0.408$).
+- **Crop Coefficient ($K_c$) by FAO-56 Phenological Growth Stage**:
+  - Initial stage ($K_{c, \text{ini}}$): Soil evaporation dominates ($0.30 - 0.50$, higher for wetland rice $1.05$).
+  - Crop development stage ($K_{c, \text{dev}}$): Rapid canopy expansion ($0.70 - 0.85$).
+  - Mid-season stage ($K_{c, \text{mid}}$): Peak vegetative/flowering demand ($1.00 - 1.25$).
+  - Late-season stage ($K_{c, \text{end}}$): Senescence and ripening ($0.45 - 0.80$).
+- **Effective Rainfall ($P_{\text{eff}}$) via Simplified USDA Soil Conservation Service (SCS)**:
+  $$P_{\text{eff}} = \begin{cases} 
+  P_{\text{7d}} \times \frac{125 - 0.2 \times P_{\text{7d}}}{125} & \text{if } P_{\text{7d}} \le 250\text{ mm} \\ 
+  125 + 0.1 \times P_{\text{7d}} & \text{if } P_{\text{7d}} > 250\text{ mm} 
+  \end{cases}$$
+- **Hydraulic Volume Conversion**:
+  $$1\text{ mm over 1 acre} = 10^{-3}\text{ m} \times 4046.86\text{ m}^2 = 4,046.86\text{ Liters/acre}$$
+
+---
+
+### 3. Fertilizer Recommendation Methodology (NPK Deficit & Product Conversion)
+
+#### Product Nutrient Content Constants (Fixed Standard Agronomic Constants)
+
+Unlike yield or weather predictions, commercial fertilizer product nutrient fractions are fixed chemical specifications:
+- **Urea**: $46\%$ Nitrogen ($N_{\text{fraction}} = 0.46$).
+- **DAP (Di-Ammonium Phosphate)**: $18\%$ Nitrogen ($N_{\text{fraction}} = 0.18$), $46\%$ Phosphorus ($P_2O_{5, \text{fraction}} = 0.46$).
+- **MOP (Muriate of Potash / Potassium Chloride)**: $60\%$ Potassium ($K_2O_{\text{fraction}} = 0.60$).
+
+#### Soil-Crop Deficit Accounting
+
+1. **Soil Available Pool (kg/acre)**:
+   Converted from regional soil profiles / SoilGrids ($N_{\text{soil}}, P_{\text{soil}}, K_{\text{soil}}$ in $\text{kg/ha}$) adjusted for root-zone seasonal availability factors:
+   $$N_{\text{avail}} = N_{\text{soil}} \times 0.4047 \times 0.12, \quad P_{\text{avail}} = P_{\text{soil}} \times 0.4047 \times 0.15, \quad K_{\text{avail}} = K_{\text{soil}} \times 0.4047 \times 0.12$$
+2. **Nutrient Deficits**:
+   $$N_{\text{def}} = \max(0, N_{\text{req}} - N_{\text{avail}}), \quad P_{\text{def}} = \max(0, P_{\text{req}} - P_{\text{avail}}), \quad K_{\text{def}} = \max(0, K_{\text{req}} - K_{\text{avail}})$$
+3. **Commercial Product Mass Equations**:
+   - **DAP Requirement**:
+     $$\text{DAP (kg/acre)} = \frac{P_{\text{def}}}{0.46}$$
+     $$\text{Nitrogen contributed by DAP} = \text{DAP (kg/acre)} \times 0.18$$
+   - **Urea Requirement**:
+     $$\text{Remaining } N_{\text{def}} = \max(0, N_{\text{def}} - (\text{DAP} \times 0.18))$$
+     $$\text{Urea (kg/acre)} = \frac{\text{Remaining } N_{\text{def}}}{0.46}$$
+   - **MOP Requirement**:
+     $$\text{MOP (kg/acre)} = \frac{K_{\text{def}}}{0.60}$$
+
+---
+
+### 4. Authoritative Agronomic Citations & Extension Ground Truth
+
+All underlying growth-stage durations, crop coefficients, and nutrient splits are grounded in accredited agricultural literature:
+
+1. **Crop Water Coefficients & Growth Stage Durations**:
+   - **Primary Authority**: Food and Agriculture Organization of the United Nations (FAO).
+   - **Citation**: Allen, R. G., Pereira, L. S., Raes, D., & Smith, M. (1998). *Crop evapotranspiration - Guidelines for computing crop water requirements*. **FAO Irrigation and Drainage Paper 56**, FAO, Rome, Table 12 (Single crop coefficient $K_c$ and mean maximum plant heights for non-stressed crops).
+   - **Regional Calibration**: Tamil Nadu Agricultural University (TNAU) Agritech Portal — *Irrigation Water Management for Agricultural and Horticultural Crops* (`agritech.tnau.ac.in`).
+
+2. **Crop Nutrient Requirements & Split Applications**:
+   - **Primary Authority**: Indian Council of Agricultural Research (ICAR) & Tamil Nadu Agricultural University (TNAU).
+   - **Citation**: TNAU *Crop Production Guide (Agriculture & Horticulture) 2024*, Directorate of Agriculture, Government of Tamil Nadu.
+   - **Bulletins**: *Crop-specific Recommended Doses of Fertilizers (RDF) and Integrated Nutrient Management (INM) schedules*.
+
+
 
