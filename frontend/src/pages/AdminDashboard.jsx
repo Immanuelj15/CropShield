@@ -3,7 +3,7 @@ import {
   ShieldAlert, Users, MapPin, Sliders, Upload, Activity,
   BarChart3, RefreshCw, Plus, Trash2, CheckCircle2,
   Globe, Database, Clock, ArrowUpRight, Lock, Sparkles, AlertCircle,
-  Sprout, Scale, Coins
+  Sprout, Scale, Coins, Droplets, Layers, AlertTriangle
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
@@ -35,10 +35,12 @@ export default function AdminDashboard() {
   const [actionSuccess, setActionSuccess] = useState(null)
   const [calibrationReport, setCalibrationReport] = useState(null)
 
-  // Pre-Season Crop Rules & Cost Templates State
+  // Pre-Season Crop Rules, Cost Templates, Water Kc & Nutrients State
   const [cropRules, setCropRules] = useState([])
   const [cropCosts, setCropCosts] = useState([])
-  const [cropTabSection, setCropTabSection] = useState('rules') // 'rules' | 'costs'
+  const [cropWaterCoeffs, setCropWaterCoeffs] = useState([])
+  const [cropNutrients, setCropNutrients] = useState([])
+  const [cropTabSection, setCropTabSection] = useState('rules') // 'rules' | 'costs' | 'water' | 'nutrients'
 
   const [newRule, setNewRule] = useState({
     crop_type: '',
@@ -127,6 +129,8 @@ export default function AdminDashboard() {
     fetchModelStatus()
     fetchCropRules()
     fetchCropCosts()
+    fetchCropWaterCoeffs()
+    fetchCropNutrients()
   }, [])
 
   const fetchAnalytics = async () => {
@@ -260,6 +264,40 @@ export default function AdminDashboard() {
     } catch (e) {
       console.debug('Error fetching crop costs:', e)
     }
+  }
+
+  const fetchCropWaterCoeffs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/irrigation/coefficients/all`)
+      if (res.ok) setCropWaterCoeffs(await res.json())
+    } catch (e) {
+      console.debug('Error fetching crop water coeffs:', e)
+    }
+  }
+
+  const fetchCropNutrients = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/fertilizer/requirements/all`)
+      if (res.ok) setCropNutrients(await res.json())
+    } catch (e) {
+      console.debug('Error fetching crop nutrients:', e)
+    }
+  }
+
+  const handleDeleteWaterCoeff = async (coeffId) => {
+    if (!window.confirm("Delete this FAO-56 crop water coefficient rule?")) return
+    try {
+      const res = await fetch(`${API_BASE}/irrigation/coefficients/${coeffId}`, { method: 'DELETE' })
+      if (res.ok) fetchCropWaterCoeffs()
+    } catch (e) { console.error(e) }
+  }
+
+  const handleDeleteNutrientReq = async (reqId) => {
+    if (!window.confirm("Delete this ICAR/TNAU crop nutrient requirement?")) return
+    try {
+      const res = await fetch(`${API_BASE}/fertilizer/requirements/${reqId}`, { method: 'DELETE' })
+      if (res.ok) fetchCropNutrients()
+    } catch (e) { console.error(e) }
   }
 
   const handleCreateRule = async (e) => {
@@ -1384,7 +1422,7 @@ export default function AdminDashboard() {
               </p>
             </div>
 
-            <div className="flex items-center bg-stone-100 p-1.5 rounded-2xl gap-1.5 self-start md:self-auto border border-stone-200">
+            <div className="flex flex-wrap items-center bg-stone-100 p-1.5 rounded-2xl gap-1.5 self-start md:self-auto border border-stone-200">
               <button
                 type="button"
                 onClick={() => setCropTabSection('rules')}
@@ -1410,6 +1448,32 @@ export default function AdminDashboard() {
               >
                 <Coins size={14} />
                 <span>Cost Templates ({cropCosts.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCropTabSection('water')}
+                className={clsx(
+                  'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2',
+                  cropTabSection === 'water'
+                    ? 'bg-emerald-700 text-white shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                )}
+              >
+                <Droplets size={14} />
+                <span>FAO-56 Water Kc ({cropWaterCoeffs.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCropTabSection('nutrients')}
+                className={clsx(
+                  'px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2',
+                  cropTabSection === 'nutrients'
+                    ? 'bg-emerald-700 text-white shadow-sm'
+                    : 'text-stone-600 hover:text-stone-900'
+                )}
+              >
+                <Layers size={14} />
+                <span>ICAR/TNAU Nutrients ({cropNutrients.length})</span>
               </button>
             </div>
           </div>
@@ -1767,6 +1831,198 @@ export default function AdminDashboard() {
                           </td>
                         </tr>
                       ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section 3: FAO-56 Crop Water Coefficients (Kc) */}
+          {cropTabSection === 'water' && (
+            <div className="space-y-6">
+              <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-base font-black text-stone-900 flex items-center gap-2">
+                    <Droplets className="text-sky-600" size={18} />
+                    <span>FAO-56 Crop Water Coefficients & Growth Stages</span>
+                  </h4>
+                  <p className="text-xs text-stone-500 mt-1 max-w-2xl leading-relaxed">
+                    Standardized 4-stage coefficients (<code className="bg-stone-100 px-1 py-0.5 rounded font-mono">Kc_ini, Kc_dev, Kc_mid, Kc_late</code>)
+                    derived from FAO-56 Irrigation and Drainage Paper No. 56. Used for evapotranspiration (<code className="bg-stone-100 px-1 py-0.5 rounded font-mono">ETc = ET0 × Kc</code>)
+                    and precision irrigation scheduling.
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 text-xs font-semibold self-start md:self-auto">
+                  <Database size={13} className="text-sky-600" />
+                  <span>Production Seed: {cropWaterCoeffs.length} crops</span>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-stone-50/50">
+                  <span className="text-xs font-bold text-stone-700">
+                    Seeded Crop Kc Baselines
+                  </span>
+                  <span className="text-[11px] text-stone-500 font-mono">
+                    irrigation_fertilizer_demo_log_10000rows.csv is retained strictly for offline validation/demo benchmarks
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-stone-50 text-stone-500 font-black uppercase text-[10px] tracking-wider border-b border-stone-200">
+                        <th className="px-5 py-3">Crop</th>
+                        <th className="px-4 py-3">Initial Stage</th>
+                        <th className="px-4 py-3">Development</th>
+                        <th className="px-4 py-3">Mid-Season</th>
+                        <th className="px-4 py-3">Late-Season</th>
+                        <th className="px-4 py-3">Total Cycle</th>
+                        <th className="px-5 py-3">Source & Category</th>
+                        <th className="px-5 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {cropWaterCoeffs.map((coeff) => {
+                        const stages = coeff.growth_stages || []
+                        const sIni = stages.find(s => s.stage_name === 'Initial') || stages[0] || {}
+                        const sDev = stages.find(s => s.stage_name === 'Development') || stages[1] || {}
+                        const sMid = stages.find(s => s.stage_name === 'Mid-season') || stages[2] || {}
+                        const sLate = stages.find(s => s.stage_name === 'Late-season') || stages[3] || {}
+                        const isApproximated = coeff.source_note?.includes('APPROXIMATED')
+
+                        return (
+                          <tr key={coeff.id || coeff._id} className="hover:bg-stone-50/60 transition-colors">
+                            <td className="px-5 py-3.5 font-bold text-stone-900">
+                              {coeff.crop_type}
+                            </td>
+                            <td className="px-4 py-3.5 font-mono text-stone-700">
+                              <span className="font-semibold text-stone-900">{sIni.kc?.toFixed(2) ?? '--'}</span>
+                              <span className="text-[10px] text-stone-400 block">{sIni.duration_days ?? '--'} days</span>
+                            </td>
+                            <td className="px-4 py-3.5 font-mono text-stone-700">
+                              <span className="font-semibold text-stone-900">{sDev.kc?.toFixed(2) ?? '--'}</span>
+                              <span className="text-[10px] text-stone-400 block">{sDev.duration_days ?? '--'} days</span>
+                            </td>
+                            <td className="px-4 py-3.5 font-mono text-stone-700">
+                              <span className="font-semibold text-stone-900">{sMid.kc?.toFixed(2) ?? '--'}</span>
+                              <span className="text-[10px] text-stone-400 block">{sMid.duration_days ?? '--'} days</span>
+                            </td>
+                            <td className="px-4 py-3.5 font-mono text-stone-700">
+                              <span className="font-semibold text-stone-900">{sLate.kc?.toFixed(2) ?? '--'}</span>
+                              <span className="text-[10px] text-stone-400 block">{sLate.duration_days ?? '--'} days</span>
+                            </td>
+                            <td className="px-4 py-3.5 font-mono font-bold text-emerald-800">
+                              {coeff.total_duration_days ? `${coeff.total_duration_days} d` : '--'}
+                            </td>
+                            <td className="px-5 py-3.5 max-w-sm">
+                              {isApproximated ? (
+                                <div className="space-y-1">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
+                                    <AlertTriangle size={11} className="text-amber-700" /> Approximated FAO-56 Category
+                                  </span>
+                                  <p className="text-[11px] text-amber-800 italic leading-snug">{coeff.source_note}</p>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-stone-500 italic block leading-snug">{coeff.source_note}</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3.5 text-right">
+                              <button
+                                onClick={() => handleDeleteWaterCoeff(coeff.id || coeff._id)}
+                                className="p-1.5 hover:bg-red-50 text-stone-400 hover:text-red-600 rounded-lg transition-colors"
+                                title="Delete coefficient"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Section 4: ICAR / TNAU Crop Nutrient Requirements */}
+          {cropTabSection === 'nutrients' && (
+            <div className="space-y-6">
+              {/* Mandatory Agronomic Callout Banner */}
+              <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 shadow-sm flex items-start gap-4">
+                <div className="p-3 bg-amber-100 text-amber-800 rounded-2xl shrink-0">
+                  <AlertTriangle size={24} />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-sm font-black text-amber-950 uppercase tracking-wide">
+                    Agronomic Dataset Verification & Manual Compilation Requirement
+                  </h4>
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    Official crop nutrient requirements (N-P-K recommendation rates in kg/acre and growth-stage application split schedules)
+                    must be compiled and verified directly against <strong>ICAR Handbooks of Agriculture</strong> and <strong>TNAU Crop Production Guides</strong>.
+                    Any dataset additions must cite specific bulletin volume and year before deployment to farmer-facing advisories.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
+                <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-stone-50/50">
+                  <span className="text-xs font-bold text-stone-700">
+                    Compiled NPK Recommendations & Stage Splits ({cropNutrients.length} Crops)
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-stone-50 text-stone-500 font-black uppercase text-[10px] tracking-wider border-b border-stone-200">
+                        <th className="px-5 py-3">Crop</th>
+                        <th className="px-4 py-3">N (kg/acre)</th>
+                        <th className="px-4 py-3">P₂O₅ (kg/acre)</th>
+                        <th className="px-4 py-3">K₂O (kg/acre)</th>
+                        <th className="px-5 py-3">Application Split (% by Stage)</th>
+                        <th className="px-5 py-3">Citation / Source Note</th>
+                        <th className="px-5 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {cropNutrients.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-5 py-8 text-center text-xs text-stone-400">
+                            No nutrient requirements loaded yet. Use scripts or manual compilation to insert ICAR/TNAU guidelines.
+                          </td>
+                        </tr>
+                      ) : (
+                        cropNutrients.map((req) => (
+                          <tr key={req.id || req._id} className="hover:bg-stone-50/60 transition-colors">
+                            <td className="px-5 py-3.5 font-bold text-stone-900">{req.crop_type}</td>
+                            <td className="px-4 py-3.5 font-mono font-bold text-emerald-800">{req.n_required_kg_per_acre}</td>
+                            <td className="px-4 py-3.5 font-mono font-bold text-blue-800">{req.p_required_kg_per_acre}</td>
+                            <td className="px-4 py-3.5 font-mono font-bold text-amber-800">{req.k_required_kg_per_acre}</td>
+                            <td className="px-5 py-3.5">
+                              <div className="flex flex-wrap gap-1">
+                                {req.application_split?.map((split, i) => (
+                                  <span key={i} className="inline-block px-2 py-0.5 rounded bg-stone-100 text-[10px] font-mono text-stone-700">
+                                    {split.stage}: {split.n_pct}%N / {split.p_pct}%P / {split.k_pct}%K ({split.days_after_sowing}d)
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-5 py-3.5 max-w-xs text-[11px] text-stone-500 italic">
+                              {req.source_note}
+                            </td>
+                            <td className="px-5 py-3.5 text-right">
+                              <button
+                                onClick={() => handleDeleteNutrientReq(req.id || req._id)}
+                                className="p-1.5 hover:bg-red-50 text-stone-400 hover:text-red-600 rounded-lg transition-colors"
+                                title="Delete requirement"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>

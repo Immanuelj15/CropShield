@@ -23,32 +23,21 @@ logger = logging.getLogger("cropshield.irrigation")
 
 def compute_et0(t_max: float, t_min: float, solar_radiation: float) -> float:
     """
-    Computes Reference Evapotranspiration (ET0 in mm/day) using the Hargreaves method.
-    ET0 = 0.0023 * Ra * (Tmean + 17.8) * sqrt(Tmax - Tmin)
+    Computes Reference Evapotranspiration (ET0 in mm/day) using the Hargreaves method:
+    ET0 = 0.0023 * solar_radiation * (t_mean + 17.8) * sqrt(t_max - t_min)
     NASA POWER fields:
     - T2M_MAX: maximum 2m air temp (°C)
     - T2M_MIN: minimum 2m air temp (°C)
-    - ALLSKY_SFC_SW_DWN: all-sky surface shortwave downward irradiance (MJ/m^2/day or kW-hr/m^2/day)
+    - ALLSKY_SFC_SW_DWN: solar radiation (MJ/m^2/day)
     """
     try:
         t_max = float(t_max)
         t_min = float(t_min)
         sol = float(solar_radiation)
-        
-        # NASA POWER solar radiation is usually in MJ/m^2/day (approx 14 to 26 in tropical India).
-        # If in kW-hr/m^2/day (e.g. 4.0 to 7.0), convert to MJ/m^2/day (* 3.6)
-        if sol < 10.0:
-            sol = sol * 3.6
-        
-        # Convert MJ/m^2/day to equivalent water depth in mm/day (approx factor 0.408)
-        rad_mm = sol * 0.408
-        
         t_mean = (t_max + t_min) / 2.0
-        temp_diff = max(0.5, t_max - t_min)
-        
-        et0 = 0.0023 * rad_mm * (t_mean + 17.8) * math.sqrt(temp_diff)
-        # Typical tropical Tamil Nadu ET0 ranges from 3.0 to 7.5 mm/day
-        return max(1.5, min(10.0, round(et0, 2)))
+        temp_diff = max(0.001, t_max - t_min)
+        et0 = 0.0023 * sol * (t_mean + 17.8) * math.sqrt(temp_diff)
+        return round(et0, 2)
     except Exception as e:
         logger.debug("Fallback ET0 computation due to: %s", e)
         return 4.5  # Standard tropical baseline (mm/day)
