@@ -1,16 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Wallet, TrendingUp, TrendingDown, Plus, Receipt,
-  Calendar, Layers, Filter, Trash2, Eye, Download,
-  RefreshCw, CheckCircle2, AlertTriangle, ArrowUpRight,
-  Sprout, MapPin, Sparkles, Building2, HelpCircle
+  Wallet, TrendingUp, Plus, Receipt,
+  Calendar, Filter, Trash2, Eye, Download,
+  RefreshCw, MapPin, Sparkles, Building2
 } from 'lucide-react'
 import clsx from 'clsx'
 import PnLSummaryCard from '../components/PnLSummaryCard'
 import QuickAddExpenseForm from '../components/QuickAddExpenseForm'
 import QuickAddRevenueForm from '../components/QuickAddRevenueForm'
 import { formatINR } from '../components/ProfitRangeDisplay'
+import { ErrorState } from '../components'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { useToast } from '../components/ui/Toast'
 
 const SEASONS = [
   'Kharif 2026',
@@ -22,7 +24,7 @@ const SEASONS = [
 
 const CATEGORY_META = {
   seeds: { label: 'Seeds', icon: '🌱', color: 'bg-amber-100 text-amber-800 border-amber-300' },
-  fertilizer: { label: 'Fertilizer', icon: '🌾', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  fertilizer: { label: 'Fertilizer', icon: '🌾', color: 'bg-brand-100 text-brand-800 border-brand-300' },
   labor: { label: 'Labor', icon: '👷', color: 'bg-blue-100 text-blue-800 border-blue-300' },
   irrigation: { label: 'Irrigation', icon: '💧', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
   pesticides: { label: 'Pesticides', icon: '🧪', color: 'bg-purple-100 text-purple-800 border-purple-300' },
@@ -48,6 +50,8 @@ export default function ExpenseTrackerPage() {
   const [showAddExpense, setShowAddExpense] = useState(false)
   const [showAddRevenue, setShowAddRevenue] = useState(false)
   const [previewReceiptUrl, setPreviewReceiptUrl] = useState(null)
+  const [deleteTargetId, setDeleteTargetId] = useState(null)
+  const toast = useToast()
 
   // 1. Fetch user farms
   useEffect(() => {
@@ -110,14 +114,20 @@ export default function ExpenseTrackerPage() {
 
       if (expRes.ok) {
         const expData = await expRes.json()
-        setExpenses(expData || [])
+        const items = Array.isArray(expData)
+          ? expData
+          : (Array.isArray(expData.expenses) ? expData.expenses : [])
+        setExpenses(items)
       } else {
         setExpenses([])
       }
 
       if (revRes.ok) {
         const revData = await revRes.json()
-        setRevenues(revData || [])
+        const items = Array.isArray(revData)
+          ? revData
+          : (Array.isArray(revData.revenues) ? revData.revenues : [])
+        setRevenues(items)
       } else {
         setRevenues([])
       }
@@ -137,22 +147,25 @@ export default function ExpenseTrackerPage() {
 
   // Handle delete expense
   const handleDeleteExpense = async (expenseId) => {
-    if (!window.confirm('Are you sure you want to remove this expense entry?')) return
     try {
       const res = await fetch(`/api/v1/expenses/${expenseId}`, { method: 'DELETE' })
       if (res.ok) {
+        toast.success('Expense entry removed.')
         loadPnlData()
       } else {
-        alert('Failed to delete expense.')
+        toast.error('Failed to delete expense.')
       }
     } catch (err) {
       console.error('Delete error:', err)
-      alert('Error deleting expense.')
+      toast.error('Error deleting expense.')
+    } finally {
+      setDeleteTargetId(null)
     }
   }
 
-  // Filtered expenses
-  const filteredExpenses = expenses.filter((e) => {
+  // Filtered expenses safely
+  const expenseList = Array.isArray(expenses) ? expenses : []
+  const filteredExpenses = expenseList.filter((e) => {
     if (categoryFilter === 'all') return true
     return e.category === categoryFilter
   })
@@ -167,7 +180,8 @@ export default function ExpenseTrackerPage() {
       })
     } else {
       csvContent += 'Sale Date,Crop,Quantity (kg),Price per kg,Total Revenue,Buyer/Mandi\n'
-      revenues.forEach((rev) => {
+      const revenueList = Array.isArray(revenues) ? revenues : []
+      revenueList.forEach((rev) => {
         csvContent += `"${rev.sale_date}","${rev.crop_type}","${rev.quantity_sold_kg}","${rev.price_per_kg}","${rev.total_revenue}","${(rev.buyer_or_mandi || '').replace(/"/g, '""')}"\n`
       })
     }
@@ -183,20 +197,20 @@ export default function ExpenseTrackerPage() {
   return (
     <div className="space-y-8 pb-16">
       {/* Top Header & Farm/Season Selector */}
-      <div className="bg-gradient-to-br from-emerald-900 via-teal-900 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="bg-gradient-to-br from-brand-900 via-teal-900 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-brand-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold tracking-wide">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/20 border border-brand-400/30 text-brand-300 text-xs font-bold tracking-wide">
               <Sparkles size={13} />
               <span>AgriGuard AI — Reality Validation Ledger</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              <Wallet className="text-emerald-400 shrink-0" size={32} />
+              <Wallet className="text-brand-400 shrink-0" size={32} />
               Farm Profit & Expense Tracker
             </h1>
-            <p className="text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+            <p className="text-sm text-brand-100/80 max-w-2xl leading-relaxed">
               Log actual seasonal cultivation expenses and crop sales. AgriGuard compares your real financial outcome
               against pre-season AI profit predictions to calibrate our regional models for Tamil Nadu.
             </p>
@@ -206,7 +220,7 @@ export default function ExpenseTrackerPage() {
           <div className="flex flex-wrap items-center gap-3">
             {/* Farm Selector */}
             <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-3 py-2 flex items-center gap-2">
-              <MapPin size={16} className="text-emerald-300 shrink-0" />
+              <MapPin size={16} className="text-brand-300 shrink-0" />
               <select
                 aria-label="Select Farm"
                 value={selectedFarmId}
@@ -223,7 +237,7 @@ export default function ExpenseTrackerPage() {
 
             {/* Season Selector */}
             <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl px-3 py-2 flex items-center gap-2">
-              <Calendar size={16} className="text-emerald-300 shrink-0" />
+              <Calendar size={16} className="text-brand-300 shrink-0" />
               <select
                 aria-label="Select Season"
                 value={selectedSeason}
@@ -252,32 +266,38 @@ export default function ExpenseTrackerPage() {
 
         {/* Action Triggers Bar */}
         <div className="mt-6 pt-6 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-xs text-emerald-200">
+          <div className="flex items-center gap-2 text-xs text-brand-200">
             <span className="font-semibold text-white">{currentFarm?.name || 'Selected Farm'}</span>
             <span>·</span>
             <span>{currentFarm?.district || 'Tamil Nadu'}</span>
             <span>·</span>
-            <span className="font-mono text-emerald-300">{currentFarm?.area_acres || 2} Acres</span>
+            <span className="font-mono text-brand-300">{currentFarm?.area_acres || 2} Acres</span>
           </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowAddExpense(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-stone-950 font-black text-xs sm:text-sm hover:from-emerald-400 hover:to-teal-400 shadow-lg shadow-emerald-900/30 transition-all cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-brand-500 to-teal-500 text-stone-950 font-black text-xs sm:text-sm hover:from-brand-400 hover:to-teal-400 shadow-lg shadow-brand-900/30 transition-all cursor-pointer"
             >
               <Plus size={16} className="stroke-[3]" />
               <span>Log Expense</span>
             </button>
             <button
               onClick={() => setShowAddRevenue(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-emerald-950 font-black text-xs sm:text-sm hover:bg-emerald-50 shadow-lg transition-all cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-brand-900 font-black text-xs sm:text-sm hover:bg-brand-50 shadow-lg transition-all cursor-pointer"
             >
-              <TrendingUp size={16} className="text-emerald-700 stroke-[3]" />
+              <TrendingUp size={16} className="text-brand-700 stroke-[3]" />
               <span>Log Harvest Sale</span>
             </button>
           </div>
         </div>
       </div>
+
+      {error && (
+        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm">
+          <ErrorState message={error} onRetry={loadPnlData} />
+        </div>
+      )}
 
       {/* Main PnL Summary Card with Real-time Count-up & Prediction Accuracy */}
       <PnLSummaryCard
@@ -310,7 +330,7 @@ export default function ExpenseTrackerPage() {
               className={clsx(
                 'flex items-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-black transition-all cursor-pointer',
                 activeTab === 'revenues'
-                  ? 'bg-emerald-700 text-white shadow-sm'
+                  ? 'bg-brand-700 text-white shadow-sm'
                   : 'bg-stone-100 text-stone-600 hover:bg-stone-200/70'
               )}
             >
@@ -366,7 +386,7 @@ export default function ExpenseTrackerPage() {
                 </div>
                 <button
                   onClick={() => setShowAddExpense(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition-all cursor-pointer shadow-sm"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-brand-700 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer shadow-sm"
                 >
                   <Plus size={14} />
                   <span>Log First Expense</span>
@@ -406,7 +426,7 @@ export default function ExpenseTrackerPage() {
                             {exp.receipt_url ? (
                               <button
                                 onClick={() => setPreviewReceiptUrl(exp.receipt_url)}
-                                className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-semibold underline text-xs cursor-pointer"
+                                className="inline-flex items-center gap-1 text-brand-700 hover:text-brand-800 font-semibold underline text-xs cursor-pointer"
                               >
                                 <Eye size={13} />
                                 <span>View Bill</span>
@@ -420,7 +440,7 @@ export default function ExpenseTrackerPage() {
                           </td>
                           <td className="py-3.5 px-3 text-center whitespace-nowrap">
                             <button
-                              onClick={() => handleDeleteExpense(exp.id || exp._id)}
+                              onClick={() => setDeleteTargetId(exp.id || exp._id)}
                               className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                               title="Delete entry"
                             >
@@ -440,9 +460,9 @@ export default function ExpenseTrackerPage() {
         {/* Tab 2: Harvest Sales / Revenue Table */}
         {activeTab === 'revenues' && (
           <div>
-            {revenues.length === 0 ? (
+            {(!Array.isArray(revenues) || revenues.length === 0) ? (
               <div className="text-center py-16 space-y-4">
-                <div className="w-16 h-16 rounded-3xl bg-emerald-50 flex items-center justify-center mx-auto text-emerald-500">
+                <div className="w-16 h-16 rounded-3xl bg-brand-50 flex items-center justify-center mx-auto text-brand-500">
                   <TrendingUp size={32} />
                 </div>
                 <div className="space-y-1">
@@ -453,7 +473,7 @@ export default function ExpenseTrackerPage() {
                 </div>
                 <button
                   onClick={() => setShowAddRevenue(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition-all cursor-pointer shadow-sm"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-brand-700 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer shadow-sm"
                 >
                   <Plus size={14} />
                   <span>Log Harvest Sale</span>
@@ -473,7 +493,7 @@ export default function ExpenseTrackerPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
-                    {revenues.map((rev) => (
+                    {(Array.isArray(revenues) ? revenues : []).map((rev) => (
                       <tr key={rev.id || rev._id} className="hover:bg-stone-50/70 transition-colors">
                         <td className="py-3.5 px-3 font-medium text-stone-600 whitespace-nowrap">
                           {rev.sale_date}
@@ -496,7 +516,7 @@ export default function ExpenseTrackerPage() {
                             <span>{rev.buyer_or_mandi || 'Local Mandi'}</span>
                           </span>
                         </td>
-                        <td className="py-3.5 px-3 text-right font-black font-mono text-emerald-700 whitespace-nowrap text-base">
+                        <td className="py-3.5 px-3 text-right font-black font-mono text-brand-700 whitespace-nowrap text-base">
                           ₹{formatINR(rev.total_revenue)}
                         </td>
                       </tr>
@@ -577,7 +597,7 @@ export default function ExpenseTrackerPage() {
             >
               <div className="flex items-center justify-between pb-3 border-b border-stone-200">
                 <span className="font-bold text-sm text-stone-800 flex items-center gap-2">
-                  <Receipt size={16} className="text-emerald-700" />
+                  <Receipt size={16} className="text-brand-700" />
                   Expense Receipt / Bill Proof
                 </span>
                 <button
@@ -598,6 +618,15 @@ export default function ExpenseTrackerPage() {
           </div>
         )}
       </AnimatePresence>
+      <ConfirmDialog
+        isOpen={!!deleteTargetId}
+        onCancel={() => setDeleteTargetId(null)}
+        onConfirm={() => handleDeleteExpense(deleteTargetId)}
+        title="Remove this expense entry?"
+        message="This action cannot be undone."
+        confirmLabel="Delete"
+        danger
+      />
     </div>
   )
 }

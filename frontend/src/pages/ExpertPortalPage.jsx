@@ -1,6 +1,10 @@
 import { useState } from 'react'
-import { UserCheck, ShieldCheck, FileCheck, CheckCircle2, Clock, ThumbsUp } from 'lucide-react'
+import { FileCheck, CheckCircle2, ThumbsUp } from 'lucide-react'
+import EmptyState from '../components/ui/EmptyState'
 
+// NOTE(backend): This page renders a hardcoded local array, not a live fetch — there is no
+// /api/v1 endpoint today for expert-review queues or verified-advisory history. Flagged for a
+// product/backend decision rather than wired to a real or fabricated endpoint (see redesign report).
 export default function ExpertPortalPage() {
   const [activeTab, setActiveTab] = useState('scans')
 
@@ -12,8 +16,8 @@ export default function ExpertPortalPage() {
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Header */}
-      <div className="bg-gradient-to-r from-stone-900 to-emerald-950 rounded-3xl p-8 text-white shadow-xl">
-        <span className="px-3 py-1 bg-emerald-500/30 text-emerald-300 text-xs font-semibold rounded-full border border-emerald-400/30">
+      <div className="bg-gradient-to-r from-stone-900 to-brand-900 rounded-3xl p-8 text-white shadow-xl">
+        <span className="px-3 py-1 bg-brand-500/30 text-brand-300 text-xs font-semibold rounded-full border border-brand-400/30">
           Role-Based Access Control (RBAC) · Expert Validation Portal
         </span>
         <h1 className="text-3xl font-bold tracking-tight mt-2">Agriculture Expert & Admin Dashboard</h1>
@@ -30,7 +34,7 @@ export default function ExpertPortalPage() {
             <button
               onClick={() => setActiveTab('scans')}
               className={`w-full text-left px-4 py-2.5 rounded-xl font-semibold text-xs transition-colors flex items-center justify-between ${
-                activeTab === 'scans' ? 'bg-emerald-50 text-emerald-700' : 'text-stone-600 hover:bg-stone-100'
+                activeTab === 'scans' ? 'bg-brand-50 text-brand-700' : 'text-stone-600 hover:bg-stone-100'
               }`}
             >
               <span>Pending Reviews</span>
@@ -39,24 +43,37 @@ export default function ExpertPortalPage() {
             <button
               onClick={() => setActiveTab('verified')}
               className={`w-full text-left px-4 py-2.5 rounded-xl font-semibold text-xs transition-colors flex items-center justify-between ${
-                activeTab === 'verified' ? 'bg-emerald-50 text-emerald-700' : 'text-stone-600 hover:bg-stone-100'
+                activeTab === 'verified' ? 'bg-brand-50 text-brand-700' : 'text-stone-600 hover:bg-stone-100'
               }`}
             >
               <span>Verified Advisories</span>
-              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px]">48</span>
+              <span className="px-2 py-0.5 bg-brand-100 text-brand-800 rounded-full text-[10px]">48</span>
             </button>
           </div>
         </div>
 
         {/* Content Table */}
         <div className="lg:col-span-3 card p-6 space-y-6">
+          {activeTab === 'verified' ? (
+            <>
+              <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+                <ThumbsUp className="text-brand-600" size={20} /> Verified Advisories
+              </h3>
+              <EmptyState
+                icon={ThumbsUp}
+                title="Coming Soon"
+                message="Verified advisory history is not yet wired to a backend endpoint. This section is a placeholder pending that integration."
+              />
+            </>
+          ) : (
+          <>
           <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-            <FileCheck className="text-emerald-600" size={20} /> Pathology Diagnostic Reviews
+            <FileCheck className="text-brand-600" size={20} /> Pathology Diagnostic Reviews
           </h3>
 
           <div className="space-y-4">
             {pendingScans.map((scan) => (
-              <div key={scan.id} className="p-5 rounded-2xl border border-stone-200 bg-white space-y-3 shadow-sm hover:border-emerald-300 transition-all">
+              <div key={scan.id} className="p-5 rounded-2xl border border-stone-200 bg-white space-y-3 shadow-sm hover:border-brand-300 transition-all">
                 <div className="flex items-center justify-between">
                   <div>
                     <h4 className="font-bold text-stone-900 text-sm">{scan.farmer} — {scan.location}</h4>
@@ -73,13 +90,15 @@ export default function ExpertPortalPage() {
                 </div>
 
                 <div className="flex gap-2 justify-end pt-2">
-                  <button className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-semibold hover:bg-emerald-700 flex items-center gap-1">
+                  <button className="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold hover:bg-brand-700 flex items-center gap-1">
                     <CheckCircle2 size={14} /> Validate & Approve Advisory
                   </button>
                 </div>
               </div>
             ))}
           </div>
+          </>
+          )}
         </div>
       </div>
     </div>

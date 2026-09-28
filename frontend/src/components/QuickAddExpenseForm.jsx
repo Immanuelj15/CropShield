@@ -8,7 +8,7 @@ import { queueOfflineAction } from '../utils/offlineQueue'
 
 const CATEGORIES = [
   { id: 'seeds', label: 'Seeds', icon: '🌱', color: 'hover:border-amber-400 peer-checked:bg-amber-500 peer-checked:text-white' },
-  { id: 'fertilizer', label: 'Fertilizer', icon: '🌾', color: 'hover:border-emerald-400 peer-checked:bg-emerald-600 peer-checked:text-white' },
+  { id: 'fertilizer', label: 'Fertilizer', icon: '🌾', color: 'hover:border-brand-400 peer-checked:bg-brand-600 peer-checked:text-white' },
   { id: 'labor', label: 'Labor', icon: '👷', color: 'hover:border-blue-400 peer-checked:bg-blue-600 peer-checked:text-white' },
   { id: 'irrigation', label: 'Irrigation', icon: '💧', color: 'hover:border-cyan-400 peer-checked:bg-cyan-600 peer-checked:text-white' },
   { id: 'pesticides', label: 'Pesticides', icon: '🧪', color: 'hover:border-purple-400 peer-checked:bg-purple-600 peer-checked:text-white' },
@@ -84,9 +84,13 @@ export default function QuickAddExpenseForm({
     }
 
     try {
+      const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('cropshield_token')
       const res = await fetch('/api/v1/expenses', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(payload),
       })
 
@@ -118,7 +122,7 @@ export default function QuickAddExpenseForm({
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-stone-100">
         <div>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">
             10-Second Field Entry
           </span>
           <h3 className="text-xl font-black text-stone-900 mt-1">
@@ -162,7 +166,7 @@ export default function QuickAddExpenseForm({
                 className={clsx(
                   "p-2.5 rounded-2xl border text-center cursor-pointer transition-all flex flex-col items-center gap-1",
                   category === cat.id
-                    ? "bg-emerald-600 text-white border-emerald-600 shadow-sm font-bold scale-[1.02]"
+                    ? "bg-brand-600 text-white border-brand-600 shadow-sm font-bold scale-[1.02]"
                     : "bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200 font-semibold"
                 )}
               >
@@ -199,7 +203,7 @@ export default function QuickAddExpenseForm({
               onChange={(e) => setAmount(e.target.value)}
               required
               autoFocus
-              className="w-full pl-9 pr-4 py-3 rounded-2xl border border-stone-200 text-xl font-black text-stone-900 font-mono outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              className="w-full pl-9 pr-4 py-3 rounded-2xl border border-stone-200 text-xl font-black text-stone-900 font-mono outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             />
           </div>
 
@@ -210,7 +214,7 @@ export default function QuickAddExpenseForm({
                 key={amt}
                 type="button"
                 onClick={() => setAmount(String((Number(amount) || 0) + amt))}
-                className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-emerald-50 text-stone-600 hover:text-emerald-800 text-[11px] font-mono font-bold transition border border-stone-200 shrink-0"
+                className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-brand-50 text-stone-600 hover:text-brand-800 text-[11px] font-mono font-bold transition border border-stone-200 shrink-0"
               >
                 +{amt}
               </button>
@@ -231,14 +235,14 @@ export default function QuickAddExpenseForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div>
             <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <Calendar size={13} className="text-emerald-600" /> Date
+              <Calendar size={13} className="text-brand-600" /> Date
             </label>
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               required
-              className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
 
@@ -246,7 +250,7 @@ export default function QuickAddExpenseForm({
             <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1">
               <Camera size={13} className="text-blue-600" /> Receipt Photo (Optional)
             </label>
-            <label className="w-full p-2 rounded-xl border border-dashed border-stone-300 hover:border-emerald-500 bg-stone-50 hover:bg-emerald-50/40 text-stone-600 flex items-center justify-center gap-2 cursor-pointer transition">
+            <label className="w-full p-2 rounded-xl border border-dashed border-stone-300 hover:border-brand-500 bg-stone-50 hover:bg-brand-50/40 text-stone-600 flex items-center justify-center gap-2 cursor-pointer transition">
               <Upload size={14} className="text-stone-400" />
               <span className="font-semibold truncate max-w-[140px]">
                 {uploadingReceipt ? 'Uploading...' : receiptUrl ? 'Receipt Attached ✓' : 'Snap / Upload'}
@@ -272,7 +276,7 @@ export default function QuickAddExpenseForm({
             placeholder="e.g. Bought 2 bags at Kovilpatti Agro Center"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 text-xs outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 text-xs outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
@@ -280,7 +284,7 @@ export default function QuickAddExpenseForm({
         <button
           type="submit"
           disabled={submitting}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
         >
           {submitting ? (
             <span>Saving Expense...</span>

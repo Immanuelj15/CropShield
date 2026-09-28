@@ -13,9 +13,7 @@ import {
   ShieldCheck,
   Radio,
   Clock,
-  Database,
-  ArrowRight,
-  WifiOff
+  Database
 } from 'lucide-react';
 import {
   getNotificationPreferences,
@@ -27,6 +25,8 @@ import {
   getNotificationLogs
 } from '../utils/api';
 import { getPendingCount, flushOfflineQueue, getPendingActions } from '../utils/offlineQueue';
+import Toggle from '../components/ui/Toggle';
+import { useToast } from '../components/ui/Toast';
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -62,6 +62,7 @@ export default function NotificationSettingsPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingItems, setPendingItems] = useState([]);
   const [syncingQueue, setSyncingQueue] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     // Check Web Push support in browser
@@ -116,7 +117,7 @@ export default function NotificationSettingsPage() {
 
   const handleTogglePush = async () => {
     if (!pushSupported) {
-      alert('Web Push is not supported by your current browser or device.');
+      toast.error('Web Push is not supported by your current browser or device.');
       return;
     }
 
@@ -241,7 +242,7 @@ export default function NotificationSettingsPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] text-stone-500">
-        <RefreshCw className="w-8 h-8 animate-spin text-emerald-600 mb-2" />
+        <RefreshCw className="w-8 h-8 animate-spin text-brand-600 mb-2" />
         <p className="text-sm font-medium">Loading notification settings...</p>
       </div>
     );
@@ -252,7 +253,7 @@ export default function NotificationSettingsPage() {
       {/* Header */}
       <div className="border-b border-stone-200 pb-5">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+          <div className="p-2.5 bg-brand-100 text-brand-800 rounded-xl">
             <Radio className="w-6 h-6" />
           </div>
           <div>
@@ -273,14 +274,14 @@ export default function NotificationSettingsPage() {
             statusMessage.type === 'error'
               ? 'bg-rose-50 text-rose-800 border border-rose-200'
               : statusMessage.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              ? 'bg-brand-50 text-brand-800 border border-brand-200'
               : 'bg-blue-50 text-blue-800 border border-blue-200'
           }`}
         >
           {statusMessage.type === 'error' ? (
             <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
           ) : (
-            <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
+            <CheckCircle2 className="w-5 h-5 shrink-0 text-brand-600" />
           )}
           <span>{statusMessage.text}</span>
         </div>
@@ -291,7 +292,7 @@ export default function NotificationSettingsPage() {
         {/* Delivery Channels Card */}
         <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-6">
           <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
-            <Bell className="w-5 h-5 text-emerald-600" />
+            <Bell className="w-5 h-5 text-brand-600" />
             Alert Delivery Channels
           </h2>
 
@@ -299,13 +300,13 @@ export default function NotificationSettingsPage() {
             {/* Channel 1: Web Push */}
             <div className="flex items-start justify-between p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition">
               <div className="flex items-start gap-3 max-w-xl">
-                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg shrink-0 mt-0.5">
+                <div className="p-2 bg-brand-100 text-brand-700 rounded-lg shrink-0 mt-0.5">
                   <Bell className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-stone-900">Web Push (Installed PWA)</span>
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-brand-100 text-brand-800">
                       Zero SMS Cost
                     </span>
                   </div>
@@ -318,7 +319,7 @@ export default function NotificationSettingsPage() {
                       Browser Status:{' '}
                       <span
                         className={`capitalize font-semibold ${
-                          pushEnabled ? 'text-emerald-600' : 'text-stone-500'
+                          pushEnabled ? 'text-brand-600' : 'text-stone-500'
                         }`}
                       >
                         {pushEnabled ? 'Subscribed & Active' : permissionState}
@@ -327,19 +328,7 @@ export default function NotificationSettingsPage() {
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleTogglePush}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  pushEnabled ? 'bg-emerald-600' : 'bg-stone-300'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    pushEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
+              <Toggle checked={pushEnabled} onChange={handleTogglePush} />
             </div>
 
             {/* Channel 2: Universal SMS */}
@@ -361,19 +350,7 @@ export default function NotificationSettingsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSmsEnabled(!smsEnabled)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  smsEnabled ? 'bg-emerald-600' : 'bg-stone-300'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    smsEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
+              <Toggle checked={smsEnabled} onChange={setSmsEnabled} />
             </div>
 
             {/* Channel 3: WhatsApp Alert */}
@@ -394,19 +371,7 @@ export default function NotificationSettingsPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setWhatsappEnabled(!whatsappEnabled)}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  whatsappEnabled ? 'bg-emerald-600' : 'bg-stone-300'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    whatsappEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
+              <Toggle checked={whatsappEnabled} onChange={setWhatsappEnabled} />
             </div>
           </div>
 
@@ -421,7 +386,7 @@ export default function NotificationSettingsPage() {
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 placeholder="+919876543210"
-                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition"
               />
             </div>
             <p className="text-xs text-stone-400 mt-1">
@@ -435,7 +400,7 @@ export default function NotificationSettingsPage() {
           {/* Preferred Language */}
           <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
             <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
-              <Globe className="w-5 h-5 text-emerald-600" />
+              <Globe className="w-5 h-5 text-brand-600" />
               Alert Language (மொழி / भाषा)
             </h2>
             <p className="text-xs text-stone-500">
@@ -452,7 +417,7 @@ export default function NotificationSettingsPage() {
                   key={item.id}
                   className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
                     language === item.id
-                      ? 'border-emerald-600 bg-emerald-50/60 font-semibold text-emerald-950'
+                      ? 'border-brand-600 bg-brand-50/60 font-semibold text-brand-900'
                       : 'border-stone-200 hover:bg-stone-50 text-stone-700'
                   }`}
                 >
@@ -466,7 +431,7 @@ export default function NotificationSettingsPage() {
                     value={item.id}
                     checked={language === item.id}
                     onChange={(e) => setLanguage(e.target.value)}
-                    className="w-4 h-4 text-emerald-600 focus:ring-emerald-500"
+                    className="w-4 h-4 text-brand-600 focus:ring-brand-500"
                   />
                 </label>
               ))}
@@ -495,7 +460,7 @@ export default function NotificationSettingsPage() {
                     onChange={(e) =>
                       setQuietHours({ ...quietHours, start: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                 </div>
               </div>
@@ -510,7 +475,7 @@ export default function NotificationSettingsPage() {
                     onChange={(e) =>
                       setQuietHours({ ...quietHours, end: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                 </div>
               </div>
@@ -530,7 +495,7 @@ export default function NotificationSettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-medium text-sm shadow-sm transition disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white font-medium text-sm shadow-sm transition disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Saving...' : 'Save Delivery Preferences'}
@@ -552,7 +517,7 @@ export default function NotificationSettingsPage() {
       <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Database className="w-5 h-5 text-emerald-600" />
+            <Database className="w-5 h-5 text-brand-600" />
             <h2 className="text-lg font-semibold text-stone-800">
               Offline Action Queue (IndexedDB Storage)
             </h2>
@@ -561,7 +526,7 @@ export default function NotificationSettingsPage() {
             className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
               pendingCount > 0
                 ? 'bg-amber-100 text-amber-900'
-                : 'bg-emerald-100 text-emerald-900'
+                : 'bg-brand-100 text-brand-900'
             }`}
           >
             {pendingCount} item{pendingCount === 1 ? '' : 's'} queued
@@ -637,7 +602,7 @@ export default function NotificationSettingsPage() {
                   <span
                     className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                       log.status === 'sent'
-                        ? 'bg-emerald-100 text-emerald-800'
+                        ? 'bg-brand-100 text-brand-800'
                         : log.status === 'queued'
                         ? 'bg-amber-100 text-amber-800'
                         : 'bg-rose-100 text-rose-800'

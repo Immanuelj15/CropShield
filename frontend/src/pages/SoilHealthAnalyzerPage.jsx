@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Sprout, MapPin, Compass, CheckCircle2, AlertTriangle, ArrowRight,
-  RotateCcw, ShieldCheck, Upload, Database, Sparkles, Layers,
-  ChevronRight, Activity, FileText, Mountain, RefreshCw
+  Sprout, CheckCircle2, AlertTriangle,
+  RotateCcw, ShieldCheck, Upload, Database, Sparkles
 } from 'lucide-react'
 
 import BoundaryDrawingStep from '../components/BoundaryDrawingStep'
 import SoilReportCard from '../components/SoilReportCard'
 import LabReportUpload from '../components/LabReportUpload'
+import { useToast } from '../components/ui/Toast'
 
 const API_BASE = '/api/v1'
 
@@ -41,6 +41,7 @@ export default function SoilHealthAnalyzerPage() {
   const [showLabUploadModal, setShowLabUploadModal] = useState(false)
   const [historyReports, setHistoryReports] = useState([])
   const [activeTab, setActiveTab] = useState('analyzer') // 'analyzer' | 'history'
+  const toast = useToast()
 
   // Fetch available farms
   useEffect(() => {
@@ -130,7 +131,7 @@ export default function SoilHealthAnalyzerPage() {
       if (selectedFarmId) fetchSoilHistory(selectedFarmId)
     } catch (err) {
       console.error(err)
-      alert('Analysis error: ' + err.message)
+      toast.error('Analysis error: ' + err.message)
       setCurrentStep(2)
     } finally {
       setAnalyzing(false)
@@ -159,8 +160,8 @@ export default function SoilHealthAnalyzerPage() {
       {/* Top Hero Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 mb-2">
-            <Sprout size={14} className="text-emerald-700" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-brand-50 text-brand-800 border border-brand-200 mb-2">
+            <Sprout size={14} className="text-brand-700" />
             <span>Farmer Onboarding & Pre-Season Foundation</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
@@ -177,7 +178,7 @@ export default function SoilHealthAnalyzerPage() {
             onClick={() => setActiveTab('analyzer')}
             className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all ${
               activeTab === 'analyzer'
-                ? 'bg-emerald-700 text-white shadow-sm'
+                ? 'bg-brand-700 text-white shadow-sm'
                 : 'bg-stone-100 text-stone-600 hover:text-stone-900'
             }`}
           >
@@ -187,7 +188,7 @@ export default function SoilHealthAnalyzerPage() {
             onClick={() => setActiveTab('history')}
             className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
               activeTab === 'history'
-                ? 'bg-emerald-700 text-white shadow-sm'
+                ? 'bg-brand-700 text-white shadow-sm'
                 : 'bg-stone-100 text-stone-600 hover:text-stone-900'
             }`}
           >
@@ -218,7 +219,7 @@ export default function SoilHealthAnalyzerPage() {
                     if (f.soil_type) setSoilTypeDeclared(f.soil_type)
                   }
                 }}
-                className="text-xs font-bold bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-emerald-600 text-stone-900"
+                className="text-xs font-bold bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-brand-600 text-stone-900"
               >
                 {farms.length > 0 ? (
                   farms.map((f) => (
@@ -244,13 +245,13 @@ export default function SoilHealthAnalyzerPage() {
                     key={title}
                     className={`px-3 py-1 rounded-xl transition-all whitespace-nowrap flex items-center gap-1 ${
                       isCurrent
-                        ? 'bg-emerald-700 text-white'
+                        ? 'bg-brand-700 text-white'
                         : isDone
-                        ? 'bg-emerald-50 text-emerald-900 border border-emerald-200'
+                        ? 'bg-brand-50 text-brand-900 border border-brand-200'
                         : 'bg-stone-100 text-stone-600'
                     }`}
                   >
-                    {isDone && <CheckCircle2 size={12} className="text-emerald-700" />}
+                    {isDone && <CheckCircle2 size={12} className="text-brand-700" />}
                     <span>{title}</span>
                   </div>
                 )
@@ -284,7 +285,7 @@ export default function SoilHealthAnalyzerPage() {
               className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6 max-w-3xl mx-auto"
             >
               <div className="border-b border-stone-100 pb-4">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                <span className="text-xs font-black uppercase tracking-wider text-brand-800 flex items-center gap-1.5">
                   <CheckCircle2 size={15} /> Step 2: Confirm Boundary & Agricultural Context
                 </span>
                 <h3 className="text-lg font-black text-stone-900 mt-1">
@@ -302,7 +303,7 @@ export default function SoilHealthAnalyzerPage() {
                     type="text"
                     value={district}
                     onChange={(e) => setDistrict(e.target.value)}
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-600 font-bold"
+                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
                   />
                 </div>
 
@@ -311,7 +312,7 @@ export default function SoilHealthAnalyzerPage() {
                   <select
                     value={soilTypeDeclared}
                     onChange={(e) => setSoilTypeDeclared(e.target.value)}
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-600 font-bold"
+                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
                   >
                     <option value="Alluvial Clay">Alluvial Clay (Cauvery Delta / River Basin)</option>
                     <option value="Black Cotton Soil">Black Cotton Soil (Vertisol / High Retention)</option>
@@ -326,7 +327,7 @@ export default function SoilHealthAnalyzerPage() {
                   <select
                     value={waterSource}
                     onChange={(e) => setWaterSource(e.target.value)}
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-600 font-bold"
+                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
                   >
                     <option value="Borewell / Open Well">Borewell / Open Well (Moderate)</option>
                     <option value="Canal Irrigation">Canal Irrigation (High Availability)</option>
@@ -342,7 +343,7 @@ export default function SoilHealthAnalyzerPage() {
                     value={previousCrop}
                     onChange={(e) => setPreviousCrop(e.target.value)}
                     placeholder="e.g. Cotton, Maize, Pulses"
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-emerald-600 font-bold"
+                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
                   />
                 </div>
               </div>
@@ -359,7 +360,7 @@ export default function SoilHealthAnalyzerPage() {
                 <button
                   type="button"
                   onClick={handleRunAnalysis}
-                  className="px-6 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black transition-all flex items-center gap-2 shadow-sm"
+                  className="px-6 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-black transition-all flex items-center gap-2 shadow-sm"
                 >
                   <Sparkles size={15} />
                   <span>Run Satellite & SoilGrids Analysis</span>
@@ -380,9 +381,9 @@ export default function SoilHealthAnalyzerPage() {
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-                  className="w-20 h-20 rounded-full border-4 border-stone-200 border-t-emerald-600"
+                  className="w-20 h-20 rounded-full border-4 border-stone-200 border-t-brand-600"
                 />
-                <div className="absolute inset-0 flex items-center justify-center text-emerald-700">
+                <div className="absolute inset-0 flex items-center justify-center text-brand-700">
                   <Database size={26} />
                 </div>
               </div>
@@ -421,7 +422,7 @@ export default function SoilHealthAnalyzerPage() {
                 <button
                   type="button"
                   onClick={() => setShowLabUploadModal(true)}
-                  className="px-4 py-2 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-4 py-2 rounded-2xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-800 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
                 >
                   <Upload size={13} />
                   <span>Upload Verified Lab Report</span>
@@ -477,7 +478,7 @@ export default function SoilHealthAnalyzerPage() {
                         <tr key={item._id || item.id} className="hover:bg-stone-50/60 transition-colors">
                           <td className="px-4 py-3">
                             {isLab ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-brand-100 text-brand-800">
                                 <ShieldCheck size={11} /> Lab Verified
                               </span>
                             ) : (

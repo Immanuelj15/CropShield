@@ -54,9 +54,13 @@ export default function QuickAddRevenueForm({
     }
 
     try {
+      const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('cropshield_token')
       const res = await fetch('/api/v1/revenue', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(payload),
       })
 
@@ -88,7 +92,7 @@ export default function QuickAddRevenueForm({
       {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-stone-100">
         <div>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">
             Harvest Sale & Mandi Receipts
           </span>
           <h3 className="text-xl font-black text-stone-900 mt-1">
@@ -124,7 +128,7 @@ export default function QuickAddRevenueForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <Scale size={13} className="text-emerald-600" /> Quantity Sold (kg)
+              <Scale size={13} className="text-brand-600" /> Quantity Sold (kg)
             </label>
             <input
               type="number"
@@ -135,7 +139,7 @@ export default function QuickAddRevenueForm({
               onChange={(e) => setQuantityKg(e.target.value)}
               required
               autoFocus
-              className="w-full p-2.5 rounded-xl border border-stone-200 font-mono font-bold text-stone-900 text-lg outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full p-2.5 rounded-xl border border-stone-200 font-mono font-bold text-stone-900 text-lg outline-none focus:ring-2 focus:ring-brand-500"
             />
             <span className="text-[10px] text-stone-400 mt-0.5 block">
               {quantityKg ? `${(Number(quantityKg) / 100).toFixed(1)} quintals` : '1 quintal = 100 kg'}
@@ -144,7 +148,7 @@ export default function QuickAddRevenueForm({
 
           <div>
             <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <DollarSign size={13} className="text-emerald-600" /> Price per kg (₹)
+              <DollarSign size={13} className="text-brand-600" /> Price per kg (₹)
             </label>
             <input
               type="number"
@@ -154,7 +158,7 @@ export default function QuickAddRevenueForm({
               value={pricePerKg}
               onChange={(e) => setPricePerKg(e.target.value)}
               required
-              className="w-full p-2.5 rounded-xl border border-stone-200 font-mono font-bold text-stone-900 text-lg outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full p-2.5 rounded-xl border border-stone-200 font-mono font-bold text-stone-900 text-lg outline-none focus:ring-2 focus:ring-brand-500"
             />
             <span className="text-[10px] text-stone-400 mt-0.5 block">
               {pricePerKg ? `₹${(Number(pricePerKg) * 100).toLocaleString('en-IN')} / quintal` : 'Rate agreed with buyer/mandi'}
@@ -163,16 +167,16 @@ export default function QuickAddRevenueForm({
         </div>
 
         {/* Live Computed Total Card */}
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
+        <div className="p-4 rounded-2xl bg-brand-50 border border-brand-200 flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">
+            <span className="text-[11px] font-bold text-brand-800 uppercase tracking-wider block">
               Computed Total Revenue
             </span>
             <span className="text-xs text-stone-500">
               {quantityKg || 0} kg × ₹{pricePerKg || 0}/kg
             </span>
           </div>
-          <div className="text-2xl font-black text-emerald-950 font-mono">
+          <div className="text-2xl font-black text-brand-900 font-mono">
             ₹{formatINR(totalRevenue)}
           </div>
         </div>
@@ -181,27 +185,27 @@ export default function QuickAddRevenueForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div>
             <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <Calendar size={13} className="text-emerald-600" /> Sale Date
+              <Calendar size={13} className="text-brand-600" /> Sale Date
             </label>
             <input
               type="date"
               value={saleDate}
               onChange={(e) => setSaleDate(e.target.value)}
               required
-              className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
 
           <div>
             <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <MapPin size={13} className="text-emerald-600" /> Buyer / Mandi Name
+              <MapPin size={13} className="text-brand-600" /> Buyer / Mandi Name
             </label>
             <input
               type="text"
               placeholder="e.g. Kovilpatti Mandi, Direct Trader"
               value={buyerOrMandi}
               onChange={(e) => setBuyerOrMandi(e.target.value)}
-              className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
         </div>
@@ -210,7 +214,7 @@ export default function QuickAddRevenueForm({
         <button
           type="submit"
           disabled={submitting}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
         >
           {submitting ? (
             <span>Saving Revenue...</span>

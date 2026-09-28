@@ -393,8 +393,98 @@ async def generate_crop_recommendations(
             "water_requirement": rule.water_requirement,
             "source_note": rule.source_note,
             "cost_source_note": cost_template.source_note if cost_template else "CACP Cost of Cultivation",
-            "reason_text": reason,
         })
+
+    # Fallback: if strictly no crops fit within budget, return best agronomic fits with budget notice
+    if not results and candidate_rules:
+        for rule in candidate_rules:
+            score = compute_suitability_score(
+                soil_type=resolved_soil,
+                water_availability=resolved_water,
+                season=resolved_season,
+                rule=rule,
+                crop_history=crop_history,
+                recent_weather=recent_weather,
+            )
+            if score < 25.0:
+                continue
+
+            cost_template = await CropCostTemplate.find_one(CropCostTemplate.crop_type == rule.crop_type)
+            cost_per_acre = cost_template.total_cost_per_acre if cost_template else 25000.0
+            total_estimated_cost = round(cost_per_acre * resolved_area, 1)
+
+            variance_ratio = (rule.yield_variance_pct or 20.0) / 100.0
+            base_yield_total_kg = (rule.base_yield_per_acre_kg or 500.0) * resolved_area
+            yield_min_kg = round(base_yield_total_kg * (1.0 - variance_ratio), 1)
+            yield_max_kg = round(base_yield_total_kg * (1.0 + variance_ratio), 1)
+            yield_min_quintals = round(yield_min_kg / 100.0, 1)
+            yield_max_quintals = round(yield_max_kg / 100.0, 1)
+
+            breakdown_per_acre = cost_template.cost_breakdown_per_acre if cost_template else {
+                "seeds": cost_per_acre * 0.1,
+                "fertilizer": cost_per_acre * 0.25,
+                "labor": cost_per_acre * 0.40,
+                "irrigation": cost_per_acre * 0.15,
+                "pesticides": cost_per_acre * 0.10,
+            }
+            cost_breakdown_total = {
+                k: round(v * resolved_area, 1) for k, v in breakdown_per_acre.items()
+            }
+
+            price_data = await get_market_price_range(rule.crop_type, resolved_district)
+            price_min_per_kg = price_data["min"]
+            price_max_per_kg = price_data["max"]
+            price_min_per_quintal = round(price_min_per_kg * 100.0, 0)
+            price_max_per_quintal = round(price_max_per_kg * 100.0, 0)
+
+            revenue_min = round(yield_min_kg * price_min_per_kg, 1)
+            revenue_max = round(yield_max_kg * price_max_per_kg, 1)
+            profit_min = round(revenue_min - total_estimated_cost, 1)
+            profit_max = round(revenue_max - total_estimated_cost, 1)
+
+            weather_risk = assess_weather_risk(rule, resolved_water)
+            market_risk = assess_market_risk(rule.crop_type, price_data)
+            reason = build_reason_text(rule, resolved_soil, resolved_water, resolved_season, score) + f" (Budget notice: Cultivating {resolved_area} acres typically requires ₹{total_estimated_cost:,.0f})."
+
+            results.append({
+                "crop_type": rule.crop_type,
+                "suitability_score": round(max(10.0, score - 8.0), 1),
+                "expected_yield_range": {
+                    "min": yield_min_quintals,
+                    "max": yield_max_quintals,
+                    "unit": "quintals",
+                    "min_kg": yield_min_kg,
+                    "max_kg": yield_max_kg,
+                    "per_acre_kg_range": f"{round(rule.base_yield_per_acre_kg * (1 - variance_ratio), 0):.0f} – {round(rule.base_yield_per_acre_kg * (1 + variance_ratio), 0):.0f} kg/acre",
+                },
+                "estimated_cost": total_estimated_cost,
+                "cost_per_acre": cost_per_acre,
+                "cost_breakdown": cost_breakdown_total,
+                "expected_price_range": {
+                    "min": price_min_per_quintal,
+                    "max": price_max_quintal,
+                    "unit": "₹/quintal",
+                    "min_per_kg": price_min_per_kg,
+                    "max_per_kg": price_max_per_kg,
+                },
+                "estimated_revenue_range": {
+                    "min": revenue_min,
+                    "max": revenue_max,
+                    "unit": "₹",
+                },
+                "estimated_profit_range": {
+                    "min": profit_min,
+                    "max": profit_max,
+                    "unit": "₹",
+                },
+                "weather_risk": weather_risk,
+                "market_risk": market_risk,
+                "water_requirement": rule.water_requirement,
+                "source_note": rule.source_note,
+                "cost_source_note": cost_template.source_note if cost_template else "CACP Cost of Cultivation",
+                "reason_text": reason,
+                "exceeds_budget": True,
+            })
 
     # Sort descending by suitability score
     results.sort(key=lambda r: r["suitability_score"], reverse=True)

@@ -9,18 +9,25 @@ export default {
           300: '#e8be6e', 400: '#dc9f3a', 500: '#c7831e',
           600: '#a66516', 700: '#844f13', 800: '#6b3f13', 900: '#573513',
         },
-        leaf: {
-          50: '#f0faf0', 100: '#dcf5dc', 200: '#b9eab9',
-          300: '#86d886', 400: '#4fc24f', 500: '#2da82d',
-          600: '#1f8a1f', 700: '#1a6e1a', 800: '#185718', 900: '#154815',
+        // Single canonical brand green — matches PWA manifest / theme-color (#0d5c2f)
+        brand: {
+          50: '#eefaf1', 100: '#d4f2dc', 200: '#a9e4ba',
+          300: '#75cf92', 400: '#43b36c', 500: '#219350',
+          600: '#0d5c2f', 700: '#0a4a26', 800: '#083c1f', 900: '#07301a',
         },
         risk: {
           low: '#16a34a', medium: '#d97706', high: '#dc2626',
-        }
+        },
+        // Role accent colors — used only for hero banners, active-nav highlight, role badge
+        role: {
+          farmer: '#0d5c2f',
+          agronomist: '#0369a1',
+          admin: '#6d28d9',
+        },
       },
       fontFamily: {
-        display: ['"Playfair Display"', 'Georgia', 'serif'],
-        body: ['"Source Sans 3"', 'system-ui', 'sans-serif'],
+        display: ['Inter', 'system-ui', 'sans-serif'],
+        body: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
       },
       animation: {

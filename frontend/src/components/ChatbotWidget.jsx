@@ -4,6 +4,7 @@ import { MessageSquare, X, Send, Mic, MicOff, Trash2, Bot, Sparkles, AlertCircle
 import axios from 'axios';
 import LanguageToggle from './LanguageToggle';
 import ChatMessage from './ChatMessage';
+import { useToast } from './ui/Toast';
 
 const GREETINGS = {
   ta: {
@@ -30,6 +31,7 @@ const PLACEHOLDERS = {
 };
 
 export default function ChatbotWidget({ userRole = 'farmer' }) {
+  const toast = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [language, setLanguage] = useState('ta');
   const [inputQuery, setInputQuery] = useState('');
@@ -165,7 +167,7 @@ export default function ChatbotWidget({ userRole = 'farmer' }) {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser. Please use Google Chrome or Edge.');
+      toast.error('Speech recognition is not supported in this browser. Please use Google Chrome or Edge.');
       return;
     }
 

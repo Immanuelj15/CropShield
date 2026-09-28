@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   Sprout, Coins, Droplets, MapPin, Calendar, Sparkles,
-  ArrowRight, RefreshCw, AlertCircle, CheckCircle2, Sliders,
-  HelpCircle, Info, ChevronRight, Layers, FileSpreadsheet, Scale
+  RefreshCw, AlertCircle, Info, Layers, FileSpreadsheet, Scale
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
@@ -40,7 +39,7 @@ export default function CropRecommendationPage() {
   const [demoScenarios, setDemoScenarios] = useState([])
   const [activeScenarioId, setActiveScenarioId] = useState(null)
 
-  const token = sessionStorage.getItem('cropshield_token')
+  const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('cropshield_token')
   const authHeaders = {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {})
@@ -51,6 +50,7 @@ export default function CropRecommendationPage() {
     fetchFarmProfile()
     fetchDemoScenarios()
     determineCurrentSeason()
+    executeRecommendation()
   }, [])
 
   const determineCurrentSeason = () => {
@@ -67,14 +67,34 @@ export default function CropRecommendationPage() {
         const data = await res.json()
         if (data.farm) {
           setFarm(data.farm)
-          if (data.farm.district) setDistrict(data.farm.district)
-          if (data.farm.soil_type) setSoilType(data.farm.soil_type)
+          const farmDist = data.farm.district || district
+          const farmSoil = data.farm.soil_type || soilType
+          const farmWater = data.farm.water_availability || waterAvailability
+          let farmAcres = landAreaAcres
+
+          if (data.farm.district) setDistrict(farmDist)
+          if (data.farm.soil_type) setSoilType(farmSoil)
           if (data.farm.area_hectares) {
-            setLandAreaAcres(Math.round(data.farm.area_hectares * 2.471 * 10) / 10)
+            farmAcres = Math.round(data.farm.area_hectares * 2.471 * 10) / 10
+            setLandAreaAcres(farmAcres)
           }
           if (data.farm.water_availability) {
-            setWaterAvailability(data.farm.water_availability)
+            setWaterAvailability(farmWater)
           }
+
+          // Scale budget proportionally so larger farms don't trigger empty results
+          const scaledBudget = Math.max(60000, Math.round(farmAcres * 25000))
+          setBudget(scaledBudget)
+
+          // Re-run with profile context
+          executeRecommendation({
+            farm_id: data.farm.id ? String(data.farm.id) : null,
+            district: farmDist,
+            soil_type: farmSoil,
+            water_availability: farmWater,
+            land_area_acres: farmAcres,
+            budget: scaledBudget,
+          })
         }
       }
     } catch (e) {
@@ -123,14 +143,17 @@ export default function CropRecommendationPage() {
     setLoading(true)
     setError(null)
     try {
+      const rawBudget = overrides.budget !== undefined ? Number(overrides.budget) : Number(budget)
+      const rawArea = overrides.land_area_acres !== undefined ? Number(overrides.land_area_acres) : Number(landAreaAcres)
+
       const payload = {
-        farm_id: farm?.id ? String(farm.id) : null,
-        budget: overrides.budget ?? Number(budget),
-        water_availability: overrides.water_availability ?? waterAvailability,
-        season: overrides.season ?? season,
-        district: overrides.district ?? district,
-        soil_type: overrides.soil_type ?? soilType,
-        land_area_acres: overrides.land_area_acres ?? Number(landAreaAcres),
+        farm_id: overrides.farm_id !== undefined ? overrides.farm_id : (farm?.id ? String(farm.id) : null),
+        budget: isNaN(rawBudget) || rawBudget <= 0 ? 60000 : rawBudget,
+        water_availability: overrides.water_availability || waterAvailability || 'Medium',
+        season: overrides.season || season || 'Kharif',
+        district: overrides.district || district || 'Thoothukudi',
+        soil_type: overrides.soil_type || soilType || 'Black Cotton Soil',
+        land_area_acres: isNaN(rawArea) || rawArea <= 0 ? 2.5 : rawArea,
       }
 
       const res = await fetch(`${API_BASE}/crop-recommendation/generate`, {
@@ -144,7 +167,10 @@ export default function CropRecommendationPage() {
         setResults(data)
       } else {
         const err = await res.json().catch(() => ({}))
-        setError(err.detail || 'Failed to generate crop recommendations.')
+        const msg = Array.isArray(err.detail)
+          ? err.detail.map(d => `${d.loc?.slice(-1)[0] || 'Field'}: ${d.msg}`).join(', ')
+          : (typeof err.detail === 'string' ? err.detail : 'Failed to generate crop recommendations.')
+        setError(msg)
       }
     } catch (err) {
       setError('Backend communication error. Please ensure AgriGuard server is running.')
@@ -153,21 +179,16 @@ export default function CropRecommendationPage() {
     }
   }
 
-  // Initial auto-run once on load
-  useEffect(() => {
-    executeRecommendation()
-  }, [farm])
-
   return (
     <div className="space-y-8 animate-fadeIn pb-24 lg:pb-12 max-w-6xl mx-auto px-4">
       {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-stone-900 rounded-3xl p-8 sm:p-10 text-white shadow-xl relative overflow-hidden border border-emerald-800/40">
+      <div className="bg-gradient-to-r from-brand-900 via-teal-900 to-stone-900 rounded-3xl p-8 sm:p-10 text-white shadow-xl relative overflow-hidden border border-brand-800/40">
         <div className="relative z-10 max-w-3xl space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-semibold rounded-full border border-emerald-400/30">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand-500/20 text-brand-300 text-xs font-semibold rounded-full border border-brand-400/30">
             <Sprout size={14} /> Pre-Season Agricultural Decision Support
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-            AI Crop Recommendation & <span className="text-emerald-400">Profit Range Engine</span>
+            AI Crop Recommendation & <span className="text-brand-400">Profit Range Engine</span>
           </h1>
           <p className="text-stone-300 text-xs sm:text-sm leading-relaxed">
             Which crop is truly worth planting before you sow? Analyzes soil taxonomy, irrigation capacity, seasonal monsoon windows, cultivation costs, and mandi price volatility across 15 Tamil Nadu crops.
@@ -180,7 +201,7 @@ export default function CropRecommendationPage() {
         <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-              <FileSpreadsheet size={15} className="text-emerald-600" />
+              <FileSpreadsheet size={15} className="text-brand-600" />
               1-Click Demo Scenarios (from 10,000 Scenario Dataset):
             </span>
             <span className="text-[11px] text-stone-400 font-mono">15 Crops Benchmark</span>
@@ -193,7 +214,7 @@ export default function CropRecommendationPage() {
                 onClick={() => handleApplyScenario(sc)}
                 className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-2 border text-left shrink-0 ${
                   activeScenarioId === sc.scenario_id
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
                     : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
                 }`}
               >
@@ -217,7 +238,7 @@ export default function CropRecommendationPage() {
               Auto-filled from your registered farm profile. Adjust budget and water tier for the upcoming season.
             </p>
           </div>
-          <span className="text-xs font-semibold px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full border border-emerald-200">
+          <span className="text-xs font-semibold px-3 py-1 bg-brand-50 text-brand-800 rounded-full border border-brand-200">
             {farm ? `Farm: ${farm.farm_name}` : 'Custom Farm Simulation'}
           </span>
         </div>
@@ -227,14 +248,14 @@ export default function CropRecommendationPage() {
             {/* Location / District (Auto-filled) */}
             <div>
               <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                <MapPin size={14} className="text-emerald-600" /> District / Agro-Climatic Zone
+                <MapPin size={14} className="text-brand-600" /> District / Agro-Climatic Zone
               </label>
               <input
                 type="text"
                 value={district}
                 onChange={(e) => setDistrict(e.target.value)}
                 required
-                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="e.g. Thoothukudi, Madurai, Coimbatore"
               />
             </div>
@@ -242,12 +263,12 @@ export default function CropRecommendationPage() {
             {/* Soil Type (Auto-filled) */}
             <div>
               <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                <Layers size={14} className="text-emerald-600" /> Soil Classification
+                <Layers size={14} className="text-brand-600" /> Soil Classification
               </label>
               <select
                 value={soilType}
                 onChange={(e) => setSoilType(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500"
               >
                 <option value="Black Cotton Soil">Black Cotton Soil (Vertisol)</option>
                 <option value="Red Sandy Loam">Red Sandy Loam</option>
@@ -262,7 +283,7 @@ export default function CropRecommendationPage() {
             {/* Land Area (Auto-filled) */}
             <div>
               <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                <Scale size={14} className="text-emerald-600" /> Plot Area (Acres)
+                <Scale size={14} className="text-brand-600" /> Plot Area (Acres)
               </label>
               <input
                 type="number"
@@ -271,7 +292,7 @@ export default function CropRecommendationPage() {
                 value={landAreaAcres}
                 onChange={(e) => setLandAreaAcres(e.target.value)}
                 required
-                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500 font-mono"
               />
             </div>
 
@@ -325,9 +346,9 @@ export default function CropRecommendationPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[11px] font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Coins size={14} className="text-emerald-600" /> Available Cultivation Budget
+                  <Coins size={14} className="text-brand-600" /> Available Cultivation Budget
                 </label>
-                <span className="font-bold text-emerald-800 text-xs font-mono">
+                <span className="font-bold text-brand-800 text-xs font-mono">
                   ₹{formatINR(budget)}
                 </span>
               </div>
@@ -338,7 +359,7 @@ export default function CropRecommendationPage() {
                 value={budget}
                 onChange={(e) => setBudget(Number(e.target.value))}
                 required
-                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500 font-mono"
               />
               <div className="flex items-center gap-1 mt-1.5 overflow-x-auto">
                 {BUDGET_PRESETS.map((p) => (
@@ -346,7 +367,7 @@ export default function CropRecommendationPage() {
                     key={p.value}
                     type="button"
                     onClick={() => setBudget(p.value)}
-                    className="text-[10px] px-2 py-0.5 rounded-md bg-stone-100 hover:bg-emerald-100 text-stone-600 hover:text-emerald-900 font-bold font-mono transition"
+                    className="text-[10px] px-2 py-0.5 rounded-md bg-stone-100 hover:bg-brand-100 text-stone-600 hover:text-brand-900 font-bold font-mono transition"
                   >
                     {p.label}
                   </button>
@@ -362,7 +383,7 @@ export default function CropRecommendationPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-700 hover:to-teal-700 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -418,10 +439,14 @@ export default function CropRecommendationPage() {
               <div className="pt-2">
                 <button
                   type="button"
-                  onClick={() => setBudget(budget * 2)}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow hover:bg-emerald-700 transition"
+                  onClick={() => {
+                    const newB = Math.max(budget * 2, Math.round(Number(landAreaAcres) * 28000))
+                    setBudget(newB)
+                    executeRecommendation({ budget: newB })
+                  }}
+                  className="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-bold shadow hover:bg-brand-700 transition"
                 >
-                  Increase Budget to ₹{formatINR(budget * 2)} & Retry
+                  Adjust Budget for {landAreaAcres} Acres & Re-evaluate
                 </button>
               </div>
             </div>

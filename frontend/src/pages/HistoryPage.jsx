@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Clock, RefreshCw, Filter, AlertTriangle, CheckCircle } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { getHistory } from '../utils/api'
-import { RiskBadge, LoadingState, ErrorState } from '../components'
+import { LoadingState, ErrorState } from '../components'
+import Badge from '../components/ui/Badge'
 
 const CROPS      = ['All', 'Cotton', 'Sorghum', 'Millets', 'Rice', 'Sugarcane', 'Pulses']
 const RISK_COLORS = { Low: '#16a34a', Medium: '#d97706', High: '#dc2626' }
@@ -84,7 +85,7 @@ export default function HistoryPage() {
               <button key={c} onClick={() => { setCrop(c); setPage(0) }}
                 className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
                   crop === c
-                    ? 'bg-leaf-600 text-white border-leaf-600'
+                    ? 'bg-brand-600 text-white border-brand-600'
                     : 'bg-white text-stone-600 border-stone-300 hover:bg-stone-50'
                 }`}>{c}</button>
             ))}
@@ -145,7 +146,7 @@ export default function HistoryPage() {
                         <span className="font-mono text-xs">{Math.round(p.risk_score * 100)}%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3"><RiskBadge level={p.risk_level} /></td>
+                    <td className="px-4 py-3"><Badge status={p.risk_level}>{p.risk_level} Risk</Badge></td>
                     <td className="px-4 py-3">
                       {p.is_warning
                         ? <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1 w-fit"><AlertTriangle size={10} /> Active</span>

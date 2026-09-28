@@ -12,7 +12,7 @@ const DEMO_ACCOUNTS = {
     role: 'farmer',
     descKey: 'farmer_desc',
     icon: Sprout,
-    badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    badgeColor: 'bg-brand-100 text-brand-800 border-brand-300',
   },
   agronomist: {
     labelKey: 'role_agronomist',
@@ -132,9 +132,9 @@ export default function LoginPage() {
       </div>
 
       {/* Hero Banner */}
-      <div className="bg-gradient-to-r from-stone-900 via-emerald-950 to-stone-900 rounded-3xl p-8 sm:p-10 text-white shadow-2xl relative overflow-hidden mb-8 border border-emerald-900/40">
+      <div className="bg-gradient-to-r from-stone-900 via-brand-900 to-stone-900 rounded-3xl p-8 sm:p-10 text-white shadow-2xl relative overflow-hidden mb-8 border border-brand-900/40">
         <div className="relative z-10 max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/20 text-emerald-300 text-xs font-semibold rounded-full border border-emerald-400/30 mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand-500/20 text-brand-300 text-xs font-semibold rounded-full border border-brand-400/30 mb-3">
             <Sparkles size={14} /> {t('common:app_name')}
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
@@ -164,17 +164,17 @@ export default function LoginPage() {
                     onClick={() => handleRoleSelect(key)}
                     className={`w-full text-left p-4 rounded-xl border transition-all flex items-start gap-3.5 ${
                       isSelected
-                        ? 'border-emerald-600 bg-emerald-50/70 shadow-sm ring-2 ring-emerald-500/20'
+                        ? 'border-brand-600 bg-brand-50/70 shadow-sm ring-2 ring-brand-500/20'
                         : 'border-stone-200 hover:border-stone-300 hover:bg-stone-50'
                     }`}
                   >
-                    <div className={`p-2 rounded-lg ${isSelected ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-600'}`}>
+                    <div className={`p-2 rounded-lg ${isSelected ? 'bg-brand-600 text-white' : 'bg-stone-100 text-stone-600'}`}>
                       <Icon size={18} />
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-sm text-stone-900">{t(`common:${item.labelKey}`)}</span>
-                        {isSelected && <CheckCircle2 size={16} className="text-emerald-600" />}
+                        {isSelected && <CheckCircle2 size={16} className="text-brand-600" />}
                       </div>
                       <p className="text-xs text-stone-500 mt-1 leading-snug">{item.descKey ? t(`common:${item.descKey}`, item.desc) : item.desc}</p>
                     </div>
@@ -199,9 +199,9 @@ export default function LoginPage() {
             </div>
 
             {activeUser && (
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="p-4 rounded-xl bg-brand-50 border border-brand-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
-                  <span className="font-bold text-emerald-900 block">{t('common:status') || 'Status'}</span>
+                  <span className="font-bold text-brand-900 block">{t('common:status') || 'Status'}</span>
                   <span className="text-stone-600">{activeUser.email} ({t(`common:role_${activeUser.role}`, activeUser.role)})</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -212,7 +212,7 @@ export default function LoginPage() {
                       else if (activeUser.role === 'admin') navigate('/admin/dashboard')
                       else navigate('/farmer/today')
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm"
+                    className="px-3 py-1.5 rounded-lg bg-brand-600 text-white font-bold text-xs hover:bg-brand-700 shadow-sm"
                   >
                     {t('common:next')}
                   </button>
@@ -235,8 +235,8 @@ export default function LoginPage() {
             )}
 
             {success && (
-              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center gap-2">
-                <CheckCircle2 size={16} className="text-emerald-600" /> {success}
+              <div className="p-3.5 rounded-xl bg-brand-50 border border-brand-200 text-brand-800 text-xs font-medium flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-brand-600" /> {success}
               </div>
             )}
 
@@ -254,7 +254,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
                     placeholder="name@cropshield.org"
                   />
                 </div>
@@ -273,7 +273,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-stone-200 text-sm font-medium focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all"
                     placeholder="••••••••"
                   />
                 </div>
@@ -282,7 +282,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-sm shadow-md hover:from-emerald-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2 mt-2"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-teal-600 text-white font-bold text-sm shadow-md hover:from-brand-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2 mt-2"
               >
                 {loading ? t('auth:signing_in') : `${t('auth:sign_in')} (${t('common:' + DEMO_ACCOUNTS[selectedRole].labelKey)})`}
                 <ArrowRight size={16} />

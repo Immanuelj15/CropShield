@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell, Sparkles, Calendar, Wallet } from 'lucide-react'
+import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell, Sparkles, Calendar, Wallet, Camera } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import TodayPage from './pages/TodayPage'
@@ -19,10 +19,12 @@ import FarmActivityPlannerPage from './pages/FarmActivityPlannerPage'
 import SoilHealthAnalyzerPage from './pages/SoilHealthAnalyzerPage'
 import ExpenseTrackerPage from './pages/ExpenseTrackerPage'
 import ManageMyFarmPage from './pages/ManageMyFarmPage'
+import DiseaseScanPage from './pages/DiseaseScanPage'
 import VoiceAssistantModal from './components/VoiceAssistantModal'
 import ChatbotWidget from './components/ChatbotWidget'
 import OfflineBanner from './components/OfflineBanner'
 import LanguageSelector from './components/LanguageSelector'
+import Sidebar from './components/ui/Sidebar'
 import clsx from 'clsx'
 
 // Ensure stale localStorage tokens from previous sessions do not bypass login
@@ -113,6 +115,7 @@ function getNavItemsForRole(role, t) {
   // Default: farmer
   return [
     { to: '/farmer/today', label: t('nav_today', "Today's Warning"), icon: AlertTriangle },
+    { to: '/farmer/detect', label: t('nav_disease_scan', 'Disease Scanner'), icon: Camera },
     { to: '/farmer/expenses', label: t('nav_pnl_tracker', 'P&L Tracker'), icon: Wallet },
     { to: '/farmer/manage-farms', label: t('nav_manage_farms', 'Manage Farms'), icon: MapPin },
     { to: '/farmer/soil-health', label: t('nav_soil_health', 'Soil Health'), icon: Compass },
@@ -202,8 +205,8 @@ function Navbar() {
               </div>
             </NavLink>
 
-            {/* Desktop Navigation Links — Dynamic per role with crisp spacing & horizontal auto-scroll if needed */}
-            {currentUser && !isLoginPage && (
+            {/* Desktop Navigation Links — Farmer only; Agronomist/Admin get a Sidebar instead (see AppShell) */}
+            {currentUser && !isLoginPage && currentUser.role !== 'agronomist' && currentUser.role !== 'admin' && (
               <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5 justify-start 2xl:justify-center flex-1 min-w-0 px-2 overflow-x-auto no-scrollbar py-1">
                 {navItems.map(({ to, label, icon: Icon }) => (
                   <NavLink
@@ -387,13 +390,27 @@ function Footer() {
   )
 }
 
-export default function App() {
-  return (
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <OfflineBanner />
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Routes>
+function AppRoutes() {
+  const { t } = useTranslation('common')
+  const [currentUser, setCurrentUser] = useState(getAuthUser())
+
+  useEffect(() => {
+    const handleAuthChange = () => setCurrentUser(getAuthUser())
+    window.addEventListener('cropshield_auth_changed', handleAuthChange)
+    window.addEventListener('storage', handleAuthChange)
+    return () => {
+      window.removeEventListener('cropshield_auth_changed', handleAuthChange)
+      window.removeEventListener('storage', handleAuthChange)
+    }
+  }, [])
+
+  const showSidebar = currentUser && (currentUser.role === 'agronomist' || currentUser.role === 'admin')
+  const sidebarItems = showSidebar
+    ? getNavItemsForRole(currentUser.role, t).map(({ to, label, icon }) => ({ to, label, icon }))
+    : []
+
+  const routes = (
+    <Routes>
           {/* Public Authentication Route */}
           <Route path="/login" element={<LoginPage />} />
 
@@ -499,6 +516,19 @@ export default function App() {
           <Route path="/agronomist" element={<Navigate to="/agronomist/dashboard" replace />} />
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
 
+          {/* Direct Leaf Disease Vision Scanner */}
+          <Route path="/farmer/detect" element={<ProtectedRoute><DiseaseScanPage /></ProtectedRoute>} />
+          <Route path="/detect" element={<Navigate to="/farmer/detect" replace />} />
+
+          {/* Quick Route Aliases */}
+          <Route path="/farmer/crops" element={<Navigate to="/farmer/crop-recommendation" replace />} />
+          <Route path="/crops" element={<Navigate to="/farmer/crop-recommendation" replace />} />
+          <Route path="/farmer/map" element={<Navigate to="/farmer/manage-farms" replace />} />
+          <Route path="/map" element={<Navigate to="/farmer/manage-farms" replace />} />
+          <Route path="/farmer/soil" element={<Navigate to="/farmer/soil-health" replace />} />
+          <Route path="/soil" element={<Navigate to="/farmer/soil-health" replace />} />
+          <Route path="/today" element={<Navigate to="/farmer/today" replace />} />
+
           {/* Shared Analytical & Diagnostic Tools */}
           <Route path="/regional-scan" element={<ProtectedRoute><RegionalScanPage /></ProtectedRoute>} />
           <Route path="/yield" element={<ProtectedRoute><YieldPage /></ProtectedRoute>} />
@@ -509,10 +539,31 @@ export default function App() {
 
           {/* Fallback to root router */}
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
+    </Routes>
+  )
+
+  return (
+    <>
+      <OfflineBanner />
+      <Navbar />
+      {showSidebar ? (
+        <div className="flex items-start max-w-[1550px] mx-auto">
+          <Sidebar items={sidebarItems} accent={currentUser.role === 'admin' ? 'violet' : 'sky'} className="sticky top-16" />
+          <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8">{routes}</main>
+        </div>
+      ) : (
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{routes}</main>
+      )}
       <Footer />
       <ChatbotWidget />
+    </>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <AppRoutes />
     </BrowserRouter>
   )
 }

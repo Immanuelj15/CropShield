@@ -25,7 +25,7 @@ export default function FarmerBottomNav({ activeTab, onSelectTab, treatmentCount
             className={clsx(
               'flex flex-col items-center justify-center min-w-[56px] min-h-[48px] px-2 py-1 rounded-xl transition-all relative',
               isActive
-                ? 'text-emerald-700 font-extrabold scale-105'
+                ? 'text-brand-700 font-extrabold scale-105'
                 : 'text-stone-500 hover:text-stone-800'
             )}
           >
@@ -41,7 +41,7 @@ export default function FarmerBottomNav({ activeTab, onSelectTab, treatmentCount
               {tab.label}
             </span>
             {isActive && (
-              <span className="w-1 h-1 bg-emerald-600 rounded-full mt-0.5" />
+              <span className="w-1 h-1 bg-brand-600 rounded-full mt-0.5" />
             )}
           </button>
         )

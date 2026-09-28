@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { ShieldCheck, AlertTriangle, ShieldAlert } from 'lucide-react'
 import clsx from 'clsx'
@@ -34,14 +35,56 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
   const currentCfg = configs[riskLevel] || configs.Medium
   const CurrentIcon = currentCfg.Icon
 
-  // Gauge angle math: -90deg (0%) to +90deg (100%)
-  const angle = -90 + (scorePercent / 100) * 180
+  // Gauge angle math: -90deg (0% Low) to +90deg (100% High)
+  const targetAngle = -90 + (scorePercent / 100) * 180
 
   // Semi-circle SVG coordinates
   const radius = 90
   const strokeWidth = 16
   const center = 110
   const circumference = Math.PI * radius // ~282.74
+
+  // Animated needle angle with smooth spring-physics easing
+  const [needleAngle, setNeedleAngle] = useState(shouldReduceMotion ? targetAngle : -90)
+  const angleRef = useRef(needleAngle)
+
+  useEffect(() => {
+    if (shouldReduceMotion) {
+      setNeedleAngle(targetAngle)
+      angleRef.current = targetAngle
+      return
+    }
+
+    const startAngle = angleRef.current
+    const delta = targetAngle - startAngle
+    const duration = 850 // ms
+    const startTime = performance.now()
+    let frameId
+
+    const animate = (now) => {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+
+      // easeOutBack curve gives an authentic responsive gauge bounce
+      const c1 = 1.25
+      const c3 = c1 + 1
+      const ease = 1 + c3 * Math.pow(progress - 1, 3) + c1 * Math.pow(progress - 1, 2)
+
+      const current = startAngle + delta * ease
+      setNeedleAngle(current)
+      angleRef.current = current
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(animate)
+      } else {
+        setNeedleAngle(targetAngle)
+        angleRef.current = targetAngle
+      }
+    }
+
+    frameId = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(frameId)
+  }, [targetAngle, shouldReduceMotion])
 
   return (
     <div className="flex flex-col items-center justify-center p-4">
@@ -60,6 +103,12 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
               <stop offset="70%" stopColor="#f97316" />
               <stop offset="100%" stopColor="#dc2626" />
             </linearGradient>
+            <filter id="needleShadow" x="-30%" y="-30%" width="160%" height="160%">
+              <feDropShadow dx="0" dy="1.5" stdDeviation="2" floodColor="#000000" floodOpacity="0.35" />
+            </filter>
+            <filter id="hubGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="1" stdDeviation="2.5" floodColor={currentCfg.color} floodOpacity="0.4" />
+            </filter>
           </defs>
 
           {/* Background track arc (180 degrees) */}
@@ -84,39 +133,49 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
               strokeDashoffset: circumference * (1 - scorePercent / 100),
             }}
             transition={{
-              duration: shouldReduceMotion ? 0 : 0.4,
+              duration: shouldReduceMotion ? 0 : 0.6,
               ease: 'easeOut',
             }}
           />
 
-          {/* Needle Pivot Center */}
-          <circle cx={center} cy={110} r="7" fill="#1f2937" />
-          <circle cx={center} cy={110} r="3" fill="#ffffff" />
-
-          {/* Animated Needle */}
-          <motion.g
-            initial={{ rotate: shouldReduceMotion ? angle : -90 }}
-            animate={{ rotate: angle }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 0.35,
-              ease: 'easeOut',
-            }}
-            style={{ originX: `${center}px`, originY: '110px' }}
-          >
+          {/* Animated Needle - Explicit SVG transform locked directly to pivot point (110, 110) */}
+          <g transform={`rotate(${needleAngle.toFixed(2)}, ${center}, 110)`}>
+            {/* Aerodynamic tapered pointer extending upwards to the gauge track */}
+            <path
+              d={`M ${center - 3.5} 110 L ${center - 1} 24 A 1 1 0 0 1 ${center + 1} 24 L ${center + 3.5} 110 Z`}
+              fill="#111827"
+              filter="url(#needleShadow)"
+            />
+            {/* Counterbalance tail extending below the pivot for perfect visual balance */}
+            <path
+              d={`M ${center - 3.5} 110 L ${center - 2} 122 A 2 2 0 0 0 ${center + 2} 122 L ${center + 3.5} 110 Z`}
+              fill="#1f2937"
+            />
+            {/* Center color spine */}
             <line
               x1={center}
-              y1={110}
+              y1={108}
               x2={center}
-              y2={30}
-              stroke="#111827"
-              strokeWidth="3.5"
+              y2={27}
+              stroke={currentCfg.color}
+              strokeWidth="1.2"
               strokeLinecap="round"
+              opacity="0.95"
             />
-            <polygon
-              points={`${center - 4},110 ${center + 4},110 ${center},24`}
-              fill="#111827"
-            />
-          </motion.g>
+            {/* Tip indicator bead */}
+            <circle cx={center} cy={24} r="2" fill={currentCfg.color} />
+          </g>
+
+          {/* Center Pivot Hub ("The Hole") - Firmly clamping over the needle at (center, 110) */}
+          <g filter="url(#hubGlow)">
+            {/* Outer dark bezel */}
+            <circle cx={center} cy={110} r="8.5" fill="#111827" stroke="#374151" strokeWidth="1.5" />
+            {/* Color-coded accent ring */}
+            <circle cx={center} cy={110} r="5.5" fill={currentCfg.color} opacity="0.4" />
+            {/* Center metallic eyelet hole */}
+            <circle cx={center} cy={110} r="3" fill="#ffffff" />
+            <circle cx={center} cy={110} r="1.5" fill="#111827" />
+          </g>
 
           {/* Scale Labels */}
           <text x="15" y="132" fill="#16a34a" fontSize="11" fontWeight="bold">0% Low</text>

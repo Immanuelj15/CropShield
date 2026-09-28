@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import axios from 'axios'
 import {
-  MapPin, ShieldAlert, Sparkles, Navigation, Layers, Info, Filter, RefreshCw
+  Sparkles, Navigation
 } from 'lucide-react'
 import DrawableMap from '../components/DrawableMap'
 import RegionalResultSheet from '../components/RegionalResultSheet'
@@ -124,11 +124,11 @@ export default function RegionalScanPage() {
   return (
     <div className="space-y-6 animate-fadeIn pb-24 max-w-7xl mx-auto">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-teal-900 via-emerald-800 to-emerald-950 rounded-3xl p-7 text-white shadow-xl flex flex-wrap items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-teal-900 via-brand-800 to-brand-900 rounded-3xl p-7 text-white shadow-xl flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1.5 max-w-2xl">
           <div className="flex items-center gap-2">
-            <span className="px-3 py-1 bg-emerald-400/20 text-emerald-200 text-xs font-semibold rounded-full border border-emerald-400/30 flex items-center gap-1">
-              <Sparkles size={12} className="text-emerald-300" />
+            <span className="px-3 py-1 bg-brand-400/20 text-brand-200 text-xs font-semibold rounded-full border border-brand-400/30 flex items-center gap-1">
+              <Sparkles size={12} className="text-brand-300" />
               Interactive "Draw-to-Scan" · MongoDB 2dsphere Spatial Index
             </span>
             <span className="text-xs px-2.5 py-0.5 rounded-full bg-stone-900/40 border border-white/20 text-stone-200 font-mono capitalize">
@@ -138,7 +138,7 @@ export default function RegionalScanPage() {
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Interactive Regional Threat Scanner
           </h1>
-          <p className="text-xs sm:text-sm text-emerald-100/90 leading-relaxed">
+          <p className="text-xs sm:text-sm text-brand-100/90 leading-relaxed">
             Drag a rectangle or trace a polygon over any Tamil Nadu agricultural zone.
             AgriGuard instantly indexes every registered farm within the boundary, runs real-time
             risk aggregation, and computes dominant pest threats.
@@ -147,7 +147,7 @@ export default function RegionalScanPage() {
 
         {/* Quick Region Presets */}
         <div className="flex flex-wrap items-center gap-1.5 bg-black/25 backdrop-blur-sm p-2 rounded-2xl border border-white/10">
-          <span className="text-[11px] font-bold text-emerald-300 px-1.5 flex items-center gap-1">
+          <span className="text-[11px] font-bold text-brand-300 px-1.5 flex items-center gap-1">
             <Navigation size={12} /> Zone Jump:
           </span>
           {REGIONAL_PRESETS.map((p) => (
@@ -181,7 +181,7 @@ export default function RegionalScanPage() {
             <span className="font-bold text-stone-700">Active Map Layer:</span>
             <span className={`px-2.5 py-0.5 rounded-full font-extrabold uppercase text-[10px] ${
               colorMode === 'vegetation'
-                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                ? 'bg-brand-100 text-brand-800 border border-brand-300'
                 : 'bg-red-100 text-red-800 border border-red-300'
             }`}>
               {colorMode === 'vegetation' ? '🛰️ Sentinel-2 NDVI Canopy Health' : '🚨 Climate Pest Outbreak Risk'}
@@ -191,7 +191,7 @@ export default function RegionalScanPage() {
           <div className="flex flex-wrap items-center gap-3 text-[11px] text-stone-600 font-medium">
             {colorMode === 'vegetation' ? (
               <>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span> Vigorous (NDVI &ge; 0.60)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-600 inline-block"></span> Vigorous (NDVI &ge; 0.60)</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Moderate/Declining (0.40–0.60)</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-900 inline-block"></span> Stressed Canopy (&lt; 0.40)</span>
               </>
@@ -199,7 +199,7 @@ export default function RegionalScanPage() {
               <>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block"></span> High Risk (&ge; 65%)</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Medium Risk (35–65%)</span>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block"></span> Low Risk (&lt; 35%)</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-600 inline-block"></span> Low Risk (&lt; 35%)</span>
               </>
             )}
           </div>

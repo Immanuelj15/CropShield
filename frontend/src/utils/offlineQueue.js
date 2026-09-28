@@ -102,9 +102,18 @@ export async function compressImage(file, maxDimension = 1200, quality = 0.8) {
 }
 
 /**
- * Queue an action into IndexedDB
+ * Queue an action into IndexedDB (supports both {type, payload} and (type, payload))
  */
-export async function queueOfflineAction({ type, payload }) {
+export async function queueOfflineAction(arg1, arg2) {
+  let type, payload;
+  if (typeof arg1 === 'object' && arg1 !== null && 'type' in arg1) {
+    type = arg1.type;
+    payload = arg1.payload;
+  } else {
+    type = arg1;
+    payload = arg2;
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -204,6 +213,14 @@ export async function flushOfflineQueue(apiClient) {
   let processed = 0;
   let failed = 0;
 
+  const authToken = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cropshield_token'))
+    || (typeof localStorage !== 'undefined' && localStorage.getItem('cropshield_token'))
+    || null;
+  const jsonHeaders = {
+    'Content-Type': 'application/json',
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  };
+
   for (const item of actions) {
     try {
       if (item.type === 'treatment_log') {
@@ -212,7 +229,7 @@ export async function flushOfflineQueue(apiClient) {
         } else {
           await fetch('/api/v1/treatments', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: jsonHeaders,
             body: JSON.stringify(item.payload),
           });
         }
@@ -228,6 +245,18 @@ export async function flushOfflineQueue(apiClient) {
         await fetch('/api/v1/diagnose-leaf', {
           method: 'POST',
           body: formData,
+        });
+      } else if (item.type === 'expense_log') {
+        await fetch('/api/v1/expenses', {
+          method: 'POST',
+          headers: jsonHeaders,
+          body: JSON.stringify(item.payload),
+        });
+      } else if (item.type === 'revenue_log') {
+        await fetch('/api/v1/revenue', {
+          method: 'POST',
+          headers: jsonHeaders,
+          body: JSON.stringify(item.payload),
         });
       }
 

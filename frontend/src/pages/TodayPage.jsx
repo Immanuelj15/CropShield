@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { MapPin, Calendar, Send, ShieldAlert, Cpu, CheckCircle2, AlertTriangle, Droplets, Wind, Thermometer, Sun, Info, BellRing, Sparkles } from 'lucide-react'
+import { MapPin, Send, ShieldAlert, Cpu, CheckCircle2, AlertTriangle, Droplets, Wind, Thermometer, Sun, BellRing } from 'lucide-react'
 import axios from 'axios'
 import { useTranslation } from 'react-i18next'
-import { useLocalizedField, getLocalizedText } from '../utils/useLocalizedField'
+import { useLocalizedField } from '../utils/useLocalizedField'
 import VegetationHealthCard from '../components/VegetationHealthCard'
 import FusedHealthScoreCard from '../components/FusedHealthScoreCard'
 import EconomicImpactCard from '../components/EconomicImpactCard'
 import { ConfidenceBadge } from '../components/ConfidenceBadge'
+import { ErrorState } from '../components'
+import { useToast } from '../components/ui/Toast'
 
 export default function TodayPage() {
   const { t } = useTranslation(['farmer', 'common', 'validation'])
@@ -23,7 +25,9 @@ export default function TodayPage() {
 
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [error, setError] = useState(null)
   const [alertSent, setAlertSent] = useState(false)
+  const toast = useToast()
 
   useEffect(() => {
     handlePredict()
@@ -33,88 +37,13 @@ export default function TodayPage() {
     e?.preventDefault()
     setLoading(true)
     setAlertSent(false)
+    setError(null)
     try {
       const res = await axios.post('/api/v1/predict-location', form)
       setResult(res.data)
     } catch (err) {
-      // Regional Baseline Climate & Risk Profile
-      setResult({
-        status: "success",
-        inputs: form,
-        geocoding: {
-          latitude: 9.1728,
-          longitude: 77.8710,
-          resolved_address: `${form.village}, ${form.district}, ${form.state}`,
-          source: "Agro Geocoding Engine"
-        },
-        environment_snapshot: {
-          temperature_c: 33.2,
-          humidity_pct: 78.5,
-          rainfall_today_mm: 2.4,
-          wind_speed_ms: 2.8,
-          solar_rad_mj: 21.4,
-          vpd_kpa: 0.62,
-          heat_index_c: 38.5,
-          consecutive_dry_days: 6,
-          consecutive_wet_days: 0,
-          soil_fertility_index: 74.2,
-          crop_growth_stage: "Active Vegetative & Branching"
-        },
-        prediction: {
-          pest_probability: 0.765,
-          disease_probability: 0.812,
-          predicted_pathogen: "Cotton Whitefly & Leaf Curl Virus",
-          risk_level: "High",
-          confidence_score: 0.948,
-          expected_outbreak_date: "2026-07-26",
-          model_comparison: {
-            xgboost: 0.765,
-            lightgbm: 0.748,
-            catboost: 0.772,
-            random_forest: 0.735,
-            best_performing: "XGBoost (NASA POWER Trained)"
-          },
-          shap_features: [
-            { feature: "7-Day Relative Humidity Exposure", value: "78.5%", shap_value: 0.284, impact: "positive" },
-            { feature: "Consecutive Dry Spell Days", value: "6 days", shap_value: 0.215, impact: "positive" },
-            { feature: "Vapor Pressure Deficit (VPD)", value: "0.62 kPa", shap_value: 0.162, impact: "positive" },
-            { feature: "Soil Fertility & NPK Balance", value: "74.2/100", shap_value: -0.110, impact: "negative" }
-          ]
-        },
-        recommendations: {
-          organic_treatment: "Deploy 10 Yellow Sticky Traps per acre. Spray Neem Seed Kernel Extract (NSKE 5%) @ 5ml/L.",
-          chemical_treatment: "Spray Imidacloprid 17.8 SL @ 0.3ml/L or Thiamethoxam 25 WG @ 0.2g/L.",
-          recommended_pesticide: "Imidacloprid 17.8 SL",
-          recommended_fertilizer: "Apply Foliar Micronutrient spray (1% MgSO4 + 0.5% ZnSO4).",
-          spraying_schedule: "✅ Safe Spraying Window: Early Morning (6:00 AM – 8:30 AM) before temperature exceeds 33°C.",
-          can_spray_today: true,
-          irrigation_recommendation: "Light drip irrigation recommended (2 hours in early morning). Avoid surface flooding.",
-          preventive_measures: "Maintain 30cm row spacing for canopy aeration. Clear weeds on field bunds.",
-          government_advisory: `TNAU Agritech Advisory (${form.district}): Scout fields for Whitefly vectors. Report symptoms to local AAO.`,
-          nearby_outbreak_alert: `Notice: 2 contiguous farms in ${form.district} reported elevated vector count.`
-        },
-        alert_system: {
-          alert_triggered: true,
-          risk_level: "High",
-          title: `🚨 HIGH RISK ALERT for ${form.crop} at ${form.district}`,
-          message: `High risk of Cotton Whitefly detected today. Recommended spray: Imidacloprid 17.8 SL.`,
-          channels: ["Dashboard", "SMS", "WhatsApp", "Push Notification"]
-        },
-        economic_impact: {
-          crop_value_at_stake: 64500,
-          expected_loss_if_untreated: 18800,
-          treatment_cost: 650,
-          net_benefit: 14014,
-          recommendation: "Treat Now",
-          calculation_basis: "Crop value at stake: ₹64,500 (860 kg/acre @ ₹75.00/kg). ~35% potential loss at High risk (87% confidence-adjusted) = ₹18,800 expected loss. Recommended treatment (₹650) prevents ~₹14,664 with 78% efficacy, yielding ₹14,014 net savings.",
-          expected_yield_kg_per_acre: 860,
-          market_price_per_kg: 75.0,
-          market_price_source: "Agmarknet (Kovilpatti Mandi)",
-          treatment_effectiveness_pct: 0.78,
-          cost_source_note: "TNAU Crop Protection Guide 2024",
-          damage_fraction: 0.35
-        }
-      })
+      setResult(null)
+      setError(err?.response?.data?.detail || err?.message || 'Could not reach the AI prediction service. Please check your connection and try again.')
     } finally {
       setLoading(false)
     }
@@ -131,31 +60,32 @@ export default function TodayPage() {
         message: result?.recommendations?.chemical_treatment
       })
       setAlertSent(true)
+      toast.success('Alert dispatched to farmer via SMS/WhatsApp.')
     } catch (err) {
-      setAlertSent(true)
+      toast.error('Could not dispatch alert. Please try again.')
     }
   }
 
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-900 via-teal-800 to-emerald-950 rounded-3xl p-8 text-white shadow-xl">
+      <div className="bg-gradient-to-r from-brand-900 via-teal-800 to-brand-900 rounded-3xl p-8 text-white shadow-xl">
         <div className="flex items-center gap-2 mb-2">
-          <span className="px-3 py-1 bg-emerald-500/30 text-emerald-200 text-xs font-bold rounded-full border border-emerald-400/30">
+          <span className="px-3 py-1 bg-brand-500/30 text-brand-200 text-xs font-bold rounded-full border border-brand-400/30">
             {t('common:app_name')} · {t('farmer:today_warning_title')}
           </span>
         </div>
         <h1 className="text-3xl font-bold tracking-tight">{t('farmer:today_warning_title')} & {t('farmer:counterfactual_title')}</h1>
-        <p className="mt-2 text-emerald-100 text-sm max-w-3xl leading-relaxed">
+        <p className="mt-2 text-brand-100 text-sm max-w-3xl leading-relaxed">
           {t('common:app_tagline')}
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Form Controls */}
-        <div className="card p-6 space-y-4 lg:col-span-1 border-emerald-100">
+        <div className="card p-6 space-y-4 lg:col-span-1 border-brand-100">
           <h2 className="text-base font-bold text-stone-900 flex items-center gap-2">
-            <MapPin className="text-emerald-600" size={18} /> Location & Crop Inputs
+            <MapPin className="text-brand-600" size={18} /> Location & Crop Inputs
           </h2>
 
           <form onSubmit={handlePredict} className="space-y-3 text-xs">
@@ -209,7 +139,16 @@ export default function TodayPage() {
 
         {/* Prediction Results */}
         <div className="lg:col-span-3 space-y-6">
-          {result ? (
+          {loading && !result ? (
+            <div className="card p-16 text-center text-stone-400 space-y-3">
+              <Cpu size={40} className="mx-auto text-stone-300 animate-pulse" />
+              <p className="text-stone-600 font-medium">Running AI location prediction pipeline…</p>
+            </div>
+          ) : error ? (
+            <div className="card p-6">
+              <ErrorState message={error} onRetry={handlePredict} />
+            </div>
+          ) : result ? (
             <div className="space-y-6">
               {/* Early Warning Banner */}
               {result.prediction.risk_level === 'High' && (
@@ -237,13 +176,13 @@ export default function TodayPage() {
               <div className="card p-6 bg-stone-900 text-white space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-800 pb-4">
                   <div>
-                    <span className="text-[10px] font-bold tracking-widest text-emerald-400 uppercase">AUTOMATIC GEOCODING</span>
+                    <span className="text-[10px] font-bold tracking-widest text-brand-400 uppercase">AUTOMATIC GEOCODING</span>
                     <h3 className="text-xl font-bold">{result.geocoding.resolved_address}</h3>
                     <p className="text-xs text-stone-400 font-mono">Lat: {result.geocoding.latitude}° N · Lon: {result.geocoding.longitude}° E ({result.geocoding.source})</p>
                   </div>
                   <div className="text-right">
                     <span className="text-xs text-stone-400">Crop Stage</span>
-                    <p className="text-sm font-bold text-emerald-300">{result.environment_snapshot.crop_growth_stage}</p>
+                    <p className="text-sm font-bold text-brand-300">{result.environment_snapshot.crop_growth_stage}</p>
                   </div>
                 </div>
 
@@ -266,7 +205,7 @@ export default function TodayPage() {
                   </div>
 
                   <div className="p-3 bg-stone-800/70 rounded-xl border border-stone-700 flex items-center gap-2">
-                    <Wind className="text-emerald-400" size={18} />
+                    <Wind className="text-brand-400" size={18} />
                     <div>
                       <span className="text-[10px] text-stone-400 block">VPD Deficit</span>
                       <span className="font-bold">{result.environment_snapshot.vpd_kpa} kPa</span>
@@ -298,7 +237,7 @@ export default function TodayPage() {
                   </div>
                 </div>
 
-                <div className="card p-6 bg-gradient-to-br from-amber-50 to-emerald-50 border-amber-200 text-center">
+                <div className="card p-6 bg-gradient-to-br from-amber-50 to-brand-50 border-amber-200 text-center">
                   <span className="text-xs font-bold uppercase tracking-wider text-amber-800">DISEASE PROBABILITY</span>
                   <p className="text-4xl font-extrabold text-amber-950 mt-2">{(result.prediction.disease_probability * 100).toFixed(1)}%</p>
                   <p className="text-xs text-amber-700 mt-1">Target Pathogen: {result.prediction.predicted_pathogen}</p>
@@ -312,7 +251,7 @@ export default function TodayPage() {
                     <div className="flex justify-between"><span>CatBoost:</span><span className="font-bold">{(result.prediction.model_comparison.catboost*100).toFixed(1)}%</span></div>
                     <div className="flex justify-between"><span>Random Forest:</span><span className="font-bold">{(result.prediction.model_comparison.random_forest*100).toFixed(1)}%</span></div>
                   </div>
-                  <p className="text-[10px] text-emerald-700 font-semibold pt-1 border-t border-stone-200">Selected Model: {result.prediction.model_comparison.best_performing}</p>
+                  <p className="text-[10px] text-brand-700 font-semibold pt-1 border-t border-stone-200">Selected Model: {result.prediction.model_comparison.best_performing}</p>
                 </div>
               </div>
 
@@ -344,7 +283,7 @@ export default function TodayPage() {
               {/* SHAP Feature Importances */}
               <div className="card p-6 space-y-4">
                 <h3 className="text-sm font-bold text-stone-900 uppercase tracking-wider flex items-center gap-2">
-                  <Cpu size={16} className="text-emerald-600" /> SHAP Feature Attribution & Influencing Parameters
+                  <Cpu size={16} className="text-brand-600" /> SHAP Feature Attribution & Influencing Parameters
                 </h3>
 
                 <div className="space-y-3">
@@ -354,7 +293,7 @@ export default function TodayPage() {
                         <span className="font-bold text-stone-800">{sf.feature}</span>
                         <span className="text-stone-500 ml-2 font-mono">({sf.value})</span>
                       </div>
-                      <span className={`font-bold px-2 py-0.5 rounded-md ${sf.impact === 'positive' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                      <span className={`font-bold px-2 py-0.5 rounded-md ${sf.impact === 'positive' ? 'bg-red-100 text-red-800' : 'bg-brand-100 text-brand-800'}`}>
                         {sf.impact === 'positive' ? `+${sf.shap_value}` : `${sf.shap_value}`}
                       </span>
                     </div>
@@ -364,11 +303,11 @@ export default function TodayPage() {
 
               {/* Smart Recommendations Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="card p-5 bg-emerald-50/70 border-emerald-200 space-y-2">
-                  <h4 className="font-bold text-emerald-900 text-sm flex items-center gap-1.5">
-                    <CheckCircle2 size={16} className="text-emerald-600" /> Organic Solution
+                <div className="card p-5 bg-brand-50/70 border-brand-200 space-y-2">
+                  <h4 className="font-bold text-brand-900 text-sm flex items-center gap-1.5">
+                    <CheckCircle2 size={16} className="text-brand-600" /> Organic Solution
                   </h4>
-                  <p className="text-xs text-emerald-950 leading-relaxed">{result.recommendations.organic_treatment}</p>
+                  <p className="text-xs text-brand-900 leading-relaxed">{result.recommendations.organic_treatment}</p>
                 </div>
 
                 <div className="card p-5 bg-blue-50/70 border-blue-200 space-y-2">

@@ -5,14 +5,14 @@ import {
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, RadialBarChart, RadialBar, Cell
+  ResponsiveContainer, Cell
 } from 'recharts'
 import clsx from 'clsx'
 
 // ── Spinner / Loading ────────────────────────────────────────
 export function Spinner({ size = 'md', className = '' }) {
   const s = { sm: 'w-4 h-4', md: 'w-8 h-8', lg: 'w-12 h-12' }
-  return <div className={clsx('animate-spin rounded-full border-2 border-stone-200 border-t-leaf-600', s[size], className)} />
+  return <div className={clsx('animate-spin rounded-full border-2 border-stone-200 border-t-brand-600', s[size], className)} />
 }
 
 export function LoadingState({ message = 'Loading…' }) {
@@ -60,7 +60,7 @@ export function TodayWarningCard({ result }) {
   const configs = {
     High:   { bg: 'from-red-600 to-red-800',   badge: 'bg-red-100 text-red-900',   Icon: ShieldAlert },
     Medium: { bg: 'from-amber-500 to-amber-700',badge: 'bg-amber-100 text-amber-900',Icon: ShieldQuestion },
-    Low:    { bg: 'from-leaf-600 to-leaf-800',  badge: 'bg-leaf-100 text-leaf-900', Icon: ShieldCheck },
+    Low:    { bg: 'from-brand-600 to-brand-800',  badge: 'bg-brand-100 text-brand-900', Icon: ShieldCheck },
   }
   const cfg = configs[risk_level] || configs.Low
 
@@ -102,29 +102,6 @@ export function TodayWarningCard({ result }) {
 
         <p className="text-white/90 text-sm leading-relaxed">{alert_message}</p>
       </div>
-    </div>
-  )
-}
-
-// ── Risk Gauge (radial) ───────────────────────────────────────
-export function RiskGauge({ score, level }) {
-  const pct   = Math.round(score * 100)
-  const color = { High: '#dc2626', Medium: '#d97706', Low: '#16a34a' }[level] || '#16a34a'
-  const data  = [{ value: pct, fill: color }, { value: 100 - pct, fill: '#f5f5f4' }]
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative w-44 h-26">
-        <ResponsiveContainer width="100%" height={110}>
-          <RadialBarChart cx="50%" cy="100%" innerRadius="60%" outerRadius="100%"
-            startAngle={180} endAngle={0} data={data}>
-            <RadialBar dataKey="value" cornerRadius={6} />
-          </RadialBarChart>
-        </ResponsiveContainer>
-        <div className="absolute inset-0 flex flex-col items-center justify-end pb-1">
-          <span className="font-display text-3xl font-bold" style={{ color }}>{pct}%</span>
-        </div>
-      </div>
-      <RiskBadge level={level} large />
     </div>
   )
 }

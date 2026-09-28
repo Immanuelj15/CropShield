@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import {
   IndianRupee, TrendingUp, AlertOctagon, CheckCircle2,
@@ -6,40 +6,12 @@ import {
   Scale, ArrowRight, Info, AlertTriangle
 } from 'lucide-react'
 import clsx from 'clsx'
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber'
 
 // ── Smooth Counter with Reduced-Motion Support ──────────────────────────────
-function AnimatedRupee({ value, duration = 0.75 }) {
-  const shouldReduceMotion = useReducedMotion()
-  const [displayValue, setDisplayValue] = useState(shouldReduceMotion ? value : 0)
-
-  useEffect(() => {
-    if (shouldReduceMotion || value == null) {
-      setDisplayValue(value)
-      return
-    }
-
-    let startTime = null
-    const startVal = 0
-    const endVal = Number(value) || 0
-    let animationFrameId
-
-    const step = (timestamp) => {
-      if (!startTime) startTime = timestamp
-      const progress = Math.min((timestamp - startTime) / (duration * 1000), 1)
-      const easeOut = 1 - Math.pow(1 - progress, 3)
-      setDisplayValue(Math.round(startVal + (endVal - startVal) * easeOut))
-
-      if (progress < 1) {
-        animationFrameId = requestAnimationFrame(step)
-      }
-    }
-
-    animationFrameId = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(animationFrameId)
-  }, [value, duration, shouldReduceMotion])
-
+function AnimatedRupee({ value, duration = 750 }) {
+  const displayValue = useAnimatedNumber(value, { duration })
   if (value == null) return <span>—</span>
-
   return (
     <span>
       ₹{Math.round(displayValue).toLocaleString('en-IN')}

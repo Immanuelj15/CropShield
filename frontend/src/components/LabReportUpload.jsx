@@ -43,7 +43,7 @@ export default function LabReportUpload({
       formData.append('test_date', testDate)
 
       const targetId = farmId || 'demo_farm_default'
-      const res = await fetch(`http://localhost:8000/api/v1/soil-health/${targetId}/upload-lab-report`, {
+      const res = await fetch(`/api/v1/soil-health/${targetId}/upload-lab-report`, {
         method: 'POST',
         body: formData,
       })

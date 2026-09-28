@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { motion } from 'framer-motion'
 import {
   TrendingUp, TrendingDown, DollarSign, Wallet,
@@ -7,6 +7,7 @@ import {
 import clsx from 'clsx'
 import { formatINR } from './ProfitRangeDisplay'
 import PredictionAccuracyBadge from './PredictionAccuracyBadge'
+import { useAnimatedNumber } from '../hooks/useAnimatedNumber'
 
 const CATEGORY_COLORS = {
   seeds: { bg: 'bg-amber-500', text: 'text-amber-700', border: 'border-amber-300', light: 'bg-amber-50', label: 'Seeds' },
@@ -18,31 +19,7 @@ const CATEGORY_COLORS = {
 }
 
 function AnimatedNumber({ value, prefix = '₹', duration = 900 }) {
-  const [display, setDisplay] = useState(0)
-
-  useEffect(() => {
-    let start = 0
-    const end = Math.round(Number(value) || 0)
-    if (start === end) {
-      setDisplay(end)
-      return
-    }
-    const startTime = performance.now()
-    let frameId
-
-    const step = (now) => {
-      const elapsed = now - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      const current = Math.round(start + (end - start) * (1 - Math.pow(1 - progress, 3)))
-      setDisplay(current)
-      if (progress < 1) {
-        frameId = requestAnimationFrame(step)
-      }
-    }
-    frameId = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(frameId)
-  }, [value, duration])
-
+  const display = useAnimatedNumber(value, { duration })
   return (
     <span>
       {prefix}{formatINR(display)}

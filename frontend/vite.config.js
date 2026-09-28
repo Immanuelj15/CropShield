@@ -9,7 +9,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/favicon.png', 'icons/icon-192.png', 'icons/icon-512.png'],
       manifest: {
-        name: 'AgriGuard',
+        name: 'AgriGuard AI',
         short_name: 'AgriGuard',
         description: 'Explainable AI Pest & Crop Disease Early Warning System for Indian Farmers',
         start_url: '/farmer/today',

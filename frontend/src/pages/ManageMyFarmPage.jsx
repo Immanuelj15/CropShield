@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import {
-  MapPin, Plus, Edit3, Trash2, Sprout, Layers,
+  MapPin, Plus, Edit3, Trash2,
   Compass, AlertTriangle, Sparkles, Wallet,
-  Calendar, Check, X, Shield, ArrowRight, ExternalLink,
-  Droplets, CheckCircle2, ChevronRight, Globe
+  X,
+  CheckCircle2, Globe
 } from 'lucide-react'
 import { MapContainer, TileLayer, Polygon } from 'react-leaflet'
 import clsx from 'clsx'
 import BoundaryDrawingStep from '../components/BoundaryDrawingStep'
+import { ErrorState } from '../components'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
+import { useToast } from '../components/ui/Toast'
 
 const TN_DISTRICTS = [
   'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
@@ -79,7 +82,7 @@ function MiniBoundaryPreview({ boundaryGeoJSON, defaultCenter = [9.1728, 77.8710
           />
         )}
       </MapContainer>
-      <div className="absolute top-2 right-2 bg-stone-950/70 backdrop-blur-md text-[10px] font-bold text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+      <div className="absolute top-2 right-2 bg-stone-950/70 backdrop-blur-md text-[10px] font-bold text-brand-300 px-2 py-0.5 rounded-full border border-brand-500/30">
         Satellite Layer
       </div>
     </div>
@@ -106,6 +109,8 @@ export default function ManageMyFarmPage() {
   const [areaAcres, setAreaAcres] = useState(2.0)
   const [boundaryGeoJSON, setBoundaryGeoJSON] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null) // { id, title }
+  const toast = useToast()
 
   // Fetch registered farms
   const loadFarms = async () => {
@@ -198,7 +203,7 @@ export default function ManageMyFarmPage() {
   const handleSubmitFarm = async (e) => {
     e.preventDefault()
     if (!farmName.trim()) {
-      alert('Please enter a field name.')
+      toast.error('Please enter a field name.')
       return
     }
 
@@ -239,34 +244,35 @@ export default function ManageMyFarmPage() {
 
       if (res.ok) {
         setIsModalOpen(false)
+        toast.success(editingFarm ? 'Field updated successfully.' : 'Field registered successfully.')
         loadFarms()
       } else {
         const err = await res.json()
-        alert(err.detail || 'Failed to save farm details.')
+        toast.error(err.detail || 'Failed to save farm details.')
       }
     } catch (err) {
       console.error('Error saving farm:', err)
-      alert('Network error while saving field.')
+      toast.error('Network error while saving field.')
     } finally {
       setSubmitting(false)
     }
   }
 
   // Delete farm
-  const handleDeleteFarm = async (farmId, farmTitle) => {
-    if (!window.confirm(`Are you sure you want to remove "${farmTitle}" from your registered fields?`)) {
-      return
-    }
+  const handleDeleteFarm = async (farmId) => {
     try {
       const res = await fetch(`/api/v1/farms/${farmId}`, { method: 'DELETE' })
       if (res.ok) {
+        toast.success('Field removed.')
         loadFarms()
       } else {
-        alert('Failed to delete farm.')
+        toast.error('Failed to delete farm.')
       }
     } catch (err) {
       console.error('Delete error:', err)
-      alert('Error deleting farm.')
+      toast.error('Error deleting farm.')
+    } finally {
+      setDeleteTarget(null)
     }
   }
 
@@ -278,20 +284,20 @@ export default function ManageMyFarmPage() {
   return (
     <div className="space-y-8 pb-16">
       {/* Page Header */}
-      <div className="bg-gradient-to-br from-emerald-950 via-teal-900 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="bg-gradient-to-br from-brand-900 via-teal-900 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-brand-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold tracking-wide">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/20 border border-brand-400/30 text-brand-300 text-xs font-bold tracking-wide">
               <Globe size={13} />
               <span>Multi-Field Geospatial Registry</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white flex items-center gap-3">
-              <Compass className="text-emerald-400 shrink-0" size={32} />
+              <Compass className="text-brand-400 shrink-0" size={32} />
               Manage My Farms & Spatial Boundaries
             </h1>
-            <p className="text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+            <p className="text-sm text-brand-100/80 max-w-2xl leading-relaxed">
               Define the exact satellite coordinates of your agricultural plots. AgriGuard uses these polygons
               for localized NASA POWER weather reanalysis, Sentinel-2 vegetation scanning, and soil moisture tracking.
             </p>
@@ -299,7 +305,7 @@ export default function ManageMyFarmPage() {
 
           <button
             onClick={handleOpenCreate}
-            className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 text-stone-950 font-black text-sm hover:from-emerald-400 hover:to-teal-400 shadow-xl shadow-emerald-950/40 transition-all cursor-pointer shrink-0"
+            className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-brand-500 to-teal-500 text-stone-950 font-black text-sm hover:from-brand-400 hover:to-teal-400 shadow-xl shadow-brand-900/40 transition-all cursor-pointer shrink-0"
           >
             <Plus size={18} className="stroke-[3]" />
             <span>Register New Field</span>
@@ -309,19 +315,19 @@ export default function ManageMyFarmPage() {
         {/* Aggregate Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8 pt-6 border-t border-white/10 text-xs sm:text-sm">
           <div>
-            <span className="text-emerald-300/70 block text-[11px] font-bold uppercase tracking-wider">Total Fields</span>
+            <span className="text-brand-300/70 block text-[11px] font-bold uppercase tracking-wider">Total Fields</span>
             <span className="text-xl sm:text-2xl font-black font-mono text-white">{farms.length}</span>
           </div>
           <div>
-            <span className="text-emerald-300/70 block text-[11px] font-bold uppercase tracking-wider">Total Area</span>
+            <span className="text-brand-300/70 block text-[11px] font-bold uppercase tracking-wider">Total Area</span>
             <span className="text-xl sm:text-2xl font-black font-mono text-white">{totalAcres.toFixed(1)} Acres</span>
           </div>
           <div>
-            <span className="text-emerald-300/70 block text-[11px] font-bold uppercase tracking-wider">Spatial Status</span>
-            <span className="text-xl sm:text-2xl font-black font-mono text-emerald-400">100% Monitored</span>
+            <span className="text-brand-300/70 block text-[11px] font-bold uppercase tracking-wider">Spatial Status</span>
+            <span className="text-xl sm:text-2xl font-black font-mono text-brand-400">100% Monitored</span>
           </div>
           <div>
-            <span className="text-emerald-300/70 block text-[11px] font-bold uppercase tracking-wider">Validation State</span>
+            <span className="text-brand-300/70 block text-[11px] font-bold uppercase tracking-wider">Validation State</span>
             <span className="text-xl sm:text-2xl font-black font-mono text-teal-300">P&L Linked</span>
           </div>
         </div>
@@ -330,12 +336,16 @@ export default function ManageMyFarmPage() {
       {/* Farms Grid */}
       {loading ? (
         <div className="text-center py-20">
-          <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-12 h-12 border-4 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-stone-500 text-sm font-semibold">Loading your registered agricultural fields...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm">
+          <ErrorState message={error} onRetry={loadFarms} />
         </div>
       ) : farms.length === 0 ? (
         <div className="bg-white rounded-3xl border border-stone-200 p-12 text-center space-y-4 shadow-sm">
-          <div className="w-16 h-16 rounded-3xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+          <div className="w-16 h-16 rounded-3xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto">
             <MapPin size={32} />
           </div>
           <h3 className="text-lg font-bold text-stone-800">No Farm Fields Registered Yet</h3>
@@ -344,7 +354,7 @@ export default function ManageMyFarmPage() {
           </p>
           <button
             onClick={handleOpenCreate}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 transition-all cursor-pointer shadow-sm"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-brand-700 text-white text-xs font-bold hover:bg-brand-800 transition-all cursor-pointer shadow-sm"
           >
             <Plus size={16} />
             <span>Map First Field Boundary</span>
@@ -373,13 +383,13 @@ export default function ManageMyFarmPage() {
                       <div className="flex items-center gap-2">
                         <h2 className="text-lg font-black text-stone-900 tracking-tight">{farmTitle}</h2>
                         {hasBoundary && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-brand-700 bg-brand-50 px-2 py-0.5 rounded-full border border-brand-200">
                             <CheckCircle2 size={11} /> Mapped
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-2 text-xs font-semibold text-stone-500">
-                        <MapPin size={13} className="text-emerald-600" />
+                        <MapPin size={13} className="text-brand-600" />
                         <span>{farm.district || 'Tamil Nadu'}</span>
                         <span>·</span>
                         <span>{acres} Acres ({farm.area_hectares || (acres / 2.471).toFixed(1)} ha)</span>
@@ -389,13 +399,13 @@ export default function ManageMyFarmPage() {
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleOpenEdit(farm)}
-                        className="p-2 rounded-xl text-stone-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors cursor-pointer"
+                        className="p-2 rounded-xl text-stone-500 hover:text-brand-700 hover:bg-brand-50 transition-colors cursor-pointer"
                         title="Edit field details & boundary"
                       >
                         <Edit3 size={16} />
                       </button>
                       <button
-                        onClick={() => handleDeleteFarm(farmId, farmTitle)}
+                        onClick={() => setDeleteTarget({ id: farmId, title: farmTitle })}
                         className="p-2 rounded-xl text-stone-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                         title="Delete field"
                       >
@@ -435,7 +445,7 @@ export default function ManageMyFarmPage() {
                 <div className="bg-stone-50/80 border-t border-stone-100 p-4 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-bold">
                   <button
                     onClick={() => navigate('/farmer/today')}
-                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-emerald-300 hover:bg-emerald-50/50 text-stone-700 hover:text-emerald-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
+                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-brand-300 hover:bg-brand-50/50 text-stone-700 hover:text-brand-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
                   >
                     <AlertTriangle size={15} className="text-amber-500" />
                     <span className="text-[11px]">Today's Risk</span>
@@ -443,7 +453,7 @@ export default function ManageMyFarmPage() {
 
                   <button
                     onClick={() => navigate('/farmer/soil-health')}
-                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-emerald-300 hover:bg-emerald-50/50 text-stone-700 hover:text-emerald-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
+                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-brand-300 hover:bg-brand-50/50 text-stone-700 hover:text-brand-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
                   >
                     <Compass size={15} className="text-teal-600" />
                     <span className="text-[11px]">Soil Health</span>
@@ -451,17 +461,17 @@ export default function ManageMyFarmPage() {
 
                   <button
                     onClick={() => navigate('/farmer/crop-recommendation')}
-                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-emerald-300 hover:bg-emerald-50/50 text-stone-700 hover:text-emerald-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
+                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-brand-300 hover:bg-brand-50/50 text-stone-700 hover:text-brand-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
                   >
-                    <Sparkles size={15} className="text-emerald-600" />
+                    <Sparkles size={15} className="text-brand-600" />
                     <span className="text-[11px]">Crop Advisor</span>
                   </button>
 
                   <button
                     onClick={() => navigate('/farmer/expenses')}
-                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-emerald-300 hover:bg-emerald-50/50 text-stone-700 hover:text-emerald-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
+                    className="p-2 rounded-xl bg-white border border-stone-200 hover:border-brand-300 hover:bg-brand-50/50 text-stone-700 hover:text-brand-800 transition-all flex flex-col items-center gap-1 cursor-pointer"
                   >
-                    <Wallet size={15} className="text-emerald-700" />
+                    <Wallet size={15} className="text-brand-700" />
                     <span className="text-[11px]">P&L Tracker</span>
                   </button>
                 </div>
@@ -484,7 +494,7 @@ export default function ManageMyFarmPage() {
               {/* Modal Header */}
               <div className="p-5 border-b border-stone-200 flex items-center justify-between bg-stone-50">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
+                  <div className="w-10 h-10 rounded-2xl bg-brand-100 text-brand-800 flex items-center justify-center font-bold">
                     <MapPin size={20} />
                   </div>
                   <div>
@@ -527,7 +537,7 @@ export default function ManageMyFarmPage() {
                           value={farmName}
                           onChange={(e) => setFarmName(e.target.value)}
                           placeholder="e.g. North Kovilpatti Cotton Field"
-                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500"
                         />
                       </div>
 
@@ -537,7 +547,7 @@ export default function ManageMyFarmPage() {
                         <select
                           value={district}
                           onChange={(e) => setDistrict(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                         >
                           {TN_DISTRICTS.map((d) => (
                             <option key={d} value={d}>{d}</option>
@@ -555,7 +565,7 @@ export default function ManageMyFarmPage() {
                           required
                           value={areaAcres}
                           onChange={(e) => setAreaAcres(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
                         />
                       </div>
 
@@ -565,7 +575,7 @@ export default function ManageMyFarmPage() {
                         <select
                           value={cropType}
                           onChange={(e) => setCropType(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                         >
                           {CROPS.map((c) => (
                             <option key={c} value={c}>{c}</option>
@@ -579,7 +589,7 @@ export default function ManageMyFarmPage() {
                         <select
                           value={soilType}
                           onChange={(e) => setSoilType(e.target.value)}
-                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                          className="w-full px-4 py-2.5 rounded-2xl border border-stone-200 text-stone-900 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white"
                         >
                           {SOIL_TYPES.map((s) => (
                             <option key={s} value={s}>{s}</option>
@@ -602,7 +612,7 @@ export default function ManageMyFarmPage() {
                                 className={clsx(
                                   'py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer',
                                   selected
-                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                    ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
                                     : 'bg-stone-50 border-stone-200 text-stone-700 hover:bg-stone-100'
                                 )}
                               >
@@ -627,7 +637,7 @@ export default function ManageMyFarmPage() {
                       <button
                         type="submit"
                         disabled={submitting}
-                        className="px-6 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black shadow-md transition-all cursor-pointer flex items-center gap-2"
+                        className="px-6 py-2.5 rounded-2xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-black shadow-md transition-all cursor-pointer flex items-center gap-2"
                       >
                         {submitting ? 'Saving Field...' : editingFarm ? 'Save Changes' : 'Confirm Registration'}
                       </button>
@@ -639,6 +649,16 @@ export default function ManageMyFarmPage() {
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => handleDeleteFarm(deleteTarget.id)}
+        title={`Remove "${deleteTarget?.title || 'this field'}"?`}
+        message="This field will be removed from your registered fields. This action cannot be undone."
+        confirmLabel="Delete"
+        danger
+      />
     </div>
   )
 }

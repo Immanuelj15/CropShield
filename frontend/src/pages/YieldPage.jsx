@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { TrendingUp, Sprout, BarChart2, Check, HelpCircle } from 'lucide-react'
+import { TrendingUp, Sprout, BarChart2, Check } from 'lucide-react'
 import axios from 'axios'
+import { ErrorState } from '../components'
 
 export default function YieldPage() {
   const [crop, setCrop] = useState('Rice')
@@ -13,9 +14,11 @@ export default function YieldPage() {
 
   const [yieldResult, setYieldResult] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const handlePredict = async () => {
     setLoading(true)
+    setError(null)
     try {
       const res = await axios.post('/api/v1/yield/predict', {
         crop,
@@ -28,22 +31,8 @@ export default function YieldPage() {
       })
       setYieldResult(res.data)
     } catch (err) {
-      // Regional Soil & Yield Baseline
-      setYieldResult({
-        crop,
-        base_yield_tons_ha: 4.5,
-        expected_yield_tons_ha: 5.32,
-        expected_yield_kg_acre: 2152.9,
-        confidence_score: 0.942,
-        total_multiplier: 1.182,
-        factor_contributions: [
-          { factor: "Temperature Suitability", impact_pct: 5.0 },
-          { factor: "Rainfall & Hydration", impact_pct: 8.0 },
-          { factor: "Nitrogen Availability", impact_pct: 6.5 },
-          { factor: "Irrigation Efficiency", impact_pct: 12.0 }
-        ],
-        advice: "Optimizing Soil Nitrogen and maintaining Drip Irrigation boosts expected yield by 18.2% above baseline."
-      })
+      setYieldResult(null)
+      setError(err?.response?.data?.detail || err?.message || 'Could not reach the yield forecasting service. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -52,12 +41,12 @@ export default function YieldPage() {
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-900 to-teal-800 rounded-3xl p-8 text-white shadow-xl">
-        <span className="px-3 py-1 bg-emerald-500/30 text-emerald-200 text-xs font-semibold rounded-full border border-emerald-400/30">
+      <div className="bg-gradient-to-r from-brand-900 to-teal-800 rounded-3xl p-8 text-white shadow-xl">
+        <span className="px-3 py-1 bg-brand-500/30 text-brand-200 text-xs font-semibold rounded-full border border-brand-400/30">
           AI Yield Regression Engine
         </span>
         <h1 className="text-3xl font-bold tracking-tight mt-2">Crop Yield Predictor</h1>
-        <p className="mt-2 text-emerald-100 text-sm max-w-2xl">
+        <p className="mt-2 text-brand-100 text-sm max-w-2xl">
           Forecast expected crop yield (tons/hectare & kg/acre) based on weather microclimate, soil NPK profiles, and irrigation management.
         </p>
       </div>
@@ -66,7 +55,7 @@ export default function YieldPage() {
         {/* Controls */}
         <div className="card p-6 space-y-5 lg:col-span-1">
           <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-            <Sprout className="text-emerald-600" size={20} /> Field Parameters
+            <Sprout className="text-brand-600" size={20} /> Field Parameters
           </h2>
 
           <div>
@@ -86,7 +75,7 @@ export default function YieldPage() {
               <span>Avg Temperature (°C)</span>
               <span>{temperature}°C</span>
             </div>
-            <input type="range" min="15" max="42" step="0.5" value={temperature} onChange={(e) => setTemperature(e.target.value)} className="w-full accent-emerald-600" />
+            <input type="range" min="15" max="42" step="0.5" value={temperature} onChange={(e) => setTemperature(e.target.value)} className="w-full accent-brand-600" />
           </div>
 
           <div>
@@ -94,7 +83,7 @@ export default function YieldPage() {
               <span>Annual Rainfall (mm)</span>
               <span>{rainfall} mm</span>
             </div>
-            <input type="range" min="200" max="2000" step="25" value={rainfall} onChange={(e) => setRainfall(e.target.value)} className="w-full accent-emerald-600" />
+            <input type="range" min="200" max="2000" step="25" value={rainfall} onChange={(e) => setRainfall(e.target.value)} className="w-full accent-brand-600" />
           </div>
 
           <div>
@@ -102,7 +91,7 @@ export default function YieldPage() {
               <span>Soil Nitrogen N (kg/ha)</span>
               <span>{soilN} kg/ha</span>
             </div>
-            <input type="range" min="50" max="300" step="5" value={soilN} onChange={(e) => setSoilN(e.target.value)} className="w-full accent-emerald-600" />
+            <input type="range" min="50" max="300" step="5" value={soilN} onChange={(e) => setSoilN(e.target.value)} className="w-full accent-brand-600" />
           </div>
 
           <div>
@@ -121,14 +110,18 @@ export default function YieldPage() {
 
         {/* Results */}
         <div className="lg:col-span-2 space-y-6">
-          {yieldResult ? (
+          {error ? (
+            <div className="card p-6">
+              <ErrorState message={error} onRetry={handlePredict} />
+            </div>
+          ) : yieldResult ? (
             <div className="space-y-6">
               {/* Output Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="card p-6 bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200">
-                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">EXPECTED YIELD (HA)</span>
-                  <p className="text-4xl font-extrabold text-emerald-950 mt-2">{yieldResult.expected_yield_tons_ha} <span className="text-lg font-normal">tons/ha</span></p>
-                  <p className="text-xs text-emerald-700 mt-1">Baseline: {yieldResult.base_yield_tons_ha} tons/ha</p>
+                <div className="card p-6 bg-gradient-to-br from-brand-50 to-teal-50 border-brand-200">
+                  <span className="text-xs font-bold uppercase tracking-wider text-brand-700">EXPECTED YIELD (HA)</span>
+                  <p className="text-4xl font-extrabold text-brand-900 mt-2">{yieldResult.expected_yield_tons_ha} <span className="text-lg font-normal">tons/ha</span></p>
+                  <p className="text-xs text-brand-700 mt-1">Baseline: {yieldResult.base_yield_tons_ha} tons/ha</p>
                 </div>
 
                 <div className="card p-6 bg-gradient-to-br from-teal-50 to-cyan-50 border-teal-200">
@@ -141,14 +134,14 @@ export default function YieldPage() {
               {/* Factors */}
               <div className="card p-6 space-y-4">
                 <h3 className="text-sm font-bold text-stone-800 uppercase tracking-wider flex items-center gap-2">
-                  <BarChart2 size={16} className="text-emerald-600" /> Yield Factor Attribution
+                  <BarChart2 size={16} className="text-brand-600" /> Yield Factor Attribution
                 </h3>
 
                 <div className="space-y-3">
                   {yieldResult.factor_contributions.map((fc, i) => (
                     <div key={i} className="flex items-center justify-between text-xs font-medium border-b border-stone-100 pb-2">
                       <span className="text-stone-700">{fc.factor}</span>
-                      <span className={`font-bold ${fc.impact_pct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      <span className={`font-bold ${fc.impact_pct >= 0 ? 'text-brand-600' : 'text-red-600'}`}>
                         {fc.impact_pct >= 0 ? `+${fc.impact_pct}%` : `${fc.impact_pct}%`}
                       </span>
                     </div>
@@ -157,8 +150,8 @@ export default function YieldPage() {
               </div>
 
               {/* Advisory */}
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-3">
-                <Check className="text-emerald-600 shrink-0 mt-0.5" size={18} />
+              <div className="p-4 rounded-xl bg-brand-50 border border-brand-200 text-xs text-brand-900 flex items-start gap-3">
+                <Check className="text-brand-600 shrink-0 mt-0.5" size={18} />
                 <div>
                   <span className="font-bold">Agronomical Optimization: </span>
                   {yieldResult.advice}
