@@ -8,13 +8,13 @@ Human-in-the-loop verification layer between AI models and farmers:
 - Regional report generation
 - Farmer support diagnostic responder
 """
+import logging
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from beanie import PydanticObjectId
 
-from backend.utils.auth_utils import require_roles
+from backend.utils.auth_utils import require_roles, parse_object_id, get_owned_farm
 from backend.models.user import User as MongoUser
 from backend.models.farm import Farm as MongoFarm
 from backend.models.pest_warning_log import PestWarningLog as MongoWarningLog
@@ -22,18 +22,20 @@ from backend.models.support_request import SupportRequest as MongoSupportRequest
 from backend.models.retraining_log import RetrainingLog as MongoRetrainingLog
 from backend.services import weather_service
 
+logger = logging.getLogger("cropshield.agronomist_api")
+
 router = APIRouter(tags=["Agronomist Expert Portal"])
 
 
 class VerifyThreatRequest(BaseModel):
-    decision: str = Field("confirm", example="confirm")  # "confirm" | "override"
-    confirmed_pest: Optional[str] = Field(None, example="Pink Bollworm (Pectinophora gossypiella)")
-    severity: Optional[str] = Field("High", example="High")  # "Low" | "Medium" | "High"
-    notes: Optional[str] = Field(None, example="Field scouting in Kovilpatti confirms rosette flower symptoms.")
+    decision: Literal["confirm", "override"] = Field("confirm", example="confirm")
+    confirmed_pest: Optional[str] = Field(None, max_length=200, example="Pink Bollworm (Pectinophora gossypiella)")
+    severity: Optional[Literal["Low", "Medium", "High"]] = Field("High", example="High")
+    notes: Optional[str] = Field(None, max_length=2000, example="Field scouting in Kovilpatti confirms rosette flower symptoms.")
 
 
 class SupportResponseRequest(BaseModel):
-    response_text: str = Field(..., min_length=5, example="Apply 2% Neem seed kernel extract immediately. Recheck in 48h.")
+    response_text: str = Field(..., min_length=5, max_length=4000, example="Apply 2% Neem seed kernel extract immediately. Recheck in 48h.")
 
 
 @router.get("/detect/pending")
@@ -56,6 +58,7 @@ async def list_pending_verifications(
         farm_dict = {str(f.id): f.farm_name for f in farms}
         return {
             "total_pending": 3,
+            "simulated": True,  # demo cases: verifying demo_threat_* ids returns 404
             "region": getattr(current_user, "region_assigned", "All Tamil Nadu"),
             "items": [
                 {
@@ -122,6 +125,7 @@ async def list_pending_verifications(
 
     return {
         "total_pending": len(items),
+        "simulated": False,
         "region": getattr(current_user, "region_assigned", "All Tamil Nadu"),
         "items": items,
     }
@@ -138,20 +142,18 @@ async def verify_threat_case(
     Feeds directly into the patent's 'closed-loop verification' audit trail.
     """
     now = datetime.utcnow()
-    verified_record = None
+    obj_id = parse_object_id(log_id, "Warning log not found.")
+    verified_record = await MongoWarningLog.get(obj_id)
+    if not verified_record:
+        raise HTTPException(status_code=404, detail="Warning log not found.")
+    if verified_record.verified_by is not None:
+        raise HTTPException(status_code=409, detail="This case has already been verified.")
 
-    try:
-        obj_id = PydanticObjectId(log_id)
-        verified_record = await MongoWarningLog.get(obj_id)
-    except Exception:
-        pass
-
-    if verified_record:
-        verified_record.verified_by = current_user.id
-        verified_record.verified_at = now
-        if req.decision == "override" and req.severity:
-            verified_record.risk_level = req.severity
-        await verified_record.save()
+    verified_record.verified_by = current_user.id
+    verified_record.verified_at = now
+    if req.decision == "override" and req.severity:
+        verified_record.risk_level = req.severity
+    await verified_record.save()
 
     # Enqueue into retraining feedback queue
     retrain_entry = MongoRetrainingLog(
@@ -187,30 +189,28 @@ async def get_farm_field_weather(
     Returns real-time and 30-day NASA POWER satellite reanalysis for a registered farm zone.
     Pure software API integration — no physical hardware sensors.
     """
-    farm = None
-    try:
-        farm = await MongoFarm.get(PydanticObjectId(farm_id))
-    except Exception:
-        pass
-
-    if not farm:
-        farm = await MongoFarm.find_one()
-
-    lat = farm.location["coordinates"][1] if farm and farm.location else 9.1728
-    lon = farm.location["coordinates"][0] if farm and farm.location else 77.8710
+    farm = await get_owned_farm(farm_id, current_user, allow_staff_read=True)
+    coords = (farm.location or {}).get("coordinates") if isinstance(farm.location, dict) else None
+    if not coords or len(coords) < 2:
+        raise HTTPException(status_code=404, detail="Farm has no GPS location.")
+    lat, lon = float(coords[1]), float(coords[0])
 
     try:
         weather_df = await weather_service.fetch_latest_weather(latitude=lat, longitude=lon, days_back=14)
         latest = weather_service.get_today_weather_dict(weather_df)
     except Exception:
-        latest = {"t2m": 30.5, "rh2m": 68.0, "prectotcorr": 0.0, "ws2m": 3.2, "t2m_max": 34.0, "t2m_min": 24.5}
+        logger.exception("Weather fetch failed for farm %s", farm.id)
+        raise HTTPException(status_code=503, detail="Weather data is temporarily unavailable.")
+    weather_source = latest.get("weather_source") or getattr(weather_df, "attrs", {}).get("source") or "NASA_POWER"
+    is_synthetic = weather_source == "synthetic"
 
     return {
-        "farm_id": str(farm.id) if farm else farm_id,
-        "farm_name": farm.farm_name if farm else "Tamil Nadu Farm",
-        "district": farm.district if farm else "Thoothukudi",
+        "farm_id": str(farm.id),
+        "farm_name": farm.farm_name,
+        "district": farm.district,
         "gps_coordinates": {"latitude": lat, "longitude": lon},
-        "data_source": "NASA POWER Satellite Reanalysis (Pure Software)",
+        "data_source": "Synthetic climatology (NASA POWER unavailable)" if is_synthetic else "NASA POWER Satellite Reanalysis (Pure Software)",
+        "data_quality": {"weather_source": weather_source, "is_synthetic": is_synthetic},
         "current_metrics": {
             "temperature_c": latest.get("t2m", 30.2),
             "humidity_pct": latest.get("rh2m", 66.4),
@@ -272,6 +272,7 @@ async def get_regional_risk_grid(
     ]
 
     return {
+        "simulated": True,  # static demo clusters, not computed from live predictions
         "total_clusters": len(clusters),
         "high_risk_clusters": 1,
         "medium_risk_clusters": 1,
@@ -290,6 +291,7 @@ async def generate_regional_report(
     """
     region = getattr(current_user, "region_assigned", "Tamil Nadu Central Zone")
     return {
+        "simulated": True,  # static demo report content
         "report_id": f"REP-{datetime.utcnow().strftime('%Y%m%d')}-{range.upper()}",
         "generated_by": current_user.name,
         "region": region,
@@ -312,6 +314,44 @@ async def generate_regional_report(
     }
 
 
+@router.get("/advisories/farmer-requests")
+async def list_farmer_support_requests(
+    status_filter: Optional[Literal["pending", "resolved", "all"]] = Query("pending", alias="status"),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: MongoUser = Depends(require_roles(["agronomist", "admin"]))
+):
+    """Lists farmer support requests (default: pending), newest first (contract item 9)."""
+    query: Dict[str, Any] = {}
+    if status_filter and status_filter != "all":
+        query["status"] = status_filter
+    requests = await MongoSupportRequest.find(query).sort(-MongoSupportRequest.created_at).limit(limit).to_list()
+
+    farm_ids = list({r.farm_id for r in requests if r.farm_id})
+    farm_map = {}
+    if farm_ids:
+        farms = await MongoFarm.find({"_id": {"$in": farm_ids}}).to_list()
+        farm_map = {f.id: f for f in farms}
+
+    return [
+        {
+            "id": str(r.id),
+            "farmer_name": r.farmer_name,
+            "farm_id": str(r.farm_id) if r.farm_id else None,
+            "farm_name": farm_map[r.farm_id].farm_name if r.farm_id in farm_map else None,
+            "district": r.district,
+            "crop_type": r.crop_type,
+            "question": r.query_text,
+            "image_url": r.image_url,
+            "created_at": r.created_at,
+            "status": r.status,
+            "response_text": r.response_text,
+            "agronomist_name": r.agronomist_name,
+            "responded_at": r.responded_at,
+        }
+        for r in requests
+    ]
+
+
 @router.post("/advisories/farmer-requests/{request_id}/respond")
 async def respond_to_farmer_support(
     request_id: str,
@@ -321,16 +361,7 @@ async def respond_to_farmer_support(
     """
     Responds to a farmer diagnostic query with expert-verified advisory instructions.
     """
-    try:
-        obj_id = PydanticObjectId(request_id)
-        support_item = await MongoSupportRequest.get(obj_id)
-    except Exception:
-        support_item = None
-
-    if not support_item:
-        # Fallback to update first pending item
-        support_item = await MongoSupportRequest.find_one(MongoSupportRequest.status == "pending")
-
+    support_item = await MongoSupportRequest.get(parse_object_id(request_id, "Support request not found."))
     if not support_item:
         raise HTTPException(status_code=404, detail="Support request not found.")
 

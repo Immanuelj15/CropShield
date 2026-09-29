@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle2, XCircle, Info, X } from 'lucide-react'
 import clsx from 'clsx'
 import { MODAL_Z_INDEX } from './Modal'
+import { normalizeError } from '../../utils/http'
 
 const ToastContext = createContext(null)
 
@@ -22,7 +23,9 @@ export function ToastProvider({ children }) {
 
   const showToast = useCallback((message, { variant = 'info', duration = 4000 } = {}) => {
     const id = Date.now() + Math.random()
-    setToasts((prev) => [...prev, { id, message, variant }])
+    // Never render raw objects/arrays (e.g. FastAPI 422 `detail`) as a React child.
+    const text = typeof message === 'string' ? message : normalizeError(message)
+    setToasts((prev) => [...prev, { id, message: text, variant }])
     if (duration) setTimeout(() => dismiss(id), duration)
     return id
   }, [dismiss])

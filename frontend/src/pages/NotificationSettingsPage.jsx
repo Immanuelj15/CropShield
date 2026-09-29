@@ -28,6 +28,21 @@ import { getPendingCount, flushOfflineQueue, getPendingActions } from '../utils/
 import Toggle from '../components/ui/Toggle';
 import { useToast } from '../components/ui/Toast';
 
+// P2-11: navigator.serviceWorker.ready never resolves when no SW is registered (e.g. dev mode
+// or an install failure). Race it against a timeout so the UI shows a clear message instead of hanging.
+const SW_READY_TIMEOUT_MS = 8000;
+function serviceWorkerReadyWithTimeout(timeoutMs = SW_READY_TIMEOUT_MS) {
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error('The offline service worker is not active yet. Reload the app (or install it as a PWA) and try again.')),
+        timeoutMs
+      )
+    ),
+  ]);
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -49,7 +64,7 @@ export default function NotificationSettingsPage() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [smsEnabled, setSmsEnabled] = useState(true);
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState('+919876543210');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [language, setLanguage] = useState('en');
   const [quietHours, setQuietHours] = useState({ start: '21:00', end: '06:00' });
 
@@ -124,7 +139,7 @@ export default function NotificationSettingsPage() {
     if (pushEnabled) {
       // Unsubscribe flow
       try {
-        const reg = await navigator.serviceWorker.ready;
+        const reg = await serviceWorkerReadyWithTimeout();
         const sub = await reg.pushManager.getSubscription();
         if (sub) await sub.unsubscribe();
         await unsubscribePush();
@@ -150,8 +165,15 @@ export default function NotificationSettingsPage() {
         return;
       }
 
-      const { public_key } = await getVapidPublicKey();
-      const reg = await navigator.serviceWorker.ready;
+      const { public_key, push_enabled } = await getVapidPublicKey();
+      if (!public_key || push_enabled === false) {
+        setStatusMessage({
+          type: 'error',
+          text: 'Web Push is not configured on the server yet (no VAPID key). SMS / WhatsApp alerts still work.',
+        });
+        return;
+      }
+      const reg = await serviceWorkerReadyWithTimeout();
 
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
@@ -181,7 +203,7 @@ export default function NotificationSettingsPage() {
       await updateNotificationPreferences({
         sms_enabled: smsEnabled,
         whatsapp_enabled: whatsappEnabled,
-        phone_number: phoneNumber,
+        phone_number: phoneNumber || null,
         preferred_language: language,
         quiet_hours: quietHours,
       });
@@ -223,11 +245,14 @@ export default function NotificationSettingsPage() {
   const handleFlushQueue = async () => {
     setSyncingQueue(true);
     try {
-      const res = await flushOfflineQueue();
+      const res = await flushOfflineQueue({ force: true });
       await refreshOfflineStatus();
+      const parts = [`${res.processed} item(s) synchronized to server`];
+      if (res.retrying) parts.push(`${res.retrying} will retry later`);
+      if (res.failed) parts.push(`${res.failed} rejected by the server (see the banner at the top to review)`);
       setStatusMessage({
-        type: 'success',
-        text: `Queue flushed: ${res.processed} item(s) synchronized to server.`,
+        type: res.failed ? 'error' : 'success',
+        text: `Queue flushed: ${parts.join(', ')}.`,
       });
     } catch (err) {
       setStatusMessage({

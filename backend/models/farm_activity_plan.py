@@ -25,6 +25,9 @@ class FarmActivityPlan(Document):
         default_factory=list,
         description="Sustainable farming recommendations (rotation, water conservation)"
     )
+    # Per-plan reminder idempotency markers: {"harvest_window": "YYYY-MM-DD", "heat_warning": ..., ...}
+    # (timeline items carry their own "last_notified_date" / "notified_at").
+    reminder_markers: Dict[str, str] = Field(default_factory=dict)
     generated_at: datetime = Field(default_factory=datetime.utcnow)
     last_updated: datetime = Field(default_factory=datetime.utcnow)
 

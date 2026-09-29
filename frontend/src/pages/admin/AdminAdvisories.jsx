@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { useToast } from '../../components/ui/Toast'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
 
 const SUPPORTED_ADVISORY_LANGS = [
   { code: 'en', label: 'English', native: 'English', required: true },
@@ -30,21 +30,21 @@ export default function AdminAdvisories() {
     prevention: { ...EMPTY_FIELD },
   })
 
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const [saving, setSaving] = useState(false)
 
   const handleCreateAdvisory = async (e) => {
     e.preventDefault()
     if (!newAdvisory.pest_or_disease.en?.trim()) {
-      toast.error(t('validation:field_required', { field: 'English Pest/Disease Name' }) || 'English Pest or Disease Name is required as fallback.')
+      toast.error(t('validation:field_required', { field: 'English Pest/Disease Name', defaultValue: 'English Pest or Disease Name is required as fallback.' }))
       return
     }
+    if (saving) return
+    setSaving(true)
 
     try {
-      const res = await fetch(`${API_BASE}/admin/advisories`, {
+      await apiFetch('/admin/advisories', {
         method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
+        json: {
           pest_or_disease: newAdvisory.pest_or_disease,
           crop_type: newAdvisory.crop_type,
           season: newAdvisory.season,
@@ -52,22 +52,19 @@ export default function AdminAdvisories() {
           organic_treatment: newAdvisory.organic_treatment,
           chemical_treatment: newAdvisory.chemical_treatment,
           prevention: newAdvisory.prevention,
-        }),
+        },
       })
-      if (res.ok) {
-        toast.success('Expert multi-language advisory published successfully.')
-        setNewAdvisory({
-          pest_or_disease: { ...EMPTY_FIELD }, crop_type: 'Cotton', season: 'Kharif',
-          symptoms: { ...EMPTY_FIELD }, organic_treatment: { ...EMPTY_FIELD },
-          chemical_treatment: { ...EMPTY_FIELD }, prevention: { ...EMPTY_FIELD },
-        })
-      } else {
-        const err = await res.json().catch(() => ({}))
-        toast.error(err.detail || 'Failed to save advisory')
-      }
+      toast.success('Expert multi-language advisory published successfully.')
+      setNewAdvisory({
+        pest_or_disease: { ...EMPTY_FIELD }, crop_type: 'Cotton', season: 'Kharif',
+        symptoms: { ...EMPTY_FIELD }, organic_treatment: { ...EMPTY_FIELD },
+        chemical_treatment: { ...EMPTY_FIELD }, prevention: { ...EMPTY_FIELD },
+      })
     } catch (e) {
       console.error(e)
-      toast.error('Network error while saving advisory.')
+      toast.error(e.message || 'Failed to save advisory')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -252,7 +249,7 @@ export default function AdminAdvisories() {
           />
         </div>
 
-        <button type="submit" className="w-full py-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+        <button type="submit" disabled={saving} className="disabled:opacity-50 w-full py-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
           <Upload size={16} /> Publish Multi-Language Advisory
         </button>
       </form>

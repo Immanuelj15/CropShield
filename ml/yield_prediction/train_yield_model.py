@@ -26,7 +26,9 @@ warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-DATA_FILE = ROOT / "ml" / "data" / "agriguard_soil_yield_dataset_10000rows.csv"
+# WARNING: this CSV is SYNTHETIC (see ml/data/legacy_synthetic/README.md). The trained
+# model is NOT used at runtime (yield_model.py is formula-based). Kept for reproducibility only.
+DATA_FILE = ROOT / "ml" / "data" / "legacy_synthetic" / "agriguard_soil_yield_dataset_10000rows.csv"
 SAVE_DIR = ROOT / "ml" / "yield_prediction" / "saved_models"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -95,7 +97,9 @@ def train_yield():
 
     metrics = {
         "model_name": "RandomForestRegressor",
-        "dataset": "agriguard_soil_yield_dataset_10000rows.csv",
+        "dataset": "legacy_synthetic/agriguard_soil_yield_dataset_10000rows.csv",
+        "dataset_is_synthetic": True,
+        "used_at_runtime": False,
         "n_samples": len(df),
         "n_features": len(feature_cols),
         "r2_score": round(float(r2), 4),

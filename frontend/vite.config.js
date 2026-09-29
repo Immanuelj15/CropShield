@@ -2,11 +2,20 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const BACKEND = process.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Custom service worker (src/sw.js): precache + runtime caching + push/notificationclick handlers
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
+      },
       includeAssets: ['icons/favicon.png', 'icons/icon-192.png', 'icons/icon-512.png'],
       manifest: {
         name: 'AgriGuard AI',
@@ -29,58 +38,20 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.includes('/api/v1/predict-today') || url.pathname.includes('/api/v1/predict-location'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'agriguard-today-warnings',
-              expiration: {
-                maxEntries: 20,
-                maxAgeSeconds: 24 * 60 * 60,
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: ({ url }) => url.pathname.includes('/api/v1/pests-diseases') || url.pathname.includes('/api/v1/advisories'),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'agriguard-advisory-library',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 7 * 24 * 60 * 60,
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            urlPattern: ({ request }) => request.destination === 'style' || request.destination === 'script' || request.destination === 'worker' || request.destination === 'font',
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'agriguard-app-shell',
-              expiration: {
-                maxEntries: 60,
-                maxAgeSeconds: 30 * 24 * 60 * 60,
-              }
-            }
-          }
-        ]
-      }
     })
   ],
   server: {
     port: 5173,
     proxy: {
       '/api': {
-        target: process.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
+        target: BACKEND,
         changeOrigin: true,
-      }
+      },
+      // Uploaded receipts / lab reports are served by the backend at /uploads
+      '/uploads': {
+        target: BACKEND,
+        changeOrigin: true,
+      },
     }
   }
 })

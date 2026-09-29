@@ -1,26 +1,16 @@
 """
 AgriGuard AI — Automated Draw-to-Scan & Geospatial Outbreak Query Tests
 Tests GeoJSON polygon indexing with MongoDB 2dsphere $geoWithin, risk aggregation,
-dominant threat calculation, and RBAC broadcast advisory.
+dominant threat calculation, RBAC broadcast advisory, auth and GeoJSON validation.
+Runs against the isolated test database; skips when MongoDB is unreachable.
 """
 
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 
-from backend.main import app
-from backend.db.mongodb import init_mongodb, close_mongodb
-from backend.models.farm import Farm as MongoFarm
-from backend.models.alert import Alert as MongoAlert
+from conftest import DEMO_FARMER, login_headers
 
-
-@pytest_asyncio.fixture(scope="function")
-async def client():
-    await init_mongodb()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    await close_mongodb()
+pytestmark = pytest.mark.mongo
 
 
 @pytest.mark.asyncio
@@ -80,7 +70,11 @@ async def test_draw_to_scan_empty_polygon(client: AsyncClient):
         ]
     }
 
-    res = await client.post("/api/v1/outbreak/scan-area", json=ocean_polygon)
+    # scanning requires a logged-in user now
+    assert (await client.post("/api/v1/outbreak/scan-area", json=ocean_polygon)).status_code == 401
+
+    headers = await login_headers(client, *DEMO_FARMER)
+    res = await client.post("/api/v1/outbreak/scan-area", json=ocean_polygon, headers=headers)
     assert res.status_code == 200
     data = res.json()
 
@@ -143,3 +137,16 @@ async def test_broadcast_advisory_rbac(client: AsyncClient):
     assert res_agro.status_code == 200
     assert res_agro.json()["status"] == "success"
     assert "notified_farms_count" in res_agro.json()
+
+
+@pytest.mark.asyncio
+async def test_scan_area_rejects_malformed_geojson(client: AsyncClient):
+    headers = await login_headers(client, *DEMO_FARMER)
+    bad = [
+        {"type": "Polygon", "coordinates": [[[77.0, 9.0], [78.0, 9.0]]]},              # too few points
+        {"type": "Polygon", "coordinates": [[[500.0, 9.0], [78.0, 9.0], [78.0, 10.0], [500.0, 9.0]]]},  # lon out of range
+        {"type": "Point", "coordinates": [77.0, 9.0]},                                   # wrong geometry
+    ]
+    for poly in bad:
+        res = await client.post("/api/v1/outbreak/scan-area", json=poly, headers=headers)
+        assert res.status_code == 422, (poly, res.status_code, res.text)

@@ -3,6 +3,8 @@ AgriGuard AI — FastAPI Application (v2)
 Explainable AI Pest & Crop Disease Early Warning System for Indian Farmers.
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -24,33 +26,56 @@ from contextlib import asynccontextmanager
 from backend.db.mongodb import init_mongodb, close_mongodb
 from backend.jobs.scheduler import start_scheduler, shutdown_scheduler
 
+logger = logging.getLogger("cropshield.main")
+
 Base.metadata.create_all(bind=engine)
 auto_migrate_sqlite()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Initialize MongoDB & Beanie collections/indexes
+    mongo_ready = False
     try:
         await init_mongodb()
-        from backend.services.pnl_service import seed_pnl_demo_data
-        await seed_pnl_demo_data()
-    except Exception as e:
-        print(f"[WARN] MongoDB startup init error: {e}")
+        mongo_ready = True
+    except Exception:
+        logger.exception("MongoDB startup init failed — background jobs will NOT be started.")
 
-    # 2. Start background daily & hourly ingestion scheduler
-    start_scheduler()
+    if mongo_ready:
+        # Persisted admin risk thresholds -> in-process cache used by inference
+        try:
+            from backend.services.risk_thresholds import load_risk_thresholds
+            await load_risk_thresholds()
+        except Exception:
+            logger.exception("Could not load persisted risk thresholds; using defaults.")
+
+        # Demo P&L CSVs are only seeded outside production
+        if not settings.is_production:
+            try:
+                from backend.services.pnl_service import seed_pnl_demo_data
+                await seed_pnl_demo_data()
+            except Exception:
+                logger.exception("P&L demo data seeding failed.")
+
+        # 2. Start background daily & hourly ingestion scheduler (only with a working DB)
+        started = start_scheduler()
+        if started is False:
+            logger.error("Background scheduler failed to start.")
 
     yield
 
     # 3. Shutdown scheduler and close database connection pool
-    shutdown_scheduler()
+    try:
+        shutdown_scheduler()
+    except Exception:
+        logger.exception("Scheduler shutdown error")
     await close_mongodb()
 
 app = FastAPI(
     title="AgriGuard AI — Early Warning & Advisory API",
     description=(
         "Explainable AI Based Pest & Crop Disease Early Warning System for Indian Farmers. "
-        "Trained on NASA POWER 1980–2025 data + PyTorch leaf vision + SHAP XAI + Haversine spatial clustering."
+        "Trained on NASA POWER 2005–2024 daily data (10 Tamil Nadu sites) + PyTorch leaf vision + SHAP XAI + Haversine spatial clustering."
     ),
     version="2.0.0",
     docs_url="/api/v1/docs",
@@ -62,16 +87,19 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Accept-Language"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(location_predict.router, prefix="/api/v1", tags=["Location-Based AI Warning"])
 app.include_router(auth.router,           prefix="/api/v1", tags=["Authentication & User"])
 app.include_router(farmer.router,         prefix="/api/v1", tags=["Farmer Crop Intelligence"])
+# weather.router must precede agronomist.router: GET /weather/current would otherwise be
+# captured by the agronomist GET /weather/{farm_id} route.
+app.include_router(weather.router,        prefix="/api/v1", tags=["Weather Integration"])
 app.include_router(agronomist.router,     prefix="/api/v1", tags=["Agronomist Expert Portal"])
 app.include_router(admin.router,          prefix="/api/v1", tags=["Admin Platform Management"])
 app.include_router(predict.router,        prefix="/api/v1", tags=["Pest Early Warning"])
@@ -84,7 +112,6 @@ app.include_router(chatbot.router,        prefix="/api/v1", tags=["Tamil & Engli
 app.include_router(alerts.router,         prefix="/api/v1", tags=["Alert Dispatcher"])
 app.include_router(detect.router,         prefix="/api/v1", tags=["Rule-based Pest Detection"])
 app.include_router(features.router,       prefix="/api/v1", tags=["Live Feature Inspector"])
-app.include_router(weather.router,        prefix="/api/v1", tags=["Weather Integration"])
 app.include_router(history.router,        prefix="/api/v1", tags=["Warning History"])
 app.include_router(notifications.router,  prefix="/api/v1", tags=["Notification Delivery & PWA"])
 app.include_router(crop_recommendation.router, prefix="/api/v1", tags=["AI Crop Recommendation & Profit Engine"])

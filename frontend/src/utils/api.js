@@ -1,17 +1,21 @@
 import axios from 'axios'
-
-const BASE = import.meta.env.VITE_API_BASE_URL || ''
+import { API_PREFIX, getToken, handleUnauthorized, normalizeError } from './http'
 
 const api = axios.create({
-  baseURL: `${BASE}/api/v1`,
+  baseURL: API_PREFIX,
   timeout: 35000,
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Same token source as utils/http.js (sessionStorage.cropshield_token)
 api.interceptors.request.use(cfg => {
-  const token = sessionStorage.getItem('cropshield_token')
+  const token = getToken()
   if (token) {
     cfg.headers.Authorization = `Bearer ${token}`
+  }
+  if (typeof FormData !== 'undefined' && cfg.data instanceof FormData && cfg.headers) {
+    // Let the browser set the multipart boundary
+    delete cfg.headers['Content-Type']
   }
   if (import.meta.env.DEV) console.log(`[API] ${cfg.method?.toUpperCase()} ${cfg.url}`)
   return cfg
@@ -19,7 +23,22 @@ api.interceptors.request.use(cfg => {
 
 api.interceptors.response.use(
   res => res,
-  err => Promise.reject(new Error(err.response?.data?.detail || err.message || 'API error'))
+  err => {
+    const status = err.response?.status
+    const url = err.config?.url || ''
+    if (status === 401 && !/\/auth\/login/.test(url)) {
+      handleUnauthorized()
+    }
+    const message = err.response
+      ? normalizeError(err.response.data, `Request failed (${status})`)
+      : normalizeError(err, 'Network error — check your connection and try again.')
+    const wrapped = new Error(message)
+    wrapped.status = status || 0
+    wrapped.data = err.response?.data
+    wrapped.isNetwork = !err.response && err.code !== 'ERR_CANCELED'
+    wrapped.name = err.code === 'ERR_CANCELED' ? 'CanceledError' : 'ApiError'
+    return Promise.reject(wrapped)
+  }
 )
 
 // ── Primary: Today's pest warning ────────────────────────────

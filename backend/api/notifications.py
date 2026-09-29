@@ -5,7 +5,7 @@ Handles Web Push subscriptions, SMS/WhatsApp toggles, Quiet Hours, and Test Deli
 
 from datetime import datetime
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.utils.auth_utils import get_current_user
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/notifications", tags=["Notification Delivery & PWA"]
 
 
 class PushSubscriptionSchema(BaseModel):
-    endpoint: str
+    endpoint: str = Field(..., max_length=2048)
     keys: Dict[str, str] = Field(default_factory=dict)
     expirationTime: Optional[Any] = None
 
@@ -30,8 +30,8 @@ class PushSubscriptionSchema(BaseModel):
 class NotificationPreferenceUpdate(BaseModel):
     sms_enabled: Optional[bool] = None
     whatsapp_enabled: Optional[bool] = None
-    phone_number: Optional[str] = None
-    preferred_language: Optional[str] = None
+    phone_number: Optional[str] = Field(None, max_length=20)
+    preferred_language: Optional[str] = Field(None, max_length=5)
     quiet_hours: Optional[Dict[str, str]] = None
 
 
@@ -41,8 +41,9 @@ class TestNotificationRequest(BaseModel):
 
 @router.get("/vapid-public-key")
 async def get_vapid_public_key():
-    """Returns the VAPID public key needed by browser PushManager to generate push subscriptions."""
-    return {"public_key": settings.VAPID_PUBLIC_KEY}
+    """Returns the VAPID public key needed by browser PushManager (null when push is not configured)."""
+    enabled = bool(getattr(settings, "push_enabled", False))
+    return {"public_key": settings.VAPID_PUBLIC_KEY if enabled else None, "push_enabled": enabled}
 
 
 @router.get("/preferences")
@@ -155,7 +156,7 @@ async def test_notification(
 
 @router.get("/logs")
 async def get_notification_logs(
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100),
     current_user: MongoUser = Depends(get_current_user)
 ):
     """Fetches recent delivery logs for the authenticated farmer."""

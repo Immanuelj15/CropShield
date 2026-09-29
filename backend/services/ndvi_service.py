@@ -8,6 +8,7 @@ Includes graceful regional agro-climatic simulation fallback for testing / offli
 
 import os
 import math
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -48,11 +49,22 @@ def init_earth_engine(service_account_key_path: Optional[str] = None) -> bool:
         return False
 
 
+def is_earth_engine_initialized() -> bool:
+    """Reads the live flag (never `from ndvi_service import _ee_initialized`, which copies a stale value)."""
+    return _ee_initialized
+
+
+async def fetch_ndvi_for_farm_async(lat: float, lon: float, buffer_meters: int = 100) -> Optional[Dict[str, Any]]:
+    """Non-blocking wrapper: Earth Engine getInfo() calls are synchronous network round-trips."""
+    return await asyncio.to_thread(fetch_ndvi_for_farm, lat, lon, buffer_meters)
+
+
 def fetch_ndvi_for_farm(lat: float, lon: float, buffer_meters: int = 100) -> Optional[Dict[str, Any]]:
     """
     Returns the most recent usable (low-cloud) NDVI reading within the last 14 days
     for farm coordinates + buffer area (~farm boundary).
     Sentinel-2 bands used: B8 (Near-Infrared: 842nm), B4 (Red: 665nm).
+    BLOCKING when Earth Engine is live — from async code use `await fetch_ndvi_for_farm_async(...)`.
     """
     global _ee_initialized
 

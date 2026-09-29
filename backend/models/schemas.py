@@ -4,8 +4,71 @@ All request/response models for the updated API.
 """
 
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
+
+
+# ── Shared validators ─────────────────────────────────────────
+
+UserRole = Literal["farmer", "agronomist", "admin"]
+
+
+def validate_polygon_ring(coordinates: Any) -> List[List[List[float]]]:
+    """
+    Validates GeoJSON Polygon coordinates: at least one ring, each ring with >= 4
+    [lon, lat] pairs, closed (first == last), lon in [-180, 180], lat in [-90, 90].
+    """
+    if not isinstance(coordinates, list) or not coordinates:
+        raise ValueError("Polygon coordinates must contain at least one linear ring.")
+    rings: List[List[List[float]]] = []
+    for ring in coordinates:
+        if not isinstance(ring, list) or len(ring) < 3:
+            raise ValueError("Each polygon ring must have at least 4 [lon, lat] positions (first == last).")
+        clean_ring: List[List[float]] = []
+        for pos in ring:
+            if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+                raise ValueError("Each position must be a [lon, lat] pair.")
+            try:
+                lon, lat = float(pos[0]), float(pos[1])
+            except (TypeError, ValueError):
+                raise ValueError("Positions must be numeric [lon, lat] pairs.")
+            if not (-180.0 <= lon <= 180.0) or not (-90.0 <= lat <= 90.0):
+                raise ValueError("Positions must be [lon, lat] with lon in [-180, 180] and lat in [-90, 90].")
+            clean_ring.append([lon, lat])
+        if clean_ring[0] != clean_ring[-1]:
+            # Leaflet-drawn rings are often left open: close them, then re-check the size.
+            clean_ring.append(list(clean_ring[0]))
+        if len(clean_ring) < 4 or len({(p[0], p[1]) for p in clean_ring}) < 3:
+            raise ValueError("Polygon ring must have at least 3 distinct positions and be closed (first == last).")
+        rings.append(clean_ring)
+    return rings
+
+
+class GeoJSONPolygon(BaseModel):
+    type: Literal["Polygon"] = "Polygon"
+    coordinates: List[List[List[float]]] = Field(
+        ..., description="GeoJSON LinearRing coordinate arrays [[[lon, lat], [lon, lat], ...]] (closed ring)"
+    )
+
+    @field_validator("coordinates", mode="before")
+    @classmethod
+    def _check_coordinates(cls, v):
+        return validate_polygon_ring(v)
+
+
+class GeoJSONPoint(BaseModel):
+    type: Literal["Point"] = "Point"
+    coordinates: List[float] = Field(..., description="[lon, lat]")
+
+    @field_validator("coordinates")
+    @classmethod
+    def _check_point(cls, v):
+        if len(v) < 2:
+            raise ValueError("Point coordinates must be [lon, lat].")
+        lon, lat = float(v[0]), float(v[1])
+        if not (-180.0 <= lon <= 180.0) or not (-90.0 <= lat <= 90.0):
+            raise ValueError("Point must be [lon, lat] with valid ranges.")
+        return [lon, lat]
 
 
 # ── Today's Warning ───────────────────────────────────────────
@@ -16,6 +79,9 @@ class TodayWarningRequest(BaseModel):
     location:     str   = Field("Kovilpatti")
     crop:         str   = Field(..., example="Cotton")
     climate_zone: str   = Field("Dryland",  example="Dryland")
+    # Optional: farm to attribute this prediction to (must be owned by the caller).
+    # When omitted the caller's own primary farm is used (if any).
+    farm_id:      Optional[str] = Field(None, example=None)
 
     class Config:
         json_schema_extra = {"example": {
@@ -87,12 +153,17 @@ class TodayWarningResponse(BaseModel):
     raw_confidence:            Optional[float] = None   # Raw softmax probability from XGBoost
     calibrated_confidence:     Optional[float] = None   # Post-hoc Platt-calibrated probability
     confidence_band:           Optional[str]   = None   # "High" (≥0.80) | "Moderate" (≥0.55) | "Low" (<0.55)
-    model_calibration_version: Optional[str]   = None   # e.g. "1.0.0-platt"
+    model_calibration_version: Optional[str]   = None   # e.g. "2.0.0-platt"
+    calibration_method:        Optional[str]   = None   # "platt" | "analytic-fallback" | None (rule fallback)
+    is_rule_fallback:          bool            = False  # True when model_version == "rules-fallback-v2"
 
     # Meta
     data_date:        date   # date of latest weather observation used
     model_version:    str
     data_source:      str = "NASA POWER"
+    # {"weather_source": "NASA_POWER" | "synthetic", "is_synthetic": bool}
+    data_quality:     Optional[Dict[str, Any]] = None
+    farm_id:          Optional[str] = None
 
 
 
@@ -216,17 +287,27 @@ class WarningHistoryResponse(BaseModel):
 # ── Auth Schemas ──────────────────────────────────────────────
 
 class UserRegister(BaseModel):
-    username:  str
-    email:     str
-    password:  str
-    full_name: Optional[str] = None
+    username:  str = Field(..., min_length=1, max_length=100)
+    email:     str = Field(..., min_length=3, max_length=254)
+    password:  str = Field(..., min_length=8, max_length=128)
+    full_name: Optional[str] = Field(None, max_length=150)
+    # Ignored by the server: self-registration always creates a "farmer" account.
     role:      Optional[str] = "farmer"
-    district:  Optional[str] = "Coimbatore"
+    district:  Optional[str] = Field("Coimbatore", max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        local, _, domain = v.partition("@")
+        if not local or "." not in domain or " " in v:
+            raise ValueError("A valid email address is required.")
+        return v
 
 class UserLogin(BaseModel):
-    username: Optional[str] = None
-    email:    Optional[str] = None
-    password: str
+    username: Optional[str] = Field(None, max_length=254)  # accepted only if it is an email
+    email:    Optional[str] = Field(None, max_length=254)
+    password: str = Field(..., max_length=128)
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -292,7 +373,10 @@ class YieldResponse(BaseModel):
     base_yield_tons_ha:     float
     expected_yield_tons_ha: float
     expected_yield_kg_acre: float
-    confidence_score:       float
+    confidence_score:       Optional[float] = None  # formula model: no validated confidence
+    is_heuristic:           Optional[bool] = None
+    method:                 Optional[str] = None
+    source:                 Optional[str] = None
     total_multiplier:       float
     factor_contributions:   List[Dict[str, Any]]
     advice:                 str

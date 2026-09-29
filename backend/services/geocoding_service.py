@@ -7,6 +7,14 @@ Uses an offline Tamil Nadu agro-climatic database with Open-Meteo / Nominatim AP
 import urllib.parse
 import urllib.request
 import json
+import logging
+
+import httpx
+
+logger = logging.getLogger("cropshield.geocoding")
+
+OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+GEOCODING_TIMEOUT_SECONDS = 3
 
 # Pre-indexed Tamil Nadu District & Taluk Agro-Coordinates
 TN_LOCATION_DATABASE = {
@@ -24,13 +32,8 @@ TN_LOCATION_DATABASE = {
     "aduthurai": {"lat": 11.0036, "lon": 79.4731, "district": "Thanjavur", "taluk": "Thiruvidaimarudur", "state": "Tamil Nadu"},
 }
 
-def geocode_location(state: str, district: str, taluk: str = "", village: str = ""):
-    """
-    Geocodes location inputs to (latitude, longitude).
-    """
+def _local_lookup(state: str, district: str, taluk: str = "", village: str = ""):
     search_query = f"{village} {taluk} {district} {state}".strip().lower()
-    
-    # 1. Search local database
     for key, loc in TN_LOCATION_DATABASE.items():
         if key in search_query or loc["district"].lower() in search_query:
             return {
@@ -39,29 +42,72 @@ def geocode_location(state: str, district: str, taluk: str = "", village: str = 
                 "resolved_address": f"{village or loc['taluk']}, {district or loc['district']}, {state}",
                 "source": "Local Agro Database"
             }
-            
-    # 2. Open-Meteo Geocoding API fallback
-    try:
-        place_name = village or district or "Coimbatore"
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name={urllib.parse.quote(place_name)}&count=1&language=en&format=json"
-        req = urllib.request.Request(url, headers={'User-Agent': 'AgriGuardAI/2.0'})
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read().decode())
-            if data.get("results"):
-                res = data["results"][0]
-                return {
-                    "latitude": float(res["latitude"]),
-                    "longitude": float(res["longitude"]),
-                    "resolved_address": f"{res.get('name', place_name)}, {res.get('admin1', state)}, India",
-                    "source": "Open-Meteo Geocoding API"
-                }
-    except Exception:
-        pass
-        
-    # Default fallback
+    return None
+
+
+def _from_open_meteo(data: dict, place_name: str, state: str):
+    if data.get("results"):
+        res = data["results"][0]
+        return {
+            "latitude": float(res["latitude"]),
+            "longitude": float(res["longitude"]),
+            "resolved_address": f"{res.get('name', place_name)}, {res.get('admin1', state)}, India",
+            "source": "Open-Meteo Geocoding API"
+        }
+    return None
+
+
+def _default_location(state: str, district: str, village: str):
     return {
         "latitude": 9.1728,
         "longitude": 77.8710,
         "resolved_address": f"{village or 'Kovilpatti'}, {district or 'Thoothukudi'}, {state}",
         "source": "Default Agro Center"
     }
+
+
+def geocode_location(state: str, district: str, taluk: str = "", village: str = ""):
+    """
+    Geocodes location inputs to (latitude, longitude).
+    BLOCKING (network fallback, up to 3 s) — from async code use `await geocode_location_async(...)`.
+    """
+    local = _local_lookup(state, district, taluk, village)
+    if local:
+        return local
+
+    # Open-Meteo Geocoding API fallback
+    place_name = village or district or "Coimbatore"
+    try:
+        url = f"{OPEN_METEO_GEOCODING_URL}?name={urllib.parse.quote(place_name)}&count=1&language=en&format=json"
+        req = urllib.request.Request(url, headers={'User-Agent': 'AgriGuardAI/2.0'})
+        with urllib.request.urlopen(req, timeout=GEOCODING_TIMEOUT_SECONDS) as resp:
+            found = _from_open_meteo(json.loads(resp.read().decode()), place_name, state)
+            if found:
+                return found
+    except Exception as e:
+        logger.info("Open-Meteo geocoding failed for %r: %s", place_name, e)
+
+    return _default_location(state, district, village)
+
+
+async def geocode_location_async(state: str, district: str, taluk: str = "", village: str = ""):
+    """Non-blocking variant of geocode_location() for async request handlers (same return shape)."""
+    local = _local_lookup(state, district, taluk, village)
+    if local:
+        return local
+
+    place_name = village or district or "Coimbatore"
+    try:
+        async with httpx.AsyncClient(timeout=GEOCODING_TIMEOUT_SECONDS, headers={"User-Agent": "AgriGuardAI/2.0"}) as client:
+            resp = await client.get(
+                OPEN_METEO_GEOCODING_URL,
+                params={"name": place_name, "count": 1, "language": "en", "format": "json"},
+            )
+            resp.raise_for_status()
+            found = _from_open_meteo(resp.json(), place_name, state)
+            if found:
+                return found
+    except Exception as e:
+        logger.info("Open-Meteo geocoding failed for %r: %s", place_name, e)
+
+    return _default_location(state, district, village)

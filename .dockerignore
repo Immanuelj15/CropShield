@@ -1,0 +1,45 @@
+# Build context for backend/Dockerfile and deploy/frontend.Dockerfile (both use the repo root).
+
+# VCS / tooling
+.git
+.gitignore
+.vscode
+.idea
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+venv
+.venv
+env
+
+# Secrets and local state — never bake into an image
+.env
+**/.env
+config/.env
+**/*.db
+**/*.db-wal
+**/*.db-shm
+uploads/*
+
+# Frontend build artefacts / deps (the frontend image runs its own `npm ci`)
+**/node_modules
+frontend/dist
+
+# Tests and docs are not needed at runtime
+tests
+docs
+**/*.md
+
+# Training-only data: the image serves the committed artifacts and never trains.
+ml/data/nasa_power_raw
+ml/data/legacy_synthetic
+ml/data/wadhwani_bollworm
+ml/training/plots
+data_collection
+
+# Root datasets the runtime does not read (only training / offline validation scripts use them).
+# Kept: crop_* rules/templates/coefficients/scenarios, soil_health_* demo reports, farm_*_demo P&L CSVs.
+agriguard_demo_dataset_10000rows.csv
+agriguard_multicrop_dataset_10000rows.csv
+agriguard_soil_yield_dataset_10000rows.csv
+irrigation_fertilizer_demo_log_10000rows.csv

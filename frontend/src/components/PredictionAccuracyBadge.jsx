@@ -24,15 +24,16 @@ export default function PredictionAccuracyBadge({
   }
 
   const isWithin = Boolean(accuracy.actual_within_predicted_range)
-  const deviation = accuracy.deviation_pct ?? 0
+  // deviation_pct is null when the predicted midpoint is 0 (backend) — don't show a fake 0%
+  const deviation = typeof accuracy.deviation_pct === 'number' ? `${accuracy.deviation_pct}%` : 'n/a'
 
   if (compact) {
     return (
       <span
         title={
           predictedRange
-            ? `Predicted: ₹${formatINR(predictedRange.min)} – ₹${formatINR(predictedRange.max)} | Actual: ₹${formatINR(actualProfit)} (${deviation}% deviation)`
-            : `Accuracy: ${deviation}% deviation`
+            ? `Predicted: ₹${formatINR(predictedRange.min)} – ₹${formatINR(predictedRange.max)} | Actual: ₹${formatINR(actualProfit)} (${deviation} deviation)`
+            : `Accuracy: ${deviation} deviation`
         }
         className={clsx(
           "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border",
@@ -45,12 +46,12 @@ export default function PredictionAccuracyBadge({
         {isWithin ? (
           <>
             <CheckCircle2 size={12} className="text-emerald-700" />
-            <span>Within Predicted Band ({deviation}% dev)</span>
+            <span>Within Predicted Band ({deviation} dev)</span>
           </>
         ) : (
           <>
             <AlertTriangle size={12} className="text-amber-700" />
-            <span>Outside Predicted Band ({deviation}% dev)</span>
+            <span>Outside Predicted Band ({deviation} dev)</span>
           </>
         )}
       </span>
@@ -98,7 +99,7 @@ export default function PredictionAccuracyBadge({
               : "bg-amber-100 border-amber-300 text-amber-900"
           )}
         >
-          {deviation}% Dev
+          {deviation} Dev
         </span>
       </div>
 

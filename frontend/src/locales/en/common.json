@@ -44,5 +44,9 @@
   "queued_items": "{{count}} offline items queued",
   "ask_assistant": "Voice Assistant",
   "footer_subtitle": "Pure Software Multi-Role Architecture v2.0.0 · Tamil Nadu & India",
-  "footer_tech": "NASA POWER Satellite Reanalysis (1980–2025) · Tree-SHAP XAI · Prescriptive Counterfactual Engine · Haversine Spatial Clustering"
+  "footer_tech": "NASA POWER Satellite Reanalysis (1980–2025) · Tree-SHAP XAI · Prescriptive Counterfactual Engine · Haversine Spatial Clustering",
+  "status": "Status",
+  "nav_disease_scan": "Disease Scanner",
+  "nav_manage_farms": "Manage Farms",
+  "nav_pnl_tracker": "P&L Tracker"
 }

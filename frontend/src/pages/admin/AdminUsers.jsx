@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Users } from 'lucide-react'
 import clsx from 'clsx'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
 const ROLE_BADGE = {
   farmer: 'bg-green-100 text-green-800',
   agronomist: 'bg-blue-100 text-blue-800',
@@ -11,20 +11,23 @@ const ROLE_BADGE = {
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([])
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const [loadError, setLoadError] = useState(null)
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/admin/users`, { headers: authHeaders })
-        if (res.ok) setUsers(await res.json())
-      } catch (e) { console.error(e) }
+        const data = await apiFetch('/admin/users')
+        setUsers(Array.isArray(data) ? data : [])
+      } catch (e) {
+        console.error(e)
+        setLoadError(e.message || 'Could not load data.')
+      }
     })()
   }, [])
 
   return (
     <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-sm space-y-4">
+      {loadError && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{loadError}</p>}
       <div className="flex items-center justify-between pb-3 border-b border-stone-100">
         <div>
           <h2 className="text-lg font-bold text-stone-900">User Account & Role Management</h2>

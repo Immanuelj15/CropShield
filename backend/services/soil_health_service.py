@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
 import requests
+import httpx
 
 from backend.models.soil_health_report import SoilHealthReport
 from backend.services.soil_confidence_service import (
@@ -78,12 +79,12 @@ def compute_polygon_centroid(boundary_geojson: Dict[str, Any]) -> Tuple[float, f
         return (9.1728, 77.8710)
 
 
-def fetch_soilgrids_with_quantiles(lat: float, lon: float) -> Dict[str, Any]:
-    """
-    Pulls real soil property quantiles (Q0.05, mean, Q0.95) from ISRIC SoilGrids v2.0 REST API.
-    Gracefully falls back to certified regional soil profiles if network is unavailable.
-    """
-    params = [
+SOILGRIDS_TIMEOUT_SECONDS = 8
+SOILGRIDS_HEADERS = {"User-Agent": "AgriGuard-AI-Soil-Service/2.0"}
+
+
+def _soilgrids_params(lat: float, lon: float) -> List[Tuple[str, Any]]:
+    params: List[Tuple[str, Any]] = [
         ("lon", lon),
         ("lat", lat),
         ("depth", DEPTH),
@@ -93,48 +94,79 @@ def fetch_soilgrids_with_quantiles(lat: float, lon: float) -> Dict[str, Any]:
     ]
     for prop in SOILGRIDS_PROPERTIES:
         params.append(("property", prop))
+    return params
 
+
+def _parse_soilgrids_response(data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    layers = data.get("properties", {}).get("layers", [])
+    extracted: Dict[str, Any] = {}
+    for layer in layers:
+        prop_name = layer["name"]
+        for depth_entry in layer.get("depths", []):
+            if depth_entry["label"] == DEPTH:
+                vals = depth_entry.get("values", {})
+                extracted[f"{prop_name}_mean"] = vals.get("mean")
+                extracted[f"{prop_name}_q05"] = vals.get("Q0.05")
+                extracted[f"{prop_name}_q95"] = vals.get("Q0.95")
+    if extracted.get("phh2o_mean") is None:
+        return None
+    # SoilGrids returns phh2o scaled by 10 (e.g. 68 -> 6.8)
+    raw_ph = extracted["phh2o_mean"]
+    ph_scale = 10.0 if raw_ph > 14.0 else 1.0
+    return {
+        "ph_mean": extracted["phh2o_mean"] / ph_scale,
+        "ph_q05": (extracted.get("phh2o_q05") or (extracted["phh2o_mean"] - 3)) / ph_scale,
+        "ph_q95": (extracted.get("phh2o_q95") or (extracted["phh2o_mean"] + 3)) / ph_scale,
+        "nitrogen_mean": extracted.get("nitrogen_mean", 220),
+        "nitrogen_q05": extracted.get("nitrogen_q05", 160),
+        "nitrogen_q95": extracted.get("nitrogen_q95", 290),
+        "soc_mean": (extracted.get("soc_mean", 60) or 60) / 100.0,  # convert to %
+        "soc_q05": (extracted.get("soc_q05", 35) or 35) / 100.0,
+        "soc_q95": (extracted.get("soc_q95", 90) or 90) / 100.0,
+        "cec_mean": extracted.get("cec_mean", 18.0),
+        "cec_q05": extracted.get("cec_q05", 12.0),
+        "cec_q95": extracted.get("cec_q95", 26.0),
+        "source": "ISRIC SoilGrids v2.0 REST API",
+    }
+
+
+def fetch_soilgrids_with_quantiles(lat: float, lon: float) -> Dict[str, Any]:
+    """
+    Pulls real soil property quantiles (Q0.05, mean, Q0.95) from ISRIC SoilGrids v2.0 REST API.
+    Gracefully falls back to certified regional soil profiles if network is unavailable.
+    BLOCKING — from async code use `await fetch_soilgrids_with_quantiles_async(...)`.
+    """
     try:
         resp = requests.get(
             SOILGRIDS_BASE_URL,
-            params=params,
-            timeout=8,
-            headers={"User-Agent": "AgriGuard-AI-Soil-Service/2.0"},
+            params=_soilgrids_params(lat, lon),
+            timeout=SOILGRIDS_TIMEOUT_SECONDS,
+            headers=SOILGRIDS_HEADERS,
         )
         if resp.status_code == 200:
-            data = resp.json()
-            layers = data.get("properties", {}).get("layers", [])
-            extracted: Dict[str, Any] = {}
-            for layer in layers:
-                prop_name = layer["name"]
-                for depth_entry in layer.get("depths", []):
-                    if depth_entry["label"] == DEPTH:
-                        vals = depth_entry.get("values", {})
-                        extracted[f"{prop_name}_mean"] = vals.get("mean")
-                        extracted[f"{prop_name}_q05"] = vals.get("Q0.05")
-                        extracted[f"{prop_name}_q95"] = vals.get("Q0.95")
-            if extracted.get("phh2o_mean") is not None:
-                # SoilGrids returns phh2o scaled by 10 (e.g. 68 -> 6.8)
-                raw_ph = extracted["phh2o_mean"]
-                ph_scale = 10.0 if raw_ph > 14.0 else 1.0
-                return {
-                    "ph_mean": extracted["phh2o_mean"] / ph_scale,
-                    "ph_q05": (extracted.get("phh2o_q05") or (extracted["phh2o_mean"] - 3)) / ph_scale,
-                    "ph_q95": (extracted.get("phh2o_q95") or (extracted["phh2o_mean"] + 3)) / ph_scale,
-                    "nitrogen_mean": extracted.get("nitrogen_mean", 220),
-                    "nitrogen_q05": extracted.get("nitrogen_q05", 160),
-                    "nitrogen_q95": extracted.get("nitrogen_q95", 290),
-                    "soc_mean": (extracted.get("soc_mean", 60) or 60) / 100.0,  # convert to %
-                    "soc_q05": (extracted.get("soc_q05", 35) or 35) / 100.0,
-                    "soc_q95": (extracted.get("soc_q95", 90) or 90) / 100.0,
-                    "cec_mean": extracted.get("cec_mean", 18.0),
-                    "cec_q05": extracted.get("cec_q05", 12.0),
-                    "cec_q95": extracted.get("cec_q95", 26.0),
-                    "source": "ISRIC SoilGrids v2.0 REST API",
-                }
+            parsed = _parse_soilgrids_response(resp.json())
+            if parsed:
+                return parsed
     except Exception as e:
         logger.info("SoilGrids API query offline or timed out (%s). Using regional agro-climatic profile.", e)
+    return _regional_soil_fallback(lat, lon)
 
+
+async def fetch_soilgrids_with_quantiles_async(lat: float, lon: float) -> Dict[str, Any]:
+    """Non-blocking SoilGrids query (httpx.AsyncClient with timeout); same return shape as the sync variant."""
+    try:
+        async with httpx.AsyncClient(timeout=SOILGRIDS_TIMEOUT_SECONDS, headers=SOILGRIDS_HEADERS) as client:
+            resp = await client.get(SOILGRIDS_BASE_URL, params=_soilgrids_params(lat, lon))
+        if resp.status_code == 200:
+            parsed = _parse_soilgrids_response(resp.json())
+            if parsed:
+                return parsed
+    except Exception as e:
+        logger.info("SoilGrids API query offline or timed out (%s). Using regional agro-climatic profile.", e)
+    return _regional_soil_fallback(lat, lon)
+
+
+def _regional_soil_fallback(lat: float, lon: float) -> Dict[str, Any]:
     # Deterministic regional fallback based on coordinate bounds
     # Tamil Nadu regional mapping
     if lat > 11.2 and lon < 77.0:
@@ -175,7 +207,7 @@ def fetch_soilgrids_with_quantiles(lat: float, lon: float) -> Dict[str, Any]:
         "potassium_mean": base_k,
         "potassium_q05": round(base_k * 0.82, 1),
         "potassium_q95": round(base_k * 1.22, 1),
-        "source": f"ISRIC SoilGrids v2.0 + Regional Profile ({zone})",
+        "source": f"Regional Agro-climatic Profile Estimate ({zone}; SoilGrids unavailable)",
     }
 
 
@@ -184,11 +216,12 @@ def fetch_terrain_data(lat: float, lon: float) -> Tuple[float, float]:
     Retrieves plot elevation (meters) and terrain slope (%) from SRTM DEM.
     Gracefully models regional topography if Earth Engine is offline.
     """
-    # Attempt Google Earth Engine SRTM if initialized
+    # Attempt Google Earth Engine SRTM if initialized (read the live flag, not a stale import copy).
+    # BLOCKING (getInfo round-trips) — from async code call via asyncio.to_thread.
     try:
-        import ee
-        from backend.services.ndvi_service import _ee_initialized
-        if _ee_initialized:
+        from backend.services import ndvi_service
+        if ndvi_service.is_earth_engine_initialized():
+            import ee
             point = ee.Geometry.Point([lon, lat])
             dem = ee.Image("USGS/SRTMGL1_003")
             slope_img = ee.Terrain.slope(dem)
@@ -238,8 +271,10 @@ async def generate_preliminary_soil_report(
     area_acres = compute_polygon_area_acres(boundary_geojson)
     lat, lon = compute_polygon_centroid(boundary_geojson)
 
-    soil_data = fetch_soilgrids_with_quantiles(lat, lon)
-    elevation_m, terrain_slope_pct = fetch_terrain_data(lat, lon)
+    soil_data, (elevation_m, terrain_slope_pct) = await asyncio.gather(
+        fetch_soilgrids_with_quantiles_async(lat, lon),
+        asyncio.to_thread(fetch_terrain_data, lat, lon),
+    )
 
     # 1. pH Range and Confidence
     ph_mean = soil_data["ph_mean"]

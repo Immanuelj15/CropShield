@@ -1,12 +1,223 @@
 {
-  "model_name": "AgriGuard XGBoost Multi-Crop Pest Risk Classifier",
-  "dataset": "agriguard_multicrop_dataset_10000rows.csv",
-  "n_samples": 10000,
-  "n_features": 33,
-  "accuracy": 0.7845,
-  "f1_weighted": 0.722,
-  "auc_roc": 0.782,
-  "cv_f1_mean": 0.7274,
-  "cv_f1_std": 0.0023,
-  "model_version": "3.0.0-multicrop"
+  "model_name": "CropShield XGBoost pest weather-suitability classifier",
+  "model_version": "4.0.0-nasa-power-rules",
+  "trained_utc": "2026-09-29T20:12:29+00:00",
+  "data_source": "NASA POWER Daily API v2 (community=AG), https://power.larc.nasa.gov/api/temporal/daily/point",
+  "raw_files": [
+    {
+      "location": "Coimbatore",
+      "lat": 11.0168,
+      "lon": 76.9558,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:27:57Z"
+    },
+    {
+      "location": "Kovilpatti",
+      "lat": 9.1728,
+      "lon": 77.871,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:21:09Z"
+    },
+    {
+      "location": "Krishnagiri",
+      "lat": 12.5266,
+      "lon": 78.2138,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:27:07Z"
+    },
+    {
+      "location": "Madurai",
+      "lat": 9.9252,
+      "lon": 78.1198,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:25:26Z"
+    },
+    {
+      "location": "Nagapattinam",
+      "lat": 10.7672,
+      "lon": 79.8449,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:23:42Z"
+    },
+    {
+      "location": "Nilgiris",
+      "lat": 11.4102,
+      "lon": 76.695,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:28:47Z"
+    },
+    {
+      "location": "Thanjavur",
+      "lat": 10.787,
+      "lon": 79.1378,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:22:51Z"
+    },
+    {
+      "location": "Tirunelveli",
+      "lat": 8.7139,
+      "lon": 77.7567,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:21:58Z"
+    },
+    {
+      "location": "Trichy",
+      "lat": 10.7905,
+      "lon": 78.7047,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:24:34Z"
+    },
+    {
+      "location": "Vellore",
+      "lat": 12.9165,
+      "lon": 79.1325,
+      "rows": 7305,
+      "downloaded_utc": "2026-09-29T19:26:16Z"
+    }
+  ],
+  "label_source": "Rule-derived weather-suitability index (pest_service.PEST_DATABASE thresholds); NOT observed outbreaks \u2014 see ml/data/LABELING.md",
+  "label_boundaries": {
+    "low_max": 0.35,
+    "medium_max": 0.65
+  },
+  "splits": {
+    "train": "2005-2016",
+    "early_stop": "2017-2018",
+    "calibration": "2019-2021",
+    "test": "2022-2024"
+  },
+  "n_rows": {
+    "train": 261180,
+    "early_stop": 43800,
+    "calibration": 65760,
+    "test": 65760
+  },
+  "label_distribution": {
+    "train": [
+      48428,
+      80187,
+      132565
+    ],
+    "early_stop": [
+      7769,
+      13771,
+      22260
+    ],
+    "calibration": [
+      12538,
+      19428,
+      33794
+    ],
+    "test": [
+      11659,
+      20045,
+      34056
+    ]
+  },
+  "n_features": 46,
+  "n_estimators": 1500,
+  "xgb_params": {
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "subsample": 0.85,
+    "colsample_bytree": 0.85,
+    "min_child_weight": 5,
+    "reg_lambda": 1.5,
+    "objective": "multi:softprob",
+    "num_class": 3,
+    "eval_metric": "mlogloss",
+    "tree_method": "hist",
+    "random_state": 42,
+    "n_jobs": 4
+  },
+  "seed": 42,
+  "test_raw": {
+    "n": 65760,
+    "accuracy": 0.9966,
+    "f1_macro": 0.9964,
+    "f1_weighted": 0.9966,
+    "auc_ovr_weighted": 1.0,
+    "log_loss": 0.0088,
+    "confusion_matrix": [
+      [
+        11607,
+        52,
+        0
+      ],
+      [
+        16,
+        19941,
+        88
+      ],
+      [
+        0,
+        66,
+        33990
+      ]
+    ]
+  },
+  "test_calibrated": {
+    "n": 65760,
+    "accuracy": 0.9966,
+    "f1_macro": 0.9964,
+    "f1_weighted": 0.9966,
+    "auc_ovr_weighted": 1.0,
+    "log_loss": 0.0086,
+    "confusion_matrix": [
+      [
+        11607,
+        52,
+        0
+      ],
+      [
+        16,
+        19948,
+        81
+      ],
+      [
+        0,
+        73,
+        33983
+      ]
+    ]
+  },
+  "majority_class_baseline_accuracy": 0.5179,
+  "test_accuracy_by_crop": {
+    "Cotton": 0.9968,
+    "Millets": 0.9975,
+    "Pulses": 0.996,
+    "Rice": 0.996,
+    "Sorghum": 0.9963,
+    "Sugarcane": 0.9972
+  },
+  "test_accuracy_by_location": {
+    "Coimbatore": 0.9936,
+    "Kovilpatti": 0.9971,
+    "Krishnagiri": 0.997,
+    "Madurai": 0.9965,
+    "Nagapattinam": 0.9957,
+    "Nilgiris": 0.9964,
+    "Thanjavur": 0.9977,
+    "Tirunelveli": 0.9971,
+    "Trichy": 0.9979,
+    "Vellore": 0.9973
+  },
+  "calibration_method": "platt",
+  "accuracy": 0.9966,
+  "f1_weighted": 0.9966,
+  "auc_roc": 1.0,
+  "interpretation": "The model reproduces a deterministic rule index on unseen years (2022-2024). High scores measure agreement with the documented rules, not the ability to predict observed pest outbreaks, for which no ground truth is available.",
+  "before_fix": {
+    "model_version": "3.0.0-multicrop",
+    "trained_on": "synthetic agriguard_multicrop_dataset_10000rows.csv (now ml/data/legacy_synthetic/)",
+    "reported_accuracy_on_own_synthetic_split": 0.7845,
+    "as_deployed_accuracy_vs_rule_labels_2022_2024": 0.1773,
+    "as_deployed_f1_macro": 0.1004,
+    "as_deployed_pred_class_distribution": [
+      65760,
+      0,
+      0
+    ],
+    "note": "Live pipeline zero-filled 27 of 33 inputs and had no crop inputs; it predicted Low for every test day."
+  }
 }

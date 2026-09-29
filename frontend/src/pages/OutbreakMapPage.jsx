@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { MapPin, Radio } from 'lucide-react'
-import axios from 'axios'
+import api from '../utils/api'
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import { createPinIcon } from '../components/RiskPin'
 import { ErrorState } from '../components'
@@ -20,14 +20,14 @@ export default function OutbreakMapPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await axios.get('/api/v1/outbreak/heatmap')
+      const res = await api.get('/outbreak/heatmap')
       const points = res.data.points || []
       setHeatmapPoints(points)
       setSelectedHub(points.length > 0 ? points[0] : null)
     } catch (err) {
       setHeatmapPoints([])
       setSelectedHub(null)
-      setError(err?.response?.data?.detail || err?.message || 'Could not load the outbreak heatmap. Please try again.')
+      setError(err?.message || 'Could not load the outbreak heatmap. Please try again.')
     } finally {
       setLoading(false)
     }

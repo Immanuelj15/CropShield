@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -11,7 +11,16 @@ import SoilReportCard from '../components/SoilReportCard'
 import LabReportUpload from '../components/LabReportUpload'
 import { useToast } from '../components/ui/Toast'
 
-const API_BASE = '/api/v1'
+import { apiFetch, isAbortError } from '../utils/http'
+import { fetchMyFarms, farmIdOf } from '../utils/farms'
+
+// Farm boundaries may be stored as a bare Polygon or wrapped in a Feature.
+function polygonFromBoundary(boundary) {
+  if (!boundary) return null
+  const geom = boundary.type === 'Feature' ? boundary.geometry : boundary
+  if (geom && (geom.type === 'Polygon' || geom.type === 'MultiPolygon') && Array.isArray(geom.coordinates)) return geom
+  return null
+}
 
 const STEP_TITLES = [
   '1. Draw Field Boundary',
@@ -43,100 +52,113 @@ export default function SoilHealthAnalyzerPage() {
   const [activeTab, setActiveTab] = useState('analyzer') // 'analyzer' | 'history'
   const toast = useToast()
 
-  // Fetch available farms
+  const [farmsLoaded, setFarmsLoaded] = useState(false)
+  const [farmsError, setFarmsError] = useState(null)
+
+  // Use the farm's saved boundary when present (P3-6: never a silent demo polygon)
+  const applyFarm = (f) => {
+    if (!f) return
+    setDistrict(f.district || 'Thoothukudi')
+    if (f.soil_type) setSoilTypeDeclared(f.soil_type)
+    setBoundaryPolygon(polygonFromBoundary(f.boundary_geojson))
+  }
+
+  // Fetch the caller's farms
   useEffect(() => {
-    const fetchFarms = async () => {
+    const controller = new AbortController()
+    ;(async () => {
       try {
-        const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('token')
-        const headers = token ? { Authorization: `Bearer ${token}` } : {}
-        const res = await fetch(`${API_BASE}/farmer/farms`, { headers })
-        if (res.ok) {
-          const data = await res.json()
-          setFarms(data || [])
-          if (data && data.length > 0) {
-            setSelectedFarmId(data[0].id || data[0]._id)
-            setDistrict(data[0].district || 'Thoothukudi')
-            if (data[0].soil_type) setSoilTypeDeclared(data[0].soil_type)
-          }
+        const data = await fetchMyFarms({ signal: controller.signal })
+        setFarms(data)
+        if (data.length > 0) {
+          setSelectedFarmId(farmIdOf(data[0]))
+          applyFarm(data[0])
         }
+        setFarmsLoaded(true)
       } catch (e) {
+        if (isAbortError(e)) return
         console.debug('Error loading farms:', e)
+        setFarmsError(e.message || 'Could not load your farms.')
+        setFarmsLoaded(true)
       }
-    }
-    fetchFarms()
+    })()
+    return () => controller.abort()
   }, [])
 
-  // Fetch soil history for selected farm
+  // Fetch soil history for selected farm (P2-8: ignore stale responses after a farm switch)
+  const historyReqRef = useRef({ id: 0, controller: null })
   const fetchSoilHistory = async (farmId) => {
     if (!farmId) return
+    historyReqRef.current.controller?.abort()
+    const controller = new AbortController()
+    const requestId = historyReqRef.current.id + 1
+    historyReqRef.current = { id: requestId, controller }
     try {
-      const res = await fetch(`${API_BASE}/soil-health/${farmId}/history`)
-      if (res.ok) {
-        const data = await res.json()
-        setHistoryReports(data.reports || [])
-      }
+      const data = await apiFetch(`/soil-health/${encodeURIComponent(farmId)}/history`, { signal: controller.signal })
+      if (historyReqRef.current.id === requestId) setHistoryReports(data?.reports || [])
     } catch (e) {
+      if (isAbortError(e)) return
       console.debug('Error fetching soil history:', e)
+      if (historyReqRef.current.id === requestId) setHistoryReports([])
     }
   }
 
   useEffect(() => {
+    setHistoryReports([])
+    setActiveReport(null)
     if (selectedFarmId) {
       fetchSoilHistory(selectedFarmId)
     }
+    return () => historyReqRef.current.controller?.abort()
   }, [selectedFarmId])
 
   // Run Satellite & Regional Soil Analysis
   const handleRunAnalysis = async () => {
+    if (analyzing) return
+    // P3-6: require a real farm and boundary — no silent Kovilpatti demo polygon
+    if (!selectedFarmId) {
+      toast.error('Register or select your farm first (Manage My Farm).')
+      return
+    }
+    if (!boundaryPolygon) {
+      toast.error('Draw your field boundary on the map before running the analysis.')
+      setCurrentStep(1)
+      return
+    }
+    const farmIdAtRequest = selectedFarmId
     setAnalyzing(true)
     setCurrentStep(3)
-
-    // Fallback default polygon if none drawn (e.g. Kovilpatti agricultural plot)
-    const effectivePolygon = boundaryPolygon || {
-      type: 'Polygon',
-      coordinates: [
-        [
-          [77.9780, 9.1750],
-          [77.9820, 9.1750],
-          [77.9820, 9.1785],
-          [77.9780, 9.1785],
-          [77.9780, 9.1750],
-        ],
-      ],
-    }
 
     try {
       // Minimum display timeout for analyzing animation
       const minDelay = new Promise((resolve) => setTimeout(resolve, 1400))
 
-      const postPromise = fetch(`${API_BASE}/soil-health/generate`, {
+      const postPromise = apiFetch('/soil-health/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          farm_id: selectedFarmId || 'demo_farm_plot',
-          boundary_geojson: effectivePolygon,
+        json: {
+          farm_id: farmIdAtRequest,
+          boundary_geojson: boundaryPolygon,
           soil_type_declared: soilTypeDeclared,
           district: district,
-        }),
+        },
       })
 
-      const [res] = await Promise.all([postPromise, minDelay])
-      if (!res.ok) {
-        throw new Error('Failed to generate preliminary soil report.')
-      }
-
-      const data = await res.json()
-      setActiveReport(data.report)
+      const [data] = await Promise.all([postPromise, minDelay])
+      if (farmIdAtRequest !== selectedFarmIdRef.current) return // farm switched meanwhile
+      setActiveReport(data?.report || null)
       setCurrentStep(4)
-      if (selectedFarmId) fetchSoilHistory(selectedFarmId)
+      fetchSoilHistory(farmIdAtRequest)
     } catch (err) {
       console.error(err)
-      toast.error('Analysis error: ' + err.message)
+      toast.error('Analysis error: ' + (err.message || 'Failed to generate preliminary soil report.'))
       setCurrentStep(2)
     } finally {
       setAnalyzing(false)
     }
   }
+
+  const selectedFarmIdRef = useRef(selectedFarmId)
+  selectedFarmIdRef.current = selectedFarmId
 
   const handleLabReportSuccess = (newReport) => {
     setActiveReport(newReport)
@@ -213,22 +235,20 @@ export default function SoilHealthAnalyzerPage() {
                 value={selectedFarmId}
                 onChange={(e) => {
                   setSelectedFarmId(e.target.value)
-                  const f = farms.find((item) => (item.id || item._id) === e.target.value)
-                  if (f) {
-                    setDistrict(f.district || 'Thoothukudi')
-                    if (f.soil_type) setSoilTypeDeclared(f.soil_type)
-                  }
+                  const f = farms.find((item) => farmIdOf(item) === e.target.value)
+                  applyFarm(f)
+                  setCurrentStep(1)
                 }}
                 className="text-xs font-bold bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-brand-600 text-stone-900"
               >
                 {farms.length > 0 ? (
                   farms.map((f) => (
-                    <option key={f.id || f._id} value={f.id || f._id}>
+                    <option key={farmIdOf(f)} value={farmIdOf(f)}>
                       {f.farm_name} ({f.district} • {f.crop_type || 'Unspecified'})
                     </option>
                   ))
                 ) : (
-                  <option value="demo_farm_plot">Demo Smallholder Plot (Madurai / Kovilpatti)</option>
+                  <option value="">{farmsLoaded ? (farmsError ? 'Could not load farms' : 'No farm registered — add one in Manage My Farm') : 'Loading farms…'}</option>
                 )}
               </select>
             </div>
@@ -268,6 +288,7 @@ export default function SoilHealthAnalyzerPage() {
               transition={{ duration: 0.3 }}
             >
               <BoundaryDrawingStep
+                key={selectedFarmId || 'no-farm'}
                 boundaryPolygon={boundaryPolygon}
                 onBoundaryChange={(poly) => setBoundaryPolygon(poly)}
                 onNext={() => setCurrentStep(2)}

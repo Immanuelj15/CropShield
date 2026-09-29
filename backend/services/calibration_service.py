@@ -1,22 +1,25 @@
 """
 AgriGuard — Model Confidence Calibration Service
-Platt scaling (sigmoid calibration) via CalibratedClassifierCV to transform
-overconfident raw tree-based XGBoost softmax probabilities into empirically
-reliable confidence estimates matching true historical accuracy.
+================================================
+Post-hoc Platt scaling (one-vs-rest sigmoid on the base model's class
+log-odds, then renormalised) fitted on a calibration split the base model
+never saw (years 2019–2021, see ml/training/train_model.py).
+
+The fitted parameters are stored as plain JSON (calibration_params.json) so
+they do not depend on scikit-learn pickle compatibility. Every result
+reports the method that was ACTUALLY used:
+  * "platt"             — fitted Platt calibrator applied
+  * "analytic-fallback" — no calibrator available / it failed; a fixed
+                          sigmoid of the raw risk score is used (uncalibrated)
 """
 
 import json
 import logging
+import threading
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Any, Dict, Optional
 
 import numpy as np
-import joblib
-from sklearn.calibration import CalibratedClassifierCV, calibration_curve
-from sklearn.metrics import brier_score_loss
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
@@ -24,56 +27,93 @@ ROOT = Path(__file__).resolve().parents[2]
 SAVED_MODELS_DIR = ROOT / "saved_models"
 ML_SAVED_MODELS_DIR = ROOT / "ml" / "training" / "saved_models"
 
-SAVED_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-ML_SAVED_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+PLATT_VERSION = "2.0.0-platt"
+FALLBACK_VERSION = "0.0.0-analytic-fallback"
+_EPS = 1e-6
 
 
-def train_calibrator(
+# ── Calibrator ────────────────────────────────────────────────
+
+class PlattCalibratedModel:
+    """Base classifier + per-class Platt parameters; exposes predict_proba/classes_."""
+
+    def __init__(self, base_model: Any, params: Dict[str, Any]):
+        self.base_model = base_model
+        self.params = params
+        self.classes_ = np.array(params["classes"])
+
+    def calibrate_probs(self, raw: np.ndarray) -> np.ndarray:
+        raw = np.clip(np.asarray(raw, dtype=float), _EPS, 1 - _EPS)
+        logit = np.log(raw / (1 - raw))
+        a = np.asarray(self.params["a"], dtype=float)
+        b = np.asarray(self.params["b"], dtype=float)
+        p = 1.0 / (1.0 + np.exp(-(a * logit + b)))
+        return p / p.sum(axis=1, keepdims=True)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        return self.calibrate_probs(self.base_model.predict_proba(X))
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        return self.classes_[self.predict_proba(X).argmax(axis=1)]
+
+
+def fit_platt_calibrator(
     base_model: Any,
-    X_train: np.ndarray,
-    y_train: np.ndarray,
     X_calib: np.ndarray,
     y_calib: np.ndarray,
-    method: str = "sigmoid",
     out_dir: Optional[Path] = None,
-) -> CalibratedClassifierCV:
-    """
-    Fits a post-hoc probability calibrator on a held-out calibration partition.
-    method="sigmoid" = Platt scaling (logistic regression on raw margins).
-    method="isotonic" = non-parametric isotonic regression.
-    Supports both legacy scikit-learn (cv='prefit') and modern scikit-learn (cv=[(train_idx, calib_idx)]).
-    """
-    target_dir = out_dir or SAVED_MODELS_DIR
-    target_dir.mkdir(parents=True, exist_ok=True)
+) -> PlattCalibratedModel:
+    """Fit one-vs-rest Platt scaling on a held-out calibration split and save it."""
+    from sklearn.linear_model import LogisticRegression
 
-    # Disable early_stopping_rounds on base model to allow CV refitting
-    if hasattr(base_model, "set_params"):
-        try:
-            base_model.set_params(early_stopping_rounds=None)
-        except Exception:
-            pass
+    raw = np.clip(base_model.predict_proba(X_calib), _EPS, 1 - _EPS)
+    classes = list(range(raw.shape[1]))
+    a, b = [], []
+    for k in classes:
+        z = np.log(raw[:, k] / (1 - raw[:, k])).reshape(-1, 1)
+        yk = (np.asarray(y_calib) == k).astype(int)
+        if yk.min() == yk.max():  # degenerate class in calibration split → identity
+            a.append(1.0); b.append(0.0)
+            continue
+        lr = LogisticRegression(C=1e6, max_iter=1000).fit(z, yk)
+        a.append(float(lr.coef_[0, 0])); b.append(float(lr.intercept_[0]))
 
-    try:
-        # Legacy scikit-learn syntax
-        calibrated = CalibratedClassifierCV(estimator=base_model, method=method, cv="prefit")
-        calibrated.fit(X_calib, y_calib)
-    except Exception:
-        # Modern scikit-learn (>= 1.4) syntax using explicit train/calibration split
-        n_tr = len(X_train)
-        n_cal = len(X_calib)
-        X_comb = np.vstack([X_train, X_calib])
-        y_comb = np.concatenate([y_train, y_calib])
-        custom_cv = [(np.arange(n_tr), np.arange(n_tr, n_tr + n_cal))]
-        calibrated = CalibratedClassifierCV(estimator=base_model, method=method, cv=custom_cv)
-        calibrated.fit(X_comb, y_comb)
+    params = {"method": "platt", "version": PLATT_VERSION, "classes": classes,
+              "a": a, "b": b, "n_calibration": int(len(y_calib))}
+    calibrated = PlattCalibratedModel(base_model, params)
 
-    # Save to both target_dir and ML_SAVED_MODELS_DIR for robust runtime lookup
-    joblib.dump(calibrated, target_dir / "calibrated_pest_risk_model.joblib")
-    if target_dir != ML_SAVED_MODELS_DIR:
-        joblib.dump(calibrated, ML_SAVED_MODELS_DIR / "calibrated_pest_risk_model.joblib")
-
-    logger.info("Saved calibrated model -> %s/calibrated_pest_risk_model.joblib", target_dir)
+    for d in {Path(out_dir or ML_SAVED_MODELS_DIR), ML_SAVED_MODELS_DIR}:
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "calibration_params.json", "w") as f:
+            json.dump(params, f, indent=2)
+    _reset_cache()
     return calibrated
+
+
+def train_calibrator(base_model, X_train, y_train, X_calib, y_calib, method="sigmoid", out_dir=None):
+    """Legacy entry point: fits Platt scaling on (X_calib, y_calib) only; X_train is unused."""
+    if method != "sigmoid":
+        raise ValueError("only method='sigmoid' (Platt) is supported")
+    return fit_platt_calibrator(base_model, X_calib, y_calib, out_dir=out_dir)
+
+
+# ── Evaluation ────────────────────────────────────────────────
+
+def _reliability(target_probs: np.ndarray, y_bin: np.ndarray, n_bins: int = 10):
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    pred, act, counts = [], [], []
+    ece = 0.0
+    n = len(target_probs)
+    for i in range(n_bins):
+        lo, hi = bins[i], bins[i + 1]
+        m = (target_probs >= lo) & ((target_probs < hi) if i < n_bins - 1 else (target_probs <= hi))
+        c = int(m.sum())
+        if c == 0:
+            continue  # empty bins are omitted, never invented
+        mp, ma = float(target_probs[m].mean()), float(y_bin[m].mean())
+        pred.append(round(mp, 4)); act.append(round(ma, 4)); counts.append(c)
+        ece += (c / n) * abs(ma - mp)
+    return pred, act, counts, float(ece)
 
 
 def evaluate_calibration(
@@ -82,211 +122,147 @@ def evaluate_calibration(
     y_test: np.ndarray,
     target_class: Any = 2,
     out_dir: Optional[Path] = None,
+    raw_probs: Optional[np.ndarray] = None,
+    extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Evaluates calibrated probabilities on unseen test set.
-    Produces reliability diagram data, Expected Calibration Error (ECE), and Brier Score.
-    target_class can be integer index (2 for High) or string label ("High").
-    """
-    target_dir = out_dir or SAVED_MODELS_DIR
-    target_dir.mkdir(parents=True, exist_ok=True)
+    """ECE / Brier for the target class on an unseen test split; writes calibration_report.json."""
+    from sklearn.metrics import brier_score_loss
 
     probs = calibrated_model.predict_proba(X_test)
     classes = list(calibrated_model.classes_)
+    t_idx = classes.index(target_class) if target_class in classes else len(classes) - 1
+    y_bin = (np.asarray(y_test) == classes[t_idx]).astype(int)
 
-    if target_class in classes:
-        target_idx = classes.index(target_class)
-        class_label = "High" if str(target_class) in ("2", "High") else str(target_class)
-    else:
-        # Default to highest risk class (last column)
-        target_idx = len(classes) - 1
-        class_label = "High"
-
-    target_probs = probs[:, target_idx]
-    y_binary = (np.array(y_test) == classes[target_idx]).astype(int)
-
-    # Compute 10-bin calibration curve
-    # Also evaluate across 10 uniform intervals [0.0-0.1, ..., 0.9-1.0] for the Recharts diagram
-    bins = np.linspace(0.0, 1.0, 11)
-    diagram_predicted = []
-    diagram_actual = []
-    total_samples = len(target_probs)
-    weighted_error_sum = 0.0
-
-    for i in range(len(bins) - 1):
-        low, high = bins[i], bins[i + 1]
-        mask = (target_probs >= low) & (target_probs < high if i < len(bins) - 2 else target_probs <= high)
-        bin_count = np.sum(mask)
-        if bin_count > 0:
-            m_pred = float(np.mean(target_probs[mask]))
-            m_act = float(np.mean(y_binary[mask]))
-            diagram_predicted.append(round(m_pred, 4))
-            diagram_actual.append(round(m_act, 4))
-            weighted_error_sum += (bin_count / total_samples) * abs(m_act - m_pred)
-        else:
-            mid = round((low + high) / 2.0, 4)
-            # Baseline expected calibration calibration point
-            diagram_predicted.append(mid)
-            diagram_actual.append(round(mid + float(np.random.normal(0, 0.015)), 4))
-
-    ece = float(weighted_error_sum) if weighted_error_sum > 0 else 0.0142
-    brier = float(brier_score_loss(y_binary, target_probs))
+    pred, act, counts, ece = _reliability(probs[:, t_idx], y_bin)
+    brier = float(brier_score_loss(y_bin, probs[:, t_idx]))
+    method = getattr(calibrated_model, "params", {}).get("method", "platt")
 
     report = {
-        "model_calibration_version": "1.0.0-platt",
-        "method": "sigmoid (Platt scaling)",
-        "target_class": class_label,
-        "n_test_samples": int(len(X_test)),
+        "model_calibration_version": PLATT_VERSION if method == "platt" else FALLBACK_VERSION,
+        "calibration_method": method,
+        "method": "sigmoid (Platt scaling, one-vs-rest, renormalised)" if method == "platt" else method,
+        "target_class": "High" if t_idx == 2 else str(classes[t_idx]),
+        "n_test_samples": int(len(y_test)),
         "reliability_diagram": {
-            "mean_predicted_confidence": diagram_predicted,
-            "fraction_actually_correct": diagram_actual,
+            "mean_predicted_confidence": pred,
+            "fraction_actually_correct": act,
+            "bin_counts": counts,
         },
         "expected_calibration_error": round(ece, 4),
         "brier_score": round(brier, 4),
-        "confidence_bands": {
-            "High": ">= 0.80",
-            "Moderate": "0.55 - 0.79",
-            "Low": "< 0.55"
-        },
-        "explanation": (
-            f"Platt scaling achieved an Expected Calibration Error of {ece*100:.2f}% "
-            f"and Brier score of {brier:.4f}, demonstrating calibrated alignment with empirical outcomes."
-        )
+        "confidence_bands": {"High": ">= 0.80", "Moderate": "0.55 - 0.79", "Low": "< 0.55"},
     }
+    if raw_probs is not None:
+        _, _, _, ece_raw = _reliability(raw_probs[:, t_idx], y_bin)
+        report["ece_raw"] = round(ece_raw, 4)
+        report["brier_raw"] = round(float(brier_score_loss(y_bin, raw_probs[:, t_idx])), 4)
+    if extra:
+        report.update(extra)
+    report["explanation"] = (
+        f"Platt scaling fitted on a held-out calibration split; on the unseen test split the "
+        f"High-class ECE is {ece * 100:.2f}% and Brier score {brier:.4f}"
+        + (f" (uncalibrated: ECE {report['ece_raw'] * 100:.2f}%, Brier {report['brier_raw']:.4f})."
+           if "ece_raw" in report else ".")
+        + " Labels are rule-derived weather-suitability classes, not observed outbreaks."
+    )
 
-    report_path = target_dir / "calibration_report.json"
-    with open(report_path, "w") as f:
-        json.dump(report, f, indent=2)
-
-    if target_dir != ML_SAVED_MODELS_DIR:
-        with open(ML_SAVED_MODELS_DIR / "calibration_report.json", "w") as f:
+    for d in {Path(out_dir or ML_SAVED_MODELS_DIR), ML_SAVED_MODELS_DIR, SAVED_MODELS_DIR}:
+        d.mkdir(parents=True, exist_ok=True)
+        with open(d / "calibration_report.json", "w") as f:
             json.dump(report, f, indent=2)
-
-    logger.info("Saved calibration report -> %s", report_path)
     return report
 
 
-def plot_reliability_diagram(
-    report: Dict[str, Any],
-    save_path: Optional[str] = None,
-) -> str:
-    """
-    Renders and saves a reliability diagram PNG comparing predicted confidence
-    against actual empirical accuracy relative to the perfect-calibration diagonal.
-    """
+def plot_reliability_diagram(report: Dict[str, Any], save_path: Optional[str] = None) -> str:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     mean_pred = report["reliability_diagram"]["mean_predicted_confidence"]
-    frac_correct = report["reliability_diagram"]["fraction_actually_correct"]
+    frac = report["reliability_diagram"]["fraction_actually_correct"]
     ece = report.get("expected_calibration_error", 0.0)
-    target_class = report.get("target_class", "High")
-
     plt.figure(figsize=(6, 6))
-    plt.plot([0, 1], [0, 1], "k--", linewidth=1.5, label="Perfect calibration (y = x)")
-    plt.plot(
-        mean_pred,
-        frac_correct,
-        "s-",
-        color="#059669",
-        linewidth=2,
-        markersize=6,
-        label=f"Calibrated Model (ECE: {ece:.4f})"
-    )
-    plt.xlim(0, 1)
-    plt.ylim(0, 1)
-    plt.xlabel("Mean Predicted Confidence", fontsize=11, fontweight="bold")
-    plt.ylabel("Fraction Actually Correct", fontsize=11, fontweight="bold")
-    plt.title(
-        f"Reliability Diagram — {target_class} Risk Class\nExpected Calibration Error (ECE): {ece:.4f}",
-        fontsize=12,
-        fontweight="bold"
-    )
-    plt.legend(loc="lower right", frameon=True, framealpha=0.9)
-    plt.grid(True, linestyle=":", alpha=0.6)
-    plt.tight_layout()
+    plt.plot([0, 1], [0, 1], "k--", linewidth=1.5, label="Perfect calibration")
+    plt.plot(mean_pred, frac, "s-", color="#059669", linewidth=2, markersize=6,
+             label=f"{report.get('calibration_method', 'platt')} (ECE {ece:.4f})")
+    plt.xlim(0, 1); plt.ylim(0, 1)
+    plt.xlabel("Mean predicted probability"); plt.ylabel("Observed frequency")
+    plt.title(f"Reliability — {report.get('target_class', 'High')} class (test split)")
+    plt.legend(loc="lower right"); plt.grid(True, linestyle=":", alpha=0.6); plt.tight_layout()
 
-    out_file = Path(save_path) if save_path else SAVED_MODELS_DIR / "reliability_diagram.png"
+    out_file = Path(save_path) if save_path else ML_SAVED_MODELS_DIR / "reliability_diagram.png"
     out_file.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(out_file, dpi=150, bbox_inches="tight")
     plt.close()
-
-    # Mirror to ml/training/saved_models
-    mirror_path = ML_SAVED_MODELS_DIR / "reliability_diagram.png"
-    if out_file != mirror_path:
-        try:
-            import shutil
-            shutil.copyfile(out_file, mirror_path)
-        except Exception:
-            pass
-
+    import shutil
+    for mirror in (ML_SAVED_MODELS_DIR / "reliability_diagram.png", SAVED_MODELS_DIR / "reliability_diagram.png"):
+        if mirror.resolve() != out_file.resolve():
+            try:
+                mirror.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(out_file, mirror)
+            except Exception:
+                pass
     return str(out_file)
 
 
-# ── Runtime Calibration Helper ───────────────────────────────────────────────
+# ── Runtime ───────────────────────────────────────────────────
 
-_CACHED_CALIBRATOR: Optional[Any] = None
+_CACHED_CALIBRATOR: Optional[PlattCalibratedModel] = None
+_LOAD_ATTEMPTED = False
+_LOCK = threading.Lock()
 
 
-def load_calibrated_model() -> Optional[Any]:
-    """Loads calibrated classifier if present on disk."""
-    global _CACHED_CALIBRATOR
-    if _CACHED_CALIBRATOR is not None:
+def _reset_cache():
+    global _CACHED_CALIBRATOR, _LOAD_ATTEMPTED
+    with _LOCK:
+        _CACHED_CALIBRATOR, _LOAD_ATTEMPTED = None, False
+
+
+def load_calibrated_model() -> Optional[PlattCalibratedModel]:
+    """Platt calibrator built from calibration_params.json + the live base model (thread-safe, cached)."""
+    global _CACHED_CALIBRATOR, _LOAD_ATTEMPTED
+    if _LOAD_ATTEMPTED:
         return _CACHED_CALIBRATOR
-
-    paths = [
-        SAVED_MODELS_DIR / "calibrated_pest_risk_model.joblib",
-        ML_SAVED_MODELS_DIR / "calibrated_pest_risk_model.joblib",
-    ]
-    for p in paths:
-        if p.exists():
-            try:
-                _CACHED_CALIBRATOR = joblib.load(p)
-                return _CACHED_CALIBRATOR
-            except Exception as e:
-                logger.warning("Failed loading calibrator at %s: %s", p, e)
-    return None
+    with _LOCK:
+        if _LOAD_ATTEMPTED:
+            return _CACHED_CALIBRATOR
+        _LOAD_ATTEMPTED = True
+        p = ML_SAVED_MODELS_DIR / "calibration_params.json"
+        if not p.exists():
+            logger.warning("No calibration_params.json at %s — calibration uses analytic fallback", p)
+            return None
+        try:
+            with open(p) as f:
+                params = json.load(f)
+            from backend.services.inference_service import model_manager
+            _CACHED_CALIBRATOR = PlattCalibratedModel(model_manager.model, params)
+        except Exception as e:
+            logger.error("Failed to load Platt calibrator: %s", e)
+            _CACHED_CALIBRATOR = None
+        return _CACHED_CALIBRATOR
 
 
 def get_calibration_report() -> Dict[str, Any]:
-    """Retrieves current calibration_report.json or generates resilient baseline report."""
-    paths = [
-        SAVED_MODELS_DIR / "calibration_report.json",
-        ML_SAVED_MODELS_DIR / "calibration_report.json",
-    ]
-    for p in paths:
+    """Return the calibration_report.json written by training, or an explicit 'not available' report."""
+    for p in (ML_SAVED_MODELS_DIR / "calibration_report.json", SAVED_MODELS_DIR / "calibration_report.json"):
         if p.exists():
             try:
-                with open(p, "r") as f:
+                with open(p) as f:
                     return json.load(f)
             except Exception:
                 pass
-
-    # Standard calibrated baseline report for AgriGuard Multi-Crop XGBoost
     return {
-        "model_calibration_version": "1.0.0-platt",
-        "method": "sigmoid (Platt scaling)",
-        "target_class": "High",
-        "n_test_samples": 1500,
-        "reliability_diagram": {
-            "mean_predicted_confidence": [0.082, 0.185, 0.291, 0.389, 0.495, 0.598, 0.702, 0.798, 0.892, 0.965],
-            "fraction_actually_correct": [0.075, 0.178, 0.302, 0.395, 0.488, 0.605, 0.698, 0.812, 0.885, 0.958],
-        },
-        "expected_calibration_error": 0.0142,
-        "brier_score": 0.0612,
-        "confidence_bands": {
-            "High": ">= 0.80",
-            "Moderate": "0.55 - 0.79",
-            "Low": "< 0.55"
-        },
-        "explanation": "Platt scaling achieved an Expected Calibration Error of 1.42% and Brier score of 0.0612."
+        "model_calibration_version": FALLBACK_VERSION,
+        "calibration_method": "analytic-fallback",
+        "available": False,
+        "reliability_diagram": {"mean_predicted_confidence": [], "fraction_actually_correct": []},
+        "expected_calibration_error": None,
+        "brier_score": None,
+        "explanation": "No calibration report found. Run: python -m ml.training.train_model",
     }
 
 
 def derive_confidence_band(confidence: float) -> str:
-    """
-    Classifies calibrated confidence into operational bands:
-    - High: >= 0.80 (highly reliable, standard autonomous advisory)
-    - Moderate: >= 0.55 (acceptable reliability)
-    - Low: < 0.55 (prioritized for agronomist human verification)
-    """
     if confidence >= 0.80:
         return "High"
     if confidence >= 0.55:
@@ -295,52 +271,40 @@ def derive_confidence_band(confidence: float) -> str:
 
 
 def calibrate_prediction(
-    X_scaled: np.ndarray,
+    X_scaled: Optional[np.ndarray],
     raw_score: float,
     risk_level: str = "High",
     raw_probs: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
     """
-    Takes scaled features or raw prediction score, passes through the calibrated
-    Platt scaler, and returns trustworthy confidence metrics.
+    Calibrated probability of the reported risk_level class. The returned
+    'calibration_method' / 'model_calibration_version' state what was used.
     """
-    calibrator = load_calibrated_model()
+    raw_conf = float(np.max(raw_probs)) if raw_probs is not None and len(raw_probs) else float(raw_score)
+    target = {"High": 2, "Medium": 1}.get(risk_level, 0)
 
-    # Raw confidence from tree model
-    if raw_probs is not None and len(raw_probs) > 0:
-        raw_conf = float(np.max(raw_probs))
-    else:
-        raw_conf = float(raw_score)
-
-    if calibrator is not None and X_scaled is not None:
+    method = "analytic-fallback"
+    calibrated_conf = None
+    calibrator = load_calibrated_model() if (X_scaled is not None or raw_probs is not None) else None
+    if calibrator is not None:
         try:
-            # Calibrated probabilities from the sigmoid-fitted calibrator
-            calib_probs = calibrator.predict_proba(X_scaled)[0]
-            classes = list(getattr(calibrator, "classes_", [0, 1, 2]))
-
-            # Map to target class based on risk_level
-            if risk_level == "High":
-                target_idx = classes.index(2) if 2 in classes else len(classes) - 1
-            elif risk_level == "Medium":
-                target_idx = classes.index(1) if 1 in classes else 1
+            if raw_probs is not None:
+                probs = calibrator.calibrate_probs(np.asarray(raw_probs).reshape(1, -1))[0]
             else:
-                target_idx = classes.index(0) if 0 in classes else 0
-
-            calibrated_conf = float(calib_probs[target_idx])
+                probs = calibrator.predict_proba(X_scaled)[0]
+            calibrated_conf = float(probs[list(calibrator.classes_).index(target)])
+            method = "platt"
         except Exception as e:
-            logger.warning("Calibrator execution fallback: %s", e)
-            # Analytical Platt transformation fallback: 1 / (1 + exp(A*f + B))
-            calibrated_conf = float(1.0 / (1.0 + np.exp(-3.5 * (raw_score - 0.45))))
-    else:
-        # Standard analytical Platt scaling mapping for tree logits
+            logger.warning("Platt calibration failed, using analytic fallback: %s", e)
+    if calibrated_conf is None:
+        # Uncalibrated fixed mapping of the raw score — reported as such.
         calibrated_conf = float(1.0 / (1.0 + np.exp(-3.5 * (raw_score - 0.45))))
 
-    calibrated_conf = float(np.clip(calibrated_conf, 0.05, 0.98))
-    band = derive_confidence_band(calibrated_conf)
-
+    calibrated_conf = float(np.clip(calibrated_conf, 0.0, 1.0))
     return {
         "raw_confidence": round(raw_conf, 4),
         "calibrated_confidence": round(calibrated_conf, 4),
-        "confidence_band": band,
-        "model_calibration_version": "1.0.0-platt",
+        "confidence_band": derive_confidence_band(calibrated_conf),
+        "model_calibration_version": PLATT_VERSION if method == "platt" else FALLBACK_VERSION,
+        "calibration_method": method,
     }

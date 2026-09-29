@@ -2,33 +2,23 @@
 AgriGuard AI — Automated Daily Ingestion Pipeline Tests
 Tests 38-district centroid seeding, trailing-window weather upsert,
 JobRunLog persistence, RetryQueue processing, and Admin trigger endpoints.
+Uses the isolated test database (skips without MongoDB). Tests that fetch NASA POWER for
+every farm are marked `network` and only run with CROPSHIELD_TEST_NETWORK=1.
 """
 
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 
-from backend.main import app
-from backend.db.mongodb import init_mongodb, close_mongodb
-from backend.models.farm import Farm as MongoFarm
-from backend.models.job_run_log import JobRunLog as MongoJobRunLog
-from backend.models.pest_warning_log import PestWarningLog as MongoWarningLog
-from backend.models.weather_snapshot import WeatherSnapshot as MongoWeatherSnapshot
-from backend.jobs.daily_ingestion_job import process_single_farm_ingestion, run_daily_ingestion_job
-from scripts.seed_districts import seed_tamil_nadu_districts
+from conftest import DEMO_ADMIN, DEMO_FARMER, login_headers
 
-
-@pytest_asyncio.fixture(scope="function")
-async def client():
-    await init_mongodb()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    await close_mongodb()
+pytestmark = pytest.mark.mongo
 
 
 @pytest.mark.asyncio
-async def test_seed_38_districts_idempotency(client: AsyncClient):
+async def test_seed_38_districts_idempotency(mongo_db):
+    from backend.models.farm import Farm as MongoFarm
+    from scripts.seed_districts import seed_tamil_nadu_districts
+
     # 1. Seed districts
     inserted, already_present = await seed_tamil_nadu_districts()
     assert (inserted + already_present) == 38
@@ -43,8 +33,16 @@ async def test_seed_38_districts_idempotency(client: AsyncClient):
     assert already_present_2 == 38
 
 
+@pytest.mark.network
 @pytest.mark.asyncio
-async def test_process_single_farm_ingestion(client: AsyncClient):
+async def test_process_single_farm_ingestion(mongo_db):
+    from backend.jobs.daily_ingestion_job import process_single_farm_ingestion
+    from backend.models.farm import Farm as MongoFarm
+    from backend.models.pest_warning_log import PestWarningLog as MongoWarningLog
+    from backend.models.weather_snapshot import WeatherSnapshot as MongoWeatherSnapshot
+    from scripts.seed_districts import seed_tamil_nadu_districts
+
+    await seed_tamil_nadu_districts()
     # Retrieve one district centroid farm
     farm = await MongoFarm.find_one({"is_reference_point": True, "district": "Thanjavur"})
     assert farm is not None
@@ -67,44 +65,31 @@ async def test_process_single_farm_ingestion(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_run_ingestion_now_is_admin_only(client: AsyncClient):
+    farmer = await login_headers(client, *DEMO_FARMER)
+    assert (await client.post("/api/v1/admin/jobs/run-ingestion-now", headers=farmer)).status_code == 403
+    assert (await client.post("/api/v1/admin/jobs/run-ingestion-now")).status_code == 401
+
+
+@pytest.mark.network
+@pytest.mark.asyncio
 async def test_admin_api_status_and_run_now(client: AsyncClient):
-    # 1. Admin login
-    admin_login = await client.post("/api/v1/auth/login", json={
-        "email": "admin@cropshield.org",
-        "password": "admin123"
-    })
-    assert admin_login.status_code == 200
-    admin_token = admin_login.json()["access_token"]
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    from scripts.seed_districts import seed_tamil_nadu_districts
 
-    # 2. Farmer attempt to trigger ingestion -> 403 Forbidden
-    farmer_login = await client.post("/api/v1/auth/login", json={
-        "email": "farmer@cropshield.org",
-        "password": "farmer123"
-    })
-    farmer_token = farmer_login.json()["access_token"]
-    res_forbidden = await client.post(
-        "/api/v1/admin/jobs/run-ingestion-now",
-        headers={"Authorization": f"Bearer {farmer_token}"}
-    )
-    assert res_forbidden.status_code == 403
+    await seed_tamil_nadu_districts()
+    admin_headers = await login_headers(client, *DEMO_ADMIN)
 
-    # 3. Admin calls run-ingestion-now -> 200 OK
-    res_run = await client.post(
-        "/api/v1/admin/jobs/run-ingestion-now",
-        headers=admin_headers
-    )
-    assert res_run.status_code == 200
+    # Admin calls run-ingestion-now -> 200 OK (409 if another run holds the lock)
+    res_run = await client.post("/api/v1/admin/jobs/run-ingestion-now", headers=admin_headers)
+    assert res_run.status_code == 200, res_run.text
     data = res_run.json()
     assert data["status"] == "success"
     assert "report" in data
     assert data["report"]["farms_processed"] >= 38
 
-    # 4. Check GET /api/v1/admin/api-status telemetry
     res_status = await client.get("/api/v1/admin/api-status", headers=admin_headers)
     assert res_status.status_code == 200
     status_data = res_status.json()
-    assert "last_job_run" in status_data
     assert status_data["last_job_run"] is not None
     assert status_data["last_job_run"]["farms_processed"] >= 38
     assert status_data["last_job_run"]["status"] in ["success", "partial_failure"]

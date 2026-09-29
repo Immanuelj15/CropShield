@@ -5,6 +5,9 @@ import {
 } from 'lucide-react'
 import { formatINR } from './ProfitRangeDisplay'
 import { queueOfflineAction } from '../utils/offlineQueue'
+import { apiFetch, isNetworkError } from '../utils/http'
+
+const MAX_AMOUNT = 1e9
 
 export default function QuickAddRevenueForm({
   farmId,
@@ -19,6 +22,7 @@ export default function QuickAddRevenueForm({
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0])
   const [buyerOrMandi, setBuyerOrMandi] = useState(`${district} Regulated Mandi`)
   const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(false) // saved or queued: keep the form disabled until it is closed
   const [error, setError] = useState(null)
   const [queuedOffline, setQueuedOffline] = useState(false)
 
@@ -30,11 +34,12 @@ export default function QuickAddRevenueForm({
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!quantityKg || Number(quantityKg) <= 0) {
+    if (submitting || done) return
+    if (!quantityKg || Number(quantityKg) <= 0 || Number(quantityKg) > MAX_AMOUNT) {
       setError('Please enter a valid harvest quantity in kg.')
       return
     }
-    if (!pricePerKg || Number(pricePerKg) <= 0) {
+    if (!pricePerKg || Number(pricePerKg) <= 0 || Number(pricePerKg) > MAX_AMOUNT) {
       setError('Please enter a valid sale price per kg.')
       return
     }
@@ -45,7 +50,7 @@ export default function QuickAddRevenueForm({
     const payload = {
       farm_id: farmId,
       season,
-      crop_type: cropType,
+      crop_type: cropType || 'General',
       district,
       quantity_sold_kg: Number(quantityKg),
       price_per_kg: Number(pricePerKg),
@@ -54,27 +59,21 @@ export default function QuickAddRevenueForm({
     }
 
     try {
-      const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('cropshield_token')
-      const res = await fetch('/api/v1/revenue', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (res.ok) {
-        onSuccess?.()
-        onClose?.()
-      } else {
-        throw new Error('Server returned error.')
-      }
+      await apiFetch('/revenue', { method: 'POST', json: payload })
+      setDone(true)
+      onSuccess?.()
+      onClose?.()
     } catch (err) {
+      if (!isNetworkError(err)) {
+        // Server answered (4xx/5xx): show the real error instead of pretending it was queued.
+        setError(err.message || 'Could not record revenue. Please retry.')
+        return
+      }
       console.warn('Network issue, storing revenue in offline queue...', err)
       try {
         await queueOfflineAction('revenue_log', payload)
         setQueuedOffline(true)
+        setDone(true)
         setTimeout(() => {
           onSuccess?.()
           onClose?.()
@@ -213,7 +212,7 @@ export default function QuickAddRevenueForm({
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || done}
           className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
         >
           {submitting ? (

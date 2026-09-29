@@ -14,7 +14,7 @@ class NotificationPreference(Document):
     push_subscription: Optional[Dict[str, Any]] = None  # Web Push PushSubscription JSON
     sms_enabled: bool = True
     whatsapp_enabled: bool = False
-    phone_number: Optional[str] = "+919876543210"
+    phone_number: Optional[str] = None  # never default a phone number; SMS only when a real one is saved
     preferred_language: str = "en"  # "en" | "ta" | "hi"
     quiet_hours: Dict[str, str] = Field(default_factory=lambda: {"start": "21:00", "end": "06:00"})
     updated_at: datetime = Field(default_factory=datetime.utcnow)

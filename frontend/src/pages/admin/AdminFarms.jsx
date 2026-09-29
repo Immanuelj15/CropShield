@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { MapPin } from 'lucide-react'
 import { useToast } from '../../components/ui/Toast'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
 
 export default function AdminFarms() {
   const toast = useToast()
@@ -12,31 +12,33 @@ export default function AdminFarms() {
     climate_zone: 'Dryland', crop_type: 'Cotton', soil_type: 'Black Soil (Vertisol)',
     area_hectares: 2.0, latitude: 9.9252, longitude: 78.1198,
   })
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const [saving, setSaving] = useState(false)
 
   const fetchFarms = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/farms`, { headers: authHeaders })
-      if (res.ok) setFarms(await res.json())
-    } catch (e) { console.error(e) }
+      const data = await apiFetch('/admin/farms')
+      setFarms(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error(e)
+      toast.error(e.message || 'Could not load farms.')
+    }
   }
 
   useEffect(() => { fetchFarms() }, [])
 
   const handleRegisterFarm = async (e) => {
     e.preventDefault()
+    if (saving) return
+    setSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/admin/farms`, { method: 'POST', headers: authHeaders, body: JSON.stringify(newFarm) })
-      if (res.ok) {
-        toast.success('Farm zone GPS boundary registered successfully (pure software).')
-        fetchFarms()
-      } else {
-        toast.error('Failed to register farm.')
-      }
+      await apiFetch('/admin/farms', { method: 'POST', json: newFarm })
+      toast.success('Farm zone GPS boundary registered successfully (pure software).')
+      fetchFarms()
     } catch (e) {
       console.error(e)
-      toast.error('Network error while registering farm.')
+      toast.error(e.message || 'Failed to register farm.')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -107,7 +109,7 @@ export default function AdminFarms() {
             </div>
           </div>
 
-          <button type="submit" className="w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow transition-all">
+          <button type="submit" disabled={saving} className="disabled:opacity-50 w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow transition-all">
             Register GPS Farm Zone
           </button>
         </form>

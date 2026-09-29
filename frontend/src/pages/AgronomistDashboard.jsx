@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Shield } from 'lucide-react'
-import Sidebar from '../components/ui/Sidebar'
 import AgronomistThreatQueue, { threatQueueMeta } from './agronomist/AgronomistThreatQueue'
 import AgronomistWeather, { weatherMeta } from './agronomist/AgronomistWeather'
 import AgronomistGrid, { gridMeta } from './agronomist/AgronomistGrid'
@@ -21,7 +20,6 @@ export default function AgronomistDashboard() {
   const [activeSection, setActiveSection] = useState('threats')
   const ActiveComponent = SECTIONS.find((s) => s.key === activeSection)?.Component || AgronomistThreatQueue
 
-  const sidebarItems = SECTIONS.map(({ key, meta }) => ({ key, label: meta.label, icon: meta.icon }))
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -44,8 +42,8 @@ export default function AgronomistDashboard() {
         </div>
       </div>
 
-      {/* Mobile/tablet section switcher (Sidebar is lg:+ only) */}
-      <div className="lg:hidden flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+      {/* Section switcher (the App shell already renders the route Sidebar, so no second sidebar here) */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
         {SECTIONS.map(({ key, meta }) => {
           const Icon = meta.icon
           const isActive = activeSection === key
@@ -64,11 +62,8 @@ export default function AgronomistDashboard() {
         })}
       </div>
 
-      <div className="flex items-start gap-6">
-        <Sidebar items={sidebarItems} accent="sky" activeKey={activeSection} onSelect={setActiveSection} className="border rounded-2xl" />
-        <div className="flex-1 min-w-0">
-          <ActiveComponent />
-        </div>
+      <div className="min-w-0">
+        <ActiveComponent />
       </div>
     </div>
   )

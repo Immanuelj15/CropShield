@@ -1,4 +1,17 @@
-version: "3.9"
+# CropShield / AgriGuard — Docker Compose stack
+#
+# Required before `docker compose up --build`:
+#   create a `.env` file next to this file (git-ignored) with at least
+#     SECRET_KEY=<random string, >= 16 chars>   e.g. python -c "import secrets; print(secrets.token_urlsafe(48))"
+#   Optional: VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY (web push), CORS_ORIGINS, TWILIO_*,
+#             SEED_DEMO_DATA=true (demo users/farms, NOT for production), MONGO_EXPRESS_PASSWORD.
+#
+# Ports: the web app is published on http://localhost:${FRONTEND_PORT:-8080}. nginx in the
+# frontend container proxies /api and /uploads to the backend. The backend and MongoDB are
+# only bound to 127.0.0.1 on the host. mongo-express only starts with `--profile tools`.
+#
+# Model artifacts are baked into the backend image from ml/training/saved_models/.
+# Nothing is trained at container start; retrain offline with `python -m ml.training.train_model`.
 
 services:
   # ── MongoDB Database ─────────────────────────────────────
@@ -7,26 +20,29 @@ services:
     container_name: cropshield_mongo
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"   # host-local only (no auth is configured on this instance)
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # ── Mongo Express (Admin UI) ─────────────────────────────
+  # ── Mongo Express (Admin UI, opt-in: docker compose --profile tools up) ──
   mongo-express:
-    image: mongo-express:latest
+    image: mongo-express:1.0.2
     container_name: cropshield_mongo_express
+    profiles: ["tools"]
     restart: unless-stopped
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
-      ME_CONFIG_MONGODB_SERVER: mongo
-      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/
       ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_BASICAUTH: "true"
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USER:-cropshield}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-}   # set this in .env before using the tools profile
     depends_on:
       mongo:
         condition: service_healthy
@@ -39,41 +55,50 @@ services:
     container_name: cropshield_api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"     # API docs / debugging from the host; users go through the frontend
     environment:
+      APP_ENV: ${APP_ENV:-production}
+      DEBUG: "false"
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY (>= 16 random chars) in .env next to docker-compose.yml}
       MONGODB_URL: mongodb://mongo:27017/cropshield_db
       MONGODB_DB_NAME: cropshield_db
+      DATABASE_URL: sqlite:////app/data/cropshield.db
       NASA_POWER_BASE_URL: https://power.larc.nasa.gov/api/temporal/daily/point
-      APP_ENV: production
-      DEBUG: "false"
-      CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000","http://frontend:5173"]'
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_CLAIMS_SUB: ${VAPID_CLAIMS_SUB:-mailto:admin@agriguard.in}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER:-}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
     volumes:
-      - ./ml/training/saved_models:/app/ml/training/saved_models
-      - ./ml/data:/app/ml/data
+      - uploads:/app/uploads      # receipts, lab reports, leaf images
+      - sqlite_data:/app/data     # legacy SQLite store
     depends_on:
       mongo:
         condition: service_healthy
+    # Demo users (farmer123/agro123/admin123) and farms are only seeded when SEED_DEMO_DATA=true.
     command: >
       sh -c "
-        python -m scripts.init_mongo_db &&
-        python -m ml.training.train_model &&
-        uvicorn backend.main:app --host 0.0.0.0 --port 8000
+        if [ \"$$SEED_DEMO_DATA\" = \"true\" ]; then python -m scripts.init_mongo_db; fi &&
+        exec uvicorn backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
       "
 
-  # ── Frontend ─────────────────────────────────────────────
+  # ── Frontend (nginx: static SPA + /api and /uploads reverse proxy) ──
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: deploy/frontend.Dockerfile
     container_name: cropshield_frontend
     restart: unless-stopped
     ports:
-      - "5173:5173"
-    environment:
-      VITE_API_BASE_URL: http://localhost:8000
+      - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       - backend
 
 volumes:
   mongo_data:
-
+  uploads:
+  sqlite_data:

@@ -15,6 +15,8 @@ from backend.models.crop_suitability import CropSuitabilityRule
 from backend.models.crop_cost_template import CropCostTemplate
 from backend.models.crop_recommendation import CropRecommendation
 from backend.services.crop_recommendation_service import generate_crop_recommendations
+from backend.models.user import User as MongoUser
+from backend.utils.auth_utils import require_roles, get_current_user, resolve_user_farm, get_owned_farm, parse_object_id
 
 logger = logging.getLogger("cropshield.crop_recommendation_api")
 
@@ -26,17 +28,17 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 # ── Request / Response Schemas ──────────────────────────────────────────
 
 class CropRecommendationRequest(BaseModel):
-    farm_id: Optional[str] = None
-    budget: float = Field(default=50000.0, ge=1000.0, description="Available cultivation budget in ₹")
-    water_availability: Optional[str] = Field(default="Medium", description="Low | Medium | High")
-    season: Optional[str] = Field(default=None, description="Kharif | Rabi | Summer")
-    district: Optional[str] = None
-    soil_type: Optional[str] = None
-    land_area_acres: Optional[float] = Field(default=None, gt=0, description="Plot area in acres")
+    farm_id: Optional[str] = Field(default=None, max_length=64)
+    budget: float = Field(default=50000.0, ge=1000.0, le=1e9, allow_inf_nan=False, description="Available cultivation budget in ₹")
+    water_availability: Optional[str] = Field(default="Medium", max_length=20, description="Low | Medium | High")
+    season: Optional[str] = Field(default=None, max_length=40, description="Kharif | Rabi | Summer")
+    district: Optional[str] = Field(default=None, max_length=100)
+    soil_type: Optional[str] = Field(default=None, max_length=100)
+    land_area_acres: Optional[float] = Field(default=None, gt=0, le=100000, allow_inf_nan=False, description="Plot area in acres")
 
 
 class CropSuitabilityRuleCreate(BaseModel):
-    crop_type: str
+    crop_type: str = Field(..., min_length=1, max_length=100)
     suitable_soil_types: List[str]
     water_requirement: str = "Medium"
     suitable_seasons: List[str]
@@ -47,23 +49,28 @@ class CropSuitabilityRuleCreate(BaseModel):
 
 
 class CropCostTemplateCreate(BaseModel):
-    crop_type: str
+    crop_type: str = Field(..., min_length=1, max_length=100)
     cost_breakdown_per_acre: Dict[str, float]
-    total_cost_per_acre: float
+    total_cost_per_acre: float = Field(..., gt=0, le=1e9, allow_inf_nan=False)
     source_note: str = Field(..., min_length=5, description="Citable source e.g. CACP Cost of Cultivation")
 
 
 # ── Recommendation Generation ─────────────────────────────────────────
 
 @router.post("/generate", summary="Generate Ranked Pre-Season Crop Recommendations & Profit Ranges")
-async def generate_recommendations(req: CropRecommendationRequest):
+async def generate_recommendations(
+    req: CropRecommendationRequest,
+    current_user: MongoUser = Depends(get_current_user),
+):
     """
     Evaluates candidate crops against farm soil, water tier, budget, and season.
     Returns top ranked crops with expected yield ranges, costs, revenue ranges, and profit ranges.
+    farm_id (if given) must be owned by the caller (agronomists/admins may use any farm).
     """
+    farm = await get_owned_farm(req.farm_id, current_user, allow_staff_read=True) if req.farm_id else None
     try:
         result = await generate_crop_recommendations(
-            farm_id=req.farm_id,
+            farm_id=str(farm.id) if farm else None,
             budget=req.budget,
             water_availability=req.water_availability,
             season=req.season,
@@ -72,26 +79,32 @@ async def generate_recommendations(req: CropRecommendationRequest):
             land_area_acres=req.land_area_acres,
         )
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Error generating crop recommendations: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Recommendation engine error: {str(e)}"
+            detail="Recommendation engine error."
         )
 
 
 @router.get("/history", summary="Get Recent Crop Recommendations History")
 async def get_recommendation_history(
-    farm_id: Optional[str] = None,
-    limit: int = Query(default=10, le=50)
+    farm_id: Optional[str] = Query(None, max_length=64),
+    limit: int = Query(default=10, ge=1, le=50),
+    current_user: MongoUser = Depends(get_current_user),
 ):
-    """Retrieves previous recommendation runs for a farm or general history."""
+    """Retrieves previous recommendation runs for the caller's farm (staff: any farm / all)."""
     query = {}
     if farm_id:
-        try:
-            query["farm_id"] = PydanticObjectId(farm_id)
-        except Exception:
-            pass
+        farm = await get_owned_farm(farm_id, current_user, allow_staff_read=True)
+        query["farm_id"] = farm.id
+    elif current_user.role not in ("admin", "agronomist"):
+        farm = await resolve_user_farm(None, current_user)
+        if not farm:
+            return []
+        query["farm_id"] = farm.id
 
     records = await CropRecommendation.find(query).sort(-CropRecommendation.generated_at).limit(limit).to_list()
     return records
@@ -100,7 +113,7 @@ async def get_recommendation_history(
 # ── Presets & Demo Scenarios ──────────────────────────────────────────
 
 @router.get("/demo-scenarios", summary="Get 10 Quick Demo Scenarios from Dataset")
-async def get_demo_scenarios(limit: int = 10):
+async def get_demo_scenarios(limit: int = Query(10, ge=1, le=100)):
     """
     Loads sample scenarios from crop_recommendation_demo_scenarios_10000rows.csv
     for 1-click test simulation in the UI.
@@ -140,7 +153,10 @@ async def list_suitability_rules():
 
 
 @router.post("/rules", status_code=status.HTTP_201_CREATED, summary="Create Crop Suitability Rule")
-async def create_suitability_rule(payload: CropSuitabilityRuleCreate):
+async def create_suitability_rule(
+    payload: CropSuitabilityRuleCreate,
+    current_user: MongoUser = Depends(require_roles(["admin"])),
+):
     """Creates a new crop suitability rule. source_note is mandatory."""
     if not payload.source_note or len(payload.source_note.strip()) < 5:
         raise HTTPException(
@@ -170,12 +186,13 @@ async def create_suitability_rule(payload: CropSuitabilityRuleCreate):
 
 
 @router.put("/rules/{rule_id}", summary="Update Crop Suitability Rule")
-async def update_suitability_rule(rule_id: str, payload: CropSuitabilityRuleCreate):
+async def update_suitability_rule(
+    rule_id: str,
+    payload: CropSuitabilityRuleCreate,
+    current_user: MongoUser = Depends(require_roles(["admin"])),
+):
     """Updates an existing crop suitability rule with verified source citation."""
-    try:
-        rule = await CropSuitabilityRule.get(PydanticObjectId(rule_id))
-    except Exception:
-        rule = None
+    rule = await CropSuitabilityRule.get(parse_object_id(rule_id, "Rule not found."))
 
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
@@ -194,12 +211,12 @@ async def update_suitability_rule(rule_id: str, payload: CropSuitabilityRuleCrea
 
 
 @router.delete("/rules/{rule_id}", summary="Delete Crop Suitability Rule")
-async def delete_suitability_rule(rule_id: str):
+async def delete_suitability_rule(
+    rule_id: str,
+    current_user: MongoUser = Depends(require_roles(["admin"])),
+):
     """Deletes a crop suitability rule."""
-    try:
-        rule = await CropSuitabilityRule.get(PydanticObjectId(rule_id))
-    except Exception:
-        rule = None
+    rule = await CropSuitabilityRule.get(parse_object_id(rule_id, "Rule not found."))
 
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
@@ -218,7 +235,10 @@ async def list_cost_templates():
 
 
 @router.post("/cost-templates", status_code=status.HTTP_201_CREATED, summary="Create Crop Cost Template")
-async def create_cost_template(payload: CropCostTemplateCreate):
+async def create_cost_template(
+    payload: CropCostTemplateCreate,
+    current_user: MongoUser = Depends(require_roles(["admin"])),
+):
     """Creates a new cultivation cost template. source_note is mandatory."""
     if not payload.source_note or len(payload.source_note.strip()) < 5:
         raise HTTPException(
@@ -245,12 +265,13 @@ async def create_cost_template(payload: CropCostTemplateCreate):
 
 
 @router.put("/cost-templates/{template_id}", summary="Update Crop Cost Template")
-async def update_cost_template(template_id: str, payload: CropCostTemplateCreate):
+async def update_cost_template(
+    template_id: str,
+    payload: CropCostTemplateCreate,
+    current_user: MongoUser = Depends(require_roles(["admin"])),
+):
     """Updates an existing crop cost template."""
-    try:
-        template = await CropCostTemplate.get(PydanticObjectId(template_id))
-    except Exception:
-        template = None
+    template = await CropCostTemplate.get(parse_object_id(template_id, "Cost template not found."))
 
     if not template:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost template not found.")
@@ -265,12 +286,12 @@ async def update_cost_template(template_id: str, payload: CropCostTemplateCreate
 
 
 @router.delete("/cost-templates/{template_id}", summary="Delete Crop Cost Template")
-async def delete_cost_template(template_id: str):
+async def delete_cost_template(
+    template_id: str,
+    current_user: MongoUser = Depends(require_roles(["admin"])),
+):
     """Deletes a crop cost template."""
-    try:
-        template = await CropCostTemplate.get(PydanticObjectId(template_id))
-    except Exception:
-        template = None
+    template = await CropCostTemplate.get(parse_object_id(template_id, "Cost template not found."))
 
     if not template:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost template not found.")

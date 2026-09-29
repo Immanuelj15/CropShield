@@ -14,9 +14,11 @@ class NotificationLog(Document):
     channel: str  # "push" | "sms" | "whatsapp"
     event_type: str  # "high_risk" | "regional_outbreak" | "treat_now_recommendation" | "test"
     message: str
-    status: str = "sent"  # "sent" | "failed" | "queued"
+    status: str = "sent"  # "sent" | "failed" | "queued" | "delivering" | "delivered_from_queue" | "expired"
     sent_at: datetime = Field(default_factory=datetime.utcnow)
     error: Optional[str] = None
+    claimed_at: Optional[datetime] = None  # set when the queued-delivery job claims a queued item
+    delivered_at: Optional[datetime] = None  # set when a queued item is finally delivered
 
     class Settings:
         name = "notification_log"
@@ -25,4 +27,5 @@ class NotificationLog(Document):
             IndexModel([("channel", ASCENDING)], name="notif_log_channel_idx"),
             IndexModel([("event_type", ASCENDING)], name="notif_log_event_idx"),
             IndexModel([("sent_at", DESCENDING)], name="notif_log_sent_at_idx"),
+            IndexModel([("status", ASCENDING), ("sent_at", ASCENDING)], name="notif_log_status_sent_idx"),
         ]

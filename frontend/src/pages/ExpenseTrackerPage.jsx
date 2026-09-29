@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Wallet, TrendingUp, Plus, Receipt,
@@ -13,6 +14,8 @@ import { formatINR } from '../components/ProfitRangeDisplay'
 import { ErrorState } from '../components'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { useToast } from '../components/ui/Toast'
+import { apiFetch, isAbortError } from '../utils/http'
+import { fetchMyFarms, farmIdOf, farmNameOf } from '../utils/farms'
 
 const SEASONS = [
   'Kharif 2026',
@@ -53,111 +56,113 @@ export default function ExpenseTrackerPage() {
   const [deleteTargetId, setDeleteTargetId] = useState(null)
   const toast = useToast()
 
-  // 1. Fetch user farms
-  useEffect(() => {
-    async function loadFarms() {
-      setLoadingFarms(true)
-      try {
-        const token = sessionStorage.getItem('cropshield_token')
-        const res = await fetch('/api/v1/farmer/profile', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-        if (res.ok) {
-          const profile = await res.json()
-          if (profile.farms && profile.farms.length > 0) {
-            setFarms(profile.farms)
-            setSelectedFarmId(profile.farms[0].id)
-          } else {
-            // Fallback: check /api/v1/farms
-            const fRes = await fetch('/api/v1/farms')
-            if (fRes.ok) {
-              const allFarms = await fRes.json()
-              if (allFarms && allFarms.length > 0) {
-                setFarms(allFarms)
-                setSelectedFarmId(allFarms[0].id)
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load farms:', err)
-      } finally {
-        setLoadingFarms(false)
-      }
+  const [farmsError, setFarmsError] = useState(null)
+
+  // 1. Fetch the caller's own farms (P0-6: authenticated, no fallback to other users' farms)
+  const loadFarms = useCallback(async (signal) => {
+    setLoadingFarms(true)
+    setFarmsError(null)
+    try {
+      const list = await fetchMyFarms({ signal })
+      setFarms(list)
+      setSelectedFarmId((prev) => (list.some((f) => farmIdOf(f) === prev) ? prev : (list[0] ? farmIdOf(list[0]) : '')))
+    } catch (err) {
+      if (isAbortError(err)) return
+      console.error('Failed to load farms:', err)
+      setFarms([])
+      setSelectedFarmId('')
+      setFarmsError(err.message || 'Unable to load your farms.')
+    } finally {
+      if (!signal?.aborted) setLoadingFarms(false)
     }
-    loadFarms()
   }, [])
 
-  const currentFarm = farms.find((f) => String(f.id) === String(selectedFarmId)) || farms[0]
+  useEffect(() => {
+    const controller = new AbortController()
+    loadFarms(controller.signal)
+    return () => controller.abort()
+  }, [loadFarms])
 
-  // 2. Fetch PnL summary, expenses, and revenues
+  const currentFarm = farms.find((f) => farmIdOf(f) === String(selectedFarmId)) || null
+  const currentFarmName = farmNameOf(currentFarm, 'My Farm')
+  const currentFarmAcres = currentFarm?.area_hectares ? (Number(currentFarm.area_hectares) * 2.471).toFixed(1) : null
+
+  // 2. Fetch PnL summary, expenses, and revenues (P2-8: stale responses are ignored)
+  const requestIdRef = useRef(0)
+  const abortRef = useRef(null)
+
   const loadPnlData = useCallback(async () => {
     if (!selectedFarmId) return
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const requestId = ++requestIdRef.current
+    const isCurrent = () => requestId === requestIdRef.current
+
     setLoadingData(true)
     setError(null)
     try {
-      const farmIdStr = selectedFarmId
+      const farmIdStr = encodeURIComponent(selectedFarmId)
       const seasonParam = encodeURIComponent(selectedSeason)
+      const opts = { signal: controller.signal }
 
-      const [pnlRes, expRes, revRes] = await Promise.all([
-        fetch(`/api/v1/farm-pnl/${farmIdStr}?season=${seasonParam}`),
-        fetch(`/api/v1/expenses/${farmIdStr}?season=${seasonParam}`),
-        fetch(`/api/v1/revenue/${farmIdStr}?season=${seasonParam}`),
+      const [pnlRes, expRes, revRes] = await Promise.allSettled([
+        apiFetch(`/farm-pnl/${farmIdStr}?season=${seasonParam}`, opts),
+        apiFetch(`/expenses/${farmIdStr}?season=${seasonParam}`, opts),
+        apiFetch(`/revenue/${farmIdStr}?season=${seasonParam}`, opts),
       ])
+      if (!isCurrent()) return
 
-      if (pnlRes.ok) {
-        const pnlData = await pnlRes.json()
-        setPnlSummary(pnlData)
-      } else {
-        setPnlSummary(null)
-      }
+      const firstError = [pnlRes, expRes, revRes]
+        .filter((r) => r.status === 'rejected' && !isAbortError(r.reason) && r.reason?.status !== 404)
+        .map((r) => r.reason)[0]
 
-      if (expRes.ok) {
-        const expData = await expRes.json()
-        const items = Array.isArray(expData)
-          ? expData
-          : (Array.isArray(expData.expenses) ? expData.expenses : [])
-        setExpenses(items)
+      setPnlSummary(pnlRes.status === 'fulfilled' ? pnlRes.value : null)
+
+      if (expRes.status === 'fulfilled') {
+        const expData = expRes.value
+        setExpenses(Array.isArray(expData) ? expData : (Array.isArray(expData?.expenses) ? expData.expenses : []))
       } else {
         setExpenses([])
       }
 
-      if (revRes.ok) {
-        const revData = await revRes.json()
-        const items = Array.isArray(revData)
-          ? revData
-          : (Array.isArray(revData.revenues) ? revData.revenues : [])
-        setRevenues(items)
+      if (revRes.status === 'fulfilled') {
+        const revData = revRes.value
+        setRevenues(Array.isArray(revData) ? revData : (Array.isArray(revData?.revenues) ? revData.revenues : []))
       } else {
         setRevenues([])
       }
+
+      if (firstError) setError(firstError.message || 'Unable to load farm records. Please try again.')
     } catch (err) {
+      if (isAbortError(err) || !isCurrent()) return
       console.error('Error fetching PnL data:', err)
-      setError('Unable to load farm records. Please try again.')
+      setError(err.message || 'Unable to load farm records. Please try again.')
     } finally {
-      setLoadingData(false)
+      if (isCurrent()) setLoadingData(false)
     }
   }, [selectedFarmId, selectedSeason])
 
   useEffect(() => {
+    // Clear the previous farm/season's records so they never show under the new selection
+    setPnlSummary(null)
+    setExpenses([])
+    setRevenues([])
     if (selectedFarmId) {
       loadPnlData()
     }
+    return () => abortRef.current?.abort()
   }, [selectedFarmId, selectedSeason, loadPnlData])
 
   // Handle delete expense
   const handleDeleteExpense = async (expenseId) => {
     try {
-      const res = await fetch(`/api/v1/expenses/${expenseId}`, { method: 'DELETE' })
-      if (res.ok) {
-        toast.success('Expense entry removed.')
-        loadPnlData()
-      } else {
-        toast.error('Failed to delete expense.')
-      }
+      await apiFetch(`/expenses/${encodeURIComponent(expenseId)}`, { method: 'DELETE' })
+      toast.success('Expense entry removed.')
+      loadPnlData()
     } catch (err) {
       console.error('Delete error:', err)
-      toast.error('Error deleting expense.')
+      toast.error(err.message || 'Failed to delete expense.')
     } finally {
       setDeleteTargetId(null)
     }
@@ -176,7 +181,7 @@ export default function ExpenseTrackerPage() {
     if (activeTab === 'expenses') {
       csvContent += 'Date,Category,Amount,Notes,Receipt\n'
       filteredExpenses.forEach((exp) => {
-        csvContent += `"${exp.date}","${exp.category}","${exp.amount}","${(exp.notes || '').replace(/"/g, '""')}","${exp.receipt_url || ''}"\n`
+        csvContent += `"${exp.date}","${exp.category}","${exp.amount}","${(exp.notes || '').replace(/"/g, '""')}","${exp.receipt_photo_url || ''}"\n`
       })
     } else {
       csvContent += 'Sale Date,Crop,Quantity (kg),Price per kg,Total Revenue,Buyer/Mandi\n'
@@ -188,7 +193,7 @@ export default function ExpenseTrackerPage() {
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement('a')
     link.setAttribute('href', encodedUri)
-    link.setAttribute('download', `${currentFarm?.name || 'farm'}_${selectedSeason}_${activeTab}.csv`)
+    link.setAttribute('download', `${farmNameOf(currentFarm, 'farm')}_${selectedSeason}_${activeTab}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -227,9 +232,12 @@ export default function ExpenseTrackerPage() {
                 onChange={(e) => setSelectedFarmId(e.target.value)}
                 className="bg-transparent text-white text-xs sm:text-sm font-bold focus:outline-none cursor-pointer pr-4"
               >
+                {farms.length === 0 && (
+                  <option value="" className="text-stone-900">{loadingFarms ? 'Loading farms…' : 'No farm yet'}</option>
+                )}
                 {farms.map((f) => (
-                  <option key={f.id} value={f.id} className="text-stone-900">
-                    {f.name} ({f.crop_type || 'Crop'})
+                  <option key={farmIdOf(f)} value={farmIdOf(f)} className="text-stone-900">
+                    {farmNameOf(f)} ({f.crop_type || 'General'})
                   </option>
                 ))}
               </select>
@@ -255,7 +263,7 @@ export default function ExpenseTrackerPage() {
             {/* Refresh Button */}
             <button
               onClick={loadPnlData}
-              disabled={loadingData}
+              disabled={loadingData || !selectedFarmId}
               className="p-2.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white transition-all cursor-pointer"
               title="Refresh Records"
             >
@@ -267,24 +275,24 @@ export default function ExpenseTrackerPage() {
         {/* Action Triggers Bar */}
         <div className="mt-6 pt-6 border-t border-white/10 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs text-brand-200">
-            <span className="font-semibold text-white">{currentFarm?.name || 'Selected Farm'}</span>
-            <span>·</span>
-            <span>{currentFarm?.district || 'Tamil Nadu'}</span>
-            <span>·</span>
-            <span className="font-mono text-brand-300">{currentFarm?.area_acres || 2} Acres</span>
+            <span className="font-semibold text-white">{currentFarm ? currentFarmName : 'No farm selected'}</span>
+            {currentFarm?.district && (<><span>·</span><span>{currentFarm.district}</span></>)}
+            {currentFarmAcres && (<><span>·</span><span className="font-mono text-brand-300">{currentFarmAcres} Acres</span></>)}
           </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowAddExpense(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-brand-500 to-teal-500 text-stone-950 font-black text-xs sm:text-sm hover:from-brand-400 hover:to-teal-400 shadow-lg shadow-brand-900/30 transition-all cursor-pointer"
+              disabled={!selectedFarmId}
+              className="disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-brand-500 to-teal-500 text-stone-950 font-black text-xs sm:text-sm hover:from-brand-400 hover:to-teal-400 shadow-lg shadow-brand-900/30 transition-all cursor-pointer"
             >
               <Plus size={16} className="stroke-[3]" />
               <span>Log Expense</span>
             </button>
             <button
               onClick={() => setShowAddRevenue(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-brand-900 font-black text-xs sm:text-sm hover:bg-brand-50 shadow-lg transition-all cursor-pointer"
+              disabled={!selectedFarmId}
+              className="disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-brand-900 font-black text-xs sm:text-sm hover:bg-brand-50 shadow-lg transition-all cursor-pointer"
             >
               <TrendingUp size={16} className="text-brand-700 stroke-[3]" />
               <span>Log Harvest Sale</span>
@@ -293,18 +301,46 @@ export default function ExpenseTrackerPage() {
         </div>
       </div>
 
-      {error && (
+      {farmsError && (
+        <div className="bg-white rounded-3xl border border-stone-200 shadow-sm">
+          <ErrorState message={farmsError} onRetry={() => loadFarms()} />
+        </div>
+      )}
+
+      {!loadingFarms && !farmsError && farms.length === 0 && (
+        <div className="bg-white rounded-3xl border border-stone-200 p-10 shadow-sm text-center space-y-4">
+          <div className="w-16 h-16 rounded-3xl bg-brand-50 flex items-center justify-center mx-auto text-brand-600">
+            <MapPin size={32} />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-stone-800">Register your farm first</h3>
+            <p className="text-xs text-stone-500 max-w-sm mx-auto">
+              Expenses and harvest sales are recorded against your own farm. Add your farm boundary to start tracking profit &amp; loss.
+            </p>
+          </div>
+          <Link
+            to="/farmer/manage-farms"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-brand-700 text-white text-xs font-bold hover:bg-brand-800 transition-all shadow-sm"
+          >
+            <Plus size={14} />
+            <span>Go to Manage My Farm</span>
+          </Link>
+        </div>
+      )}
+
+      {error && selectedFarmId && (
         <div className="bg-white rounded-3xl border border-stone-200 shadow-sm">
           <ErrorState message={error} onRetry={loadPnlData} />
         </div>
       )}
 
+      {selectedFarmId && (<>
       {/* Main PnL Summary Card with Real-time Count-up & Prediction Accuracy */}
       <PnLSummaryCard
         summary={pnlSummary}
         season={selectedSeason}
-        cropType={currentFarm?.crop_type || 'Crop'}
-        farmName={currentFarm?.name || 'My Farm'}
+        cropType={currentFarm?.crop_type || 'General'}
+        farmName={currentFarmName}
       />
 
       {/* Transactions Section */}
@@ -423,9 +459,9 @@ export default function ExpenseTrackerPage() {
                             {exp.notes || <span className="text-stone-400 italic">No notes</span>}
                           </td>
                           <td className="py-3.5 px-3 whitespace-nowrap">
-                            {exp.receipt_url ? (
+                            {exp.receipt_photo_url ? (
                               <button
-                                onClick={() => setPreviewReceiptUrl(exp.receipt_url)}
+                                onClick={() => setPreviewReceiptUrl(exp.receipt_photo_url)}
                                 className="inline-flex items-center gap-1 text-brand-700 hover:text-brand-800 font-semibold underline text-xs cursor-pointer"
                               >
                                 <Eye size={13} />
@@ -502,9 +538,9 @@ export default function ExpenseTrackerPage() {
                           {rev.crop_type}
                         </td>
                         <td className="py-3.5 px-3 font-mono text-stone-700 whitespace-nowrap">
-                          {rev.quantity_sold_kg.toLocaleString('en-IN')} kg
+                          {Number(rev.quantity_sold_kg || 0).toLocaleString('en-IN')} kg
                           <span className="text-[11px] text-stone-400 ml-1">
-                            ({(rev.quantity_sold_kg / 100).toFixed(1)} qtl)
+                            ({(Number(rev.quantity_sold_kg || 0) / 100).toFixed(1)} qtl)
                           </span>
                         </td>
                         <td className="py-3.5 px-3 font-mono text-stone-700 whitespace-nowrap">
@@ -528,10 +564,11 @@ export default function ExpenseTrackerPage() {
           </div>
         )}
       </div>
+      </>)}
 
       {/* Modal: Quick Add Expense */}
       <AnimatePresence>
-        {showAddExpense && (
+        {showAddExpense && selectedFarmId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -542,7 +579,7 @@ export default function ExpenseTrackerPage() {
               <QuickAddExpenseForm
                 farmId={selectedFarmId}
                 season={selectedSeason}
-                cropType={currentFarm?.crop_type || 'Crop'}
+                cropType={currentFarm?.crop_type || 'General'}
                 district={currentFarm?.district || 'Tamil Nadu'}
                 onClose={() => setShowAddExpense(false)}
                 onSuccess={() => {
@@ -557,7 +594,7 @@ export default function ExpenseTrackerPage() {
 
       {/* Modal: Quick Add Revenue */}
       <AnimatePresence>
-        {showAddRevenue && (
+        {showAddRevenue && selectedFarmId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-sm">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -568,7 +605,7 @@ export default function ExpenseTrackerPage() {
               <QuickAddRevenueForm
                 farmId={selectedFarmId}
                 season={selectedSeason}
-                cropType={currentFarm?.crop_type || 'Crop'}
+                cropType={currentFarm?.crop_type || 'General'}
                 district={currentFarm?.district || 'Tamil Nadu'}
                 onClose={() => setShowAddRevenue(false)}
                 onSuccess={() => {

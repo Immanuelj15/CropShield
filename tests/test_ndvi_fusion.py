@@ -1,35 +1,17 @@
 """
 AgriGuard AI — NDVI Satellite Vegetation & Multi-Modal Fusion Tests
-Tests Sentinel-2 NDVI calculation, proportional weight redistribution in multi-modal fusion,
-VegetationSnapshot database persistence, and /api/v1/vegetation endpoints.
+Tests Sentinel-2 NDVI calculation, proportional weight redistribution in multi-modal fusion
+(including healthy-class / model-unavailable handling, audit P2-5), VegetationSnapshot
+persistence, and the authenticated /api/v1/vegetation endpoints.
+DB-backed tests use the isolated test database and skip when MongoDB is unreachable.
 """
 
 import pytest
-import pytest_asyncio
-from datetime import datetime
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 
-from backend.main import app
-from backend.db.mongodb import init_mongodb, close_mongodb
-from backend.models.farm import Farm as MongoFarm
-from backend.models.vegetation_snapshot import VegetationSnapshot as MongoVegSnapshot
-from backend.models.pest_warning_log import PestWarningLog as MongoWarningLog
-from backend.services.ndvi_service import (
-    fetch_ndvi_for_farm,
-    derive_vegetation_status,
-    _simulate_sentinel2_ndvi
-)
+from backend.services.ndvi_service import derive_vegetation_status, _simulate_sentinel2_ndvi
 from backend.services.fusion_service import compute_fused_health_score
-from backend.jobs.ndvi_ingestion_job import process_single_farm_ndvi
-
-
-@pytest_asyncio.fixture(scope="function")
-async def client():
-    await init_mongodb()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    await close_mongodb()
+from conftest import DEMO_FARMER, login_headers
 
 
 def test_derive_vegetation_status():
@@ -113,34 +95,65 @@ def test_multimodal_fusion_proportional_redistribution_missing_ndvi():
     assert comp["image_effective_weight"] == round(0.3 / 0.8, 2)
 
 
+def test_fusion_healthy_leaf_class_raises_health():
+    # A confident "healthy" prediction is good news; a confident disease is bad news.
+    healthy = compute_fused_health_score(0.30, image_diagnosis_confidence=0.95, ndvi_value=0.6,
+                                         image_predicted_class="Tomato___healthy")
+    diseased = compute_fused_health_score(0.30, image_diagnosis_confidence=0.95, ndvi_value=0.6,
+                                          image_predicted_class="Tomato___Late_blight")
+    assert healthy["value"] > diseased["value"]
+
+
+def test_fusion_skips_image_when_model_unavailable():
+    fused = compute_fused_health_score(0.30, image_diagnosis_confidence=0.924, ndvi_value=0.6,
+                                       image_model_available=False)
+    assert "image" not in fused["signals_available"]
+    assert fused["signals_count"] == 2
+
+
+@pytest.mark.mongo
 @pytest.mark.asyncio
 async def test_vegetation_api_endpoints(client: AsyncClient):
-    # 1. Retrieve an existing farm
-    farm = await MongoFarm.find_one({"district": "Thanjavur"})
+    from backend.models.farm import Farm as MongoFarm
+    from backend.models.user import User
+
+    farmer = await User.find_one({"email": DEMO_FARMER[0]})
+    farm = await MongoFarm.find_one({"district": "Thanjavur", "owner_id": farmer.id})
     assert farm is not None
 
-    # 2. Call GET /api/v1/vegetation/{farm_id}
-    resp = await client.get(f"/api/v1/vegetation/{farm.id}")
-    assert resp.status_code == 200
-    data = resp.json()
+    # auth is required now
+    assert (await client.get(f"/api/v1/vegetation/{farm.id}")).status_code == 401
+    assert (await client.get("/api/v1/vegetation")).status_code == 401
 
+    headers = await login_headers(client, *DEMO_FARMER)
+    resp = await client.get(f"/api/v1/vegetation/{farm.id}", headers=headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
     assert data["farm_id"] == str(farm.id)
     assert data["district"] == "Thanjavur"
     assert -1.0 <= data["ndvi_value"] <= 1.0
     assert data["status"] in ["healthy", "stressed", "declining"]
-    assert "fused_health_score" in data
     assert data["fused_health_score"]["value"] >= 0.0
+    assert "persisted" in data
 
-    # 3. Call GET /api/v1/vegetation (all farms overview)
-    all_resp = await client.get("/api/v1/vegetation")
+    all_resp = await client.get("/api/v1/vegetation", headers=headers)
     assert all_resp.status_code == 200
     all_data = all_resp.json()
     assert all_data["count"] >= 1
-    assert len(all_data["vegetation_data"]) >= 1
+    # farmers only see their own farms
+    own_ids = {str(f.id) for f in await MongoFarm.find({"owner_id": farmer.id}).to_list()}
+    assert {row["farm_id"] for row in all_data["vegetation_data"]} <= own_ids | {str(farmer.farm_id)}
 
 
+@pytest.mark.mongo
 @pytest.mark.asyncio
-async def test_process_single_farm_ndvi_job(client: AsyncClient):
+async def test_process_single_farm_ndvi_job(mongo_db):
+    from backend.jobs.ndvi_ingestion_job import process_single_farm_ndvi
+    from backend.models.farm import Farm as MongoFarm
+    from backend.models.vegetation_snapshot import VegetationSnapshot as MongoVegSnapshot
+    from scripts.seed_districts import seed_tamil_nadu_districts
+
+    await seed_tamil_nadu_districts()
     farm = await MongoFarm.find_one({"is_reference_point": True, "district": "Coimbatore"})
     assert farm is not None
 
@@ -150,7 +163,6 @@ async def test_process_single_farm_ndvi_job(client: AsyncClient):
     assert result["district"] == "Coimbatore"
     assert result["status"] in ["healthy", "stressed", "declining"]
 
-    # Verify snapshot in MongoDB
     snap = await MongoVegSnapshot.find_one({"farm_id": farm.id})
     assert snap is not None
     assert snap.ndvi_value == result["ndvi_value"]

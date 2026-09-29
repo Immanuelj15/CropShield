@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Globe, ChevronDown, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { updateUserLanguage } from '../utils/api';
+import { getToken } from '../utils/http';
 
 export const LANGUAGES = [
   { code: 'en', label: 'English', native: 'English', sub: 'Standard Agronomic English' },
@@ -30,8 +31,7 @@ export default function LanguageSelector({ variant = 'dropdown', className = '' 
       }
 
       // If user is authenticated, sync to profile in backend
-      const token = sessionStorage.getItem('cropshield_token');
-      if (token) {
+      if (getToken()) {
         updateUserLanguage(code).catch((e) => console.log('Language sync silent error:', e));
       }
     } catch (err) {

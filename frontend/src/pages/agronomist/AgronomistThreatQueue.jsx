@@ -5,7 +5,8 @@ import { useToast } from '../../components/ui/Toast'
 import Badge from '../../components/ui/Badge'
 import EmptyState from '../../components/ui/EmptyState'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
+import DemoDataBadge from '../../components/ui/DemoDataBadge'
 
 export default function AgronomistThreatQueue() {
   const toast = useToast()
@@ -14,49 +15,58 @@ export default function AgronomistThreatQueue() {
   const [verifyDecision, setVerifyDecision] = useState('confirm')
   const [verifyNotes, setVerifyNotes] = useState('')
 
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
-  }
+  const [verifying, setVerifying] = useState(false)
+  const [loadError, setLoadError] = useState(null)
+  const [isSimulated, setIsSimulated] = useState(false) // demo queue: cases cannot be verified (backend 404s)
 
   useEffect(() => { fetchThreatQueue() }, [])
 
   const fetchThreatQueue = async () => {
+    setLoadError(null)
     try {
-      const res = await fetch(`${API_BASE}/detect/pending`, { headers: authHeaders })
-      if (res.ok) {
-        const data = await res.json()
-        setThreatQueue(data.items || [])
-        if (data.items?.length > 0) setSelectedThreat(data.items[0])
-      }
-    } catch (e) { console.error(e) }
+      const data = await apiFetch('/detect/pending')
+      const items = data?.items || []
+      setIsSimulated(!!data?.simulated)
+      setThreatQueue(items)
+      // P2-10: keep the selection only if it is still in the queue; clear it when the queue is empty
+      setSelectedThreat((prev) => {
+        if (prev && items.some((i) => i.log_id === prev.log_id)) return items.find((i) => i.log_id === prev.log_id)
+        return items[0] || null
+      })
+    } catch (e) {
+      console.error(e)
+      setThreatQueue([])
+      setSelectedThreat(null)
+      setLoadError(e.message || 'Could not load the threat queue.')
+    }
   }
 
   const handleVerify = async (e) => {
     e.preventDefault()
-    if (!selectedThreat) return
+    if (!selectedThreat || verifying) return
+    const target = selectedThreat
+    setVerifying(true)
     try {
-      const res = await fetch(`${API_BASE}/detect/${selectedThreat.log_id}/verify`, {
+      await apiFetch(`/detect/${encodeURIComponent(target.log_id)}/verify`, {
         method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
+        json: {
           decision: verifyDecision,
-          confirmed_pest: selectedThreat.detected_pest,
-          severity: verifyDecision === 'confirm' ? selectedThreat.ai_risk_level : 'Medium',
-          notes: verifyNotes || `Verified by regional expert in ${selectedThreat.district}.`
-        }),
+          confirmed_pest: target.detected_pest,
+          severity: verifyDecision === 'confirm' ? target.ai_risk_level : 'Medium',
+          notes: verifyNotes || `Verified by regional expert in ${target.district}.`
+        },
       })
-      if (res.ok) {
-        toast.success(`Threat case ${verifyDecision}ed successfully. Audit trail and retraining queue recorded.`)
-        setVerifyNotes('')
-        fetchThreatQueue()
-      } else {
-        toast.error('Verification failed. Please try again.')
-      }
+      toast.success(`Threat case ${verifyDecision}ed successfully. Audit trail and retraining queue recorded.`)
+      setVerifyNotes('')
+      // Drop the verified case locally so it can't be verified twice while the queue reloads
+      setThreatQueue((prev) => prev.filter((i) => i.log_id !== target.log_id))
+      setSelectedThreat(null)
+      await fetchThreatQueue()
     } catch (e) {
       console.error(e)
-      toast.error('Network error while submitting verification.')
+      toast.error(e.message || 'Verification failed. Please try again.')
+    } finally {
+      setVerifying(false)
     }
   }
 
@@ -65,7 +75,7 @@ export default function AgronomistThreatQueue() {
       <div className="lg:col-span-5 bg-white rounded-2xl border border-stone-200 p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-stone-100">
           <div>
-            <h3 className="text-base font-bold text-stone-900">Unverified Threats</h3>
+            <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">Unverified Threats <DemoDataBadge show={isSimulated} /></h3>
             <p className="text-xs text-stone-500">AI-flagged cases awaiting agronomist confirmation</p>
           </div>
           <button onClick={fetchThreatQueue} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500">
@@ -98,7 +108,10 @@ export default function AgronomistThreatQueue() {
               </button>
             )
           })}
-          {threatQueue.length === 0 && (
+          {loadError && (
+            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{loadError}</p>
+          )}
+          {threatQueue.length === 0 && !loadError && (
             <EmptyState icon={AlertTriangle} title="Queue clear" message="No unverified threat cases in queue." />
           )}
         </div>
@@ -170,13 +183,15 @@ export default function AgronomistThreatQueue() {
 
               <div className="pt-2 flex items-center justify-between">
                 <span className="text-[11px] text-stone-400">
-                  Attribution: Dr. V. Sundaram (Agronomist ID #204)
+                  Attribution: your agronomist account
                 </span>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
+                  disabled={verifying || isSimulated}
+                  title={isSimulated ? 'Demo cases cannot be verified' : undefined}
+                  className="disabled:opacity-50 disabled:cursor-not-allowed px-6 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
                 >
-                  <span>Submit Verification Audit</span>
+                  <span>{verifying ? 'Submitting…' : 'Submit Verification Audit'}</span>
                   <ArrowRight size={14} />
                 </button>
               </div>

@@ -1,304 +1,252 @@
 """
-CropShield — Feature Engineering Pipeline
-Transforms raw NASA POWER historical data into ML-ready features
-for current-day pest warning prediction.
+CropShield — Feature Engineering Pipeline (single source for train + live)
+=========================================================================
 
-Called by:
-  - ml/training/train_model.py  (build training matrix)
-  - backend/services/inference_service.py  (build live inference row)
+ONE pipeline is used by both training and live inference, so feature names
+match by construction:
+
+    raw NASA POWER daily frame (UPPER or lower-case names)
+      → clean_weather()          rename, gap-fill, physical clipping
+      → engineer_features()      calendar, rolling, lag, trend, spell features
+      → add_crop_one_hot()       int 0/1 crop columns
+      = build_feature_frame(weather_df, crop)
+
+  * Training  (ml/training/train_model.py) calls build_feature_frame on the full
+    multi-year series of each location and keeps rows ≥ MIN_HISTORY_DAYS.
+  * Inference (backend/services/inference_service.py) calls
+    build_live_feature_row → build_feature_frame on the ~36-day live window and
+    takes the last row.
+
+Every feature only looks back ≤ 30 days (rolling windows ≤ 30, lags ≤ 7,
+spell counters capped at SPELL_CAP=30), so the last row of a ≥31-day live
+window is numerically identical to the same day computed on the full series.
+
+The model's input columns are MODEL_FEATURES (exported to feature_names.json
+at training time). Soil / climate-zone values are carried in the live row for
+display only — they are NOT model inputs because the training labels do not
+depend on them (see ml/data/LABELING.md).
+
+Units (NASA POWER community=AG): °C, %, m/s, mm/day, MJ/m²/day.
 """
+
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+# ── Constants ─────────────────────────────────────────────────
+
+CROPS: List[str] = ["Cotton", "Sorghum", "Millets", "Rice", "Sugarcane", "Pulses"]
+CROP_ALIASES = {"paddy": "Rice", "millet": "Millets", "pulse": "Pulses"}
+ZONES: List[str] = ["Dryland", "Irrigated", "Delta", "Semi-arid", "Humid"]
+
+MIN_HISTORY_DAYS = 31   # rows needed so every rolling/lag/spell feature is complete
+SPELL_CAP = 30          # dry/wet spell counters are capped (live window is ~36 days)
+DRY_DAY_MM = 1.0        # IMD convention: a "rainy day" has ≥ 2.5 mm; CropShield uses 1 mm (WMO "wet day")
+
+NASA_RENAME = {
+    "T2M": "t2m", "T2M_MAX": "t2m_max", "T2M_MIN": "t2m_min",
+    "RH2M": "rh2m", "WS2M": "ws2m", "PRECTOTCORR": "prectotcorr",
+    "ALLSKY_SFC_SW_DWN": "allsky_sfc_sw_dwn", "TOA_SW_DWN": "toa_sw_dwn",
+}
+RAW_WEATHER_COLS = ["t2m", "t2m_max", "t2m_min", "rh2m", "ws2m", "prectotcorr", "allsky_sfc_sw_dwn"]
+
+_WEATHER_FEATURES: List[str] = (
+    RAW_WEATHER_COLS
+    + ["temp_range", "heat_index", "vpd",
+       "month_sin", "month_cos", "doy_sin", "doy_cos"]
+    + [f"t2m_rolling_{w}d" for w in (3, 7, 14, 30)]
+    + [f"rh2m_rolling_{w}d" for w in (3, 7, 14, 30)]
+    + [f"rain_rolling_{w}d" for w in (3, 7, 14, 30)]
+    + ["rain_monthly_cumul"]
+    + [f"{v}_lag{l}" for l in (1, 3, 7) for v in ("t2m", "rh2m", "rain")]
+    + ["rh_trend_7d", "temp_trend_7d", "consecutive_dry_days", "consecutive_wet_days"]
+)
+CROP_FEATURES: List[str] = [f"crop_{c.lower()}" for c in CROPS]
+MODEL_FEATURES: List[str] = _WEATHER_FEATURES + CROP_FEATURES
 
 
-# ── Pest-climate label derivation ────────────────────────────
-# Crop-to-pest-risk rules based on Tamil Nadu entomology literature.
-# Each rule maps climate conditions to a continuous risk [0, 1].
-# These become training labels when applied to historical data.
+class FeatureError(ValueError):
+    """Raised when inputs cannot produce a complete, valid feature row."""
 
-def _compute_risk_score(row: pd.Series, crop: str, zone: str) -> float:
+
+def normalize_crop(crop: str) -> str:
+    c = (crop or "").strip()
+    c = CROP_ALIASES.get(c.lower(), c)
+    for known in CROPS:
+        if known.lower() == c.lower():
+            return known
+    raise FeatureError(f"Unsupported crop '{crop}'. Supported: {', '.join(CROPS)}")
+
+
+# ── Cleaning (shared) ─────────────────────────────────────────
+
+def clean_weather(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Derive a daily pest risk score from weather features.
-    Encodes known pest-climate relationships for each crop.
+    Rename NASA POWER variables to lower case, sort by date, gap-fill and clip.
+    Idempotent: safe to call on data already cleaned by weather_service._clean
+    (same fill + clip rules as backend/services/weather_service.py).
+    NASA fill value -999 is converted to NaN before gap filling.
     """
-    t    = row.get("t2m", 30)
-    rh   = row.get("rh2m", 60)
-    r7   = row.get("rain_rolling_7d", 0)
-    r14  = row.get("rain_rolling_14d", 0)
-    dry  = row.get("consecutive_dry_days", 0)
-    hi   = row.get("heat_index", t)
-    month = int(row.get("month", 6))
+    df = df.rename(columns={k: v for k, v in NASA_RENAME.items() if k in df.columns}).copy()
+    if "date" not in df.columns:
+        raise FeatureError("weather frame has no 'date' column")
+    missing = [c for c in RAW_WEATHER_COLS if c not in df.columns]
+    if missing:
+        raise FeatureError(f"weather frame is missing NASA POWER columns: {missing}")
 
-    score = 0.0
-    crop_l = crop.lower()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
 
-    # ── Cotton ────────────────────────────────────────────────
-    if "cotton" in crop_l:
-        # Bollworm: warm + moderate humidity
-        if 28 <= t <= 38 and 50 <= rh <= 78 and r7 < 18:
-            score += 0.38
-        # Whitefly/Thrips: hot-dry spell
-        if t > 32 and rh < 58 and dry >= 6:
-            score += 0.40
-        # Aphid: warm-wet
-        if rh > 75 and r7 > 20:
-            score += 0.22
+    num = [c for c in NASA_RENAME.values() if c in df.columns]
+    df[num] = df[num].apply(pd.to_numeric, errors="coerce")
+    df[num] = df[num].mask(df[num] <= -999.0)
+    df[num] = df[num].ffill().bfill()
+    if df[RAW_WEATHER_COLS].isna().any().any():
+        bad = df[RAW_WEATHER_COLS].columns[df[RAW_WEATHER_COLS].isna().any()].tolist()
+        raise FeatureError(f"weather columns entirely missing: {bad}")
 
-    # ── Rice ─────────────────────────────────────────────────
-    elif "rice" in crop_l:
-        # BPH + Blast: humid + warm + wet
-        if rh > 80 and 24 <= t <= 32 and r7 > 28:
-            score += 0.55
-        # Leaf Folder
-        if rh > 70 and 26 <= t <= 34:
-            score += 0.25
-        # Sheath blight favoured by extended rain
-        if r14 > 60 and rh > 85:
-            score += 0.18
-
-    # ── Sorghum ───────────────────────────────────────────────
-    elif "sorghum" in crop_l:
-        # Stem Borer
-        if 25 <= t <= 35 and rh > 50:
-            score += 0.40
-        # Shoot Fly
-        if rh > 65 and r7 > 15:
-            score += 0.28
-
-    # ── Millets ───────────────────────────────────────────────
-    elif "millet" in crop_l:
-        if t > 28 and rh > 52:
-            score += 0.35
-        if dry >= 3 and t > 30:
-            score += 0.20
-
-    # ── Sugarcane ─────────────────────────────────────────────
-    elif "sugarcane" in crop_l:
-        if t > 28 and rh < 72 and dry >= 4:
-            score += 0.42
-        if t > 30:
-            score += 0.12
-
-    # ── Pulses ────────────────────────────────────────────────
-    elif "pulse" in crop_l:
-        if t > 26 and rh < 70 and r7 < 15:
-            score += 0.40
-        if t > 30 and rh < 55:
-            score += 0.20
-
-    # ── Seasonal factor (NE monsoon Oct-Dec highest risk in TN)
-    if month in [10, 11, 12]:
-        score *= 1.12
-    elif month in [3, 4, 5]:
-        if "cotton" in crop_l or "pulse" in crop_l:
-            score *= 1.08
-
-    # ── Zone factor
-    zone_mod = {"Dryland": 1.05, "Irrigated": 1.08, "Delta": 1.14,
-                "Semi-arid": 0.96, "Humid": 1.04}
-    score *= zone_mod.get(zone, 1.0)
-
-    return float(np.clip(score, 0.0, 1.0))
+    df["t2m"] = df["t2m"].clip(10, 50)
+    df["rh2m"] = df["rh2m"].clip(5, 100)
+    df["prectotcorr"] = df["prectotcorr"].clip(0, 300)
+    return df
 
 
-def _score_to_label(score: float) -> int:
-    """0=Low, 1=Medium, 2=High"""
-    if score >= 0.60:
-        return 2
-    if score >= 0.30:
-        return 1
-    return 0
+# ── Feature engineering (shared) ──────────────────────────────
+
+def _run_length(flag: np.ndarray, cap: int = SPELL_CAP) -> np.ndarray:
+    out = np.zeros(len(flag), dtype=np.int64)
+    c = 0
+    for i, v in enumerate(flag):
+        c = min(c + 1, cap) if v else 0
+        out[i] = c
+    return out
 
 
-# ── Core feature engineering ──────────────────────────────────
+def _rolling_slope(s: pd.Series, window: int = 7) -> pd.Series:
+    return s.rolling(window, min_periods=3).apply(
+        lambda x: np.polyfit(np.arange(len(x)), x, 1)[0], raw=True
+    )
+
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Given a DataFrame with raw daily NASA POWER columns
-    (t2m, t2m_max, t2m_min, rh2m, ws2m, prectotcorr,
-     allsky_sfc_sw_dwn, et0, date),
-    compute all ML features in-place.
-
-    Works on both:
-    - Multi-year historical DataFrames (sorted by [location, date])
-    - Single-row live inference (uses scalar fallback for rolling)
+    Compute all weather/calendar features for a single location's daily series.
+    Returns a new frame (input columns preserved). The last row = most recent day.
     """
-    df = df.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date").reset_index(drop=True)
+    df = clean_weather(df)
 
-    # ── Calendar features ─────────────────────────────────────
-    df["month"]     = df["date"].dt.month
+    # Calendar (cyclical)
+    df["month"] = df["date"].dt.month
     df["day_of_year"] = df["date"].dt.dayofyear
-    # Sine/cosine encoding to capture cyclicality
     df["month_sin"] = np.sin(2 * np.pi * df["month"] / 12)
     df["month_cos"] = np.cos(2 * np.pi * df["month"] / 12)
-    df["doy_sin"]   = np.sin(2 * np.pi * df["day_of_year"] / 365)
-    df["doy_cos"]   = np.cos(2 * np.pi * df["day_of_year"] / 365)
+    df["doy_sin"] = np.sin(2 * np.pi * df["day_of_year"] / 365.25)
+    df["doy_cos"] = np.cos(2 * np.pi * df["day_of_year"] / 365.25)
 
-    # ── Derived daily features ────────────────────────────────
+    # Daily derived
     df["temp_range"] = df["t2m_max"] - df["t2m_min"]
-    df["heat_index"] = df.apply(
-        lambda r: _heat_index(r["t2m"], r["rh2m"]), axis=1
-    )
-    df["vpd"] = _vpd_series(df["t2m"], df["rh2m"])  # Vapour pressure deficit
+    df["heat_index"] = heat_index_c(df["t2m"], df["rh2m"])
+    df["vpd"] = _vpd_series(df["t2m"], df["rh2m"])
+    df["et0"] = hargreaves_et0(df)  # informational; not a model input
 
-    # ── Rolling means: temperature ────────────────────────────
-    for w, sfx in [(3, "3d"), (7, "7d"), (14, "14d"), (30, "30d")]:
-        df[f"t2m_rolling_{sfx}"]  = df["t2m"].rolling(w, min_periods=1).mean()
-        df[f"rh2m_rolling_{sfx}"] = df["rh2m"].rolling(w, min_periods=1).mean()
+    # Rolling means / sums
+    for w in (3, 7, 14, 30):
+        df[f"t2m_rolling_{w}d"] = df["t2m"].rolling(w, min_periods=1).mean()
+        df[f"rh2m_rolling_{w}d"] = df["rh2m"].rolling(w, min_periods=1).mean()
+        df[f"rain_rolling_{w}d"] = df["prectotcorr"].rolling(w, min_periods=1).sum()
 
-    # ── Rolling sums: rainfall ────────────────────────────────
-    for w, sfx in [(3, "3d"), (7, "7d"), (14, "14d"), (30, "30d")]:
-        df[f"rain_rolling_{sfx}"] = df["prectotcorr"].rolling(w, min_periods=1).sum()
-
-    # ── Cumulative monthly rainfall ───────────────────────────
     df["rain_monthly_cumul"] = df.groupby(
         [df["date"].dt.year, df["date"].dt.month]
     )["prectotcorr"].cumsum()
 
-    # ── Lag features (yesterday, 3 days ago, 7 days ago) ─────
-    for lag in [1, 3, 7]:
-        df[f"t2m_lag{lag}"]  = df["t2m"].shift(lag)
+    # Lags
+    for lag in (1, 3, 7):
+        df[f"t2m_lag{lag}"] = df["t2m"].shift(lag)
         df[f"rh2m_lag{lag}"] = df["rh2m"].shift(lag)
         df[f"rain_lag{lag}"] = df["prectotcorr"].shift(lag)
 
-    # ── Humidity trend (7d slope) ─────────────────────────────
-    df["rh_trend_7d"] = (
-        df["rh2m"].rolling(7, min_periods=3)
-        .apply(lambda x: np.polyfit(range(len(x)), x, 1)[0], raw=True)
-    )
+    # 7-day linear trends (units per day)
+    df["rh_trend_7d"] = _rolling_slope(df["rh2m"])
+    df["temp_trend_7d"] = _rolling_slope(df["t2m"])
 
-    # ── Temperature trend (7d slope) ─────────────────────────
-    df["temp_trend_7d"] = (
-        df["t2m"].rolling(7, min_periods=3)
-        .apply(lambda x: np.polyfit(range(len(x)), x, 1)[0], raw=True)
-    )
+    # Spell counters (capped so a ~36-day live window reproduces training values)
+    rain = df["prectotcorr"].to_numpy()
+    df["consecutive_dry_days"] = _run_length(rain < DRY_DAY_MM)
+    df["consecutive_wet_days"] = _run_length(rain >= DRY_DAY_MM)
 
-    # ── Consecutive dry days ──────────────────────────────────
-    dry_flag = (df["prectotcorr"] < 1.0).astype(int)
-    consec = []
-    count = 0
-    for v in dry_flag:
-        count = count + 1 if v else 0
-        consec.append(count)
-    df["consecutive_dry_days"] = consec
-
-    # ── Consecutive wet days ──────────────────────────────────
-    wet_flag = (df["prectotcorr"] >= 1.0).astype(int)
-    consec_wet = []
-    count = 0
-    for v in wet_flag:
-        count = count + 1 if v else 0
-        consec_wet.append(count)
-    df["consecutive_wet_days"] = consec_wet
-
-    # ── Fill NaN from lags at start of series ─────────────────
-    lag_cols = [c for c in df.columns if "lag" in c or "trend" in c]
-    df[lag_cols] = df[lag_cols].fillna(method="bfill").fillna(0)
-
+    # Early rows of a series have no lag/trend history; back-fill so the frame is
+    # NaN-free (these rows are < MIN_HISTORY_DAYS and are never used as model rows).
+    lag_cols = [c for c in df.columns if "_lag" in c or "_trend_" in c]
+    df[lag_cols] = df[lag_cols].bfill().fillna(0.0)
     return df
 
 
+def add_crop_one_hot(df: pd.DataFrame, crop: str) -> pd.DataFrame:
+    crop = normalize_crop(crop)
+    for c in CROPS:
+        df[f"crop_{c.lower()}"] = np.int64(1 if c == crop else 0)
+    return df
+
+
+def build_feature_frame(weather_df: pd.DataFrame, crop: str) -> pd.DataFrame:
+    """The one shared pipeline: clean → engineer → crop one-hot (int)."""
+    fe = engineer_features(weather_df)
+    return add_crop_one_hot(fe, crop)
+
+
+def validate_model_frame(X: pd.DataFrame, feature_names: List[str]) -> pd.DataFrame:
+    """Return X[feature_names]; raise FeatureError if any column is missing or non-finite."""
+    missing = [c for c in feature_names if c not in X.columns]
+    if missing:
+        raise FeatureError(f"missing model features: {missing}")
+    X = X[feature_names].astype(np.float64)
+    bad = X.columns[~np.isfinite(X.to_numpy()).all(axis=0)].tolist()
+    if bad:
+        raise FeatureError(f"non-finite values in model features: {bad}")
+    return X
+
+
+# ── Training matrix ───────────────────────────────────────────
+
 def build_training_matrix(
-    historical_df: pd.DataFrame,
+    raw_df: pd.DataFrame,
     crops: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
-    From raw multi-location historical weather data,
-    build the full ML training matrix with:
-    - engineered features per location
-    - soil profile merged in
-    - crop / zone one-hot columns
-    - pest risk label (0/1/2)
-
-    One row = one location-crop-day combination.
-    Rows with insufficient lag data (first 30 days per location) dropped.
+    raw_df: NASA POWER daily data for several locations (column 'location').
+    One output row = location × crop × day, with MODEL_FEATURES, the rule
+    index 'risk_score', 'risk_label' (0/1/2), 'dominant_pest' and metadata.
+    The first MIN_HISTORY_DAYS-1 days of each location are dropped.
     """
-    if crops is None:
-        crops = ["Cotton", "Sorghum", "Millets", "Rice", "Sugarcane", "Pulses"]
+    from ml.data.pest_labels import crop_risk_index, index_to_label
 
-    from backend.services.soil_service import get_soil_profile
-
-    all_frames = []
-    locations = historical_df["location"].unique() if "location" in historical_df.columns else ["default"]
-
-    for loc in locations:
-        if "location" in historical_df.columns:
-            loc_df = historical_df[historical_df["location"] == loc].copy()
-            zone = loc_df["zone"].iloc[0] if "zone" in loc_df.columns else "Dryland"
-        else:
-            loc_df = historical_df.copy()
-            zone = "Dryland"
-
-        # Engineer features for this location's time series
-        loc_fe = engineer_features(loc_df)
-
-        # Drop first 30 rows (insufficient rolling history)
-        loc_fe = loc_fe.iloc[30:].copy()
-
+    crops = [normalize_crop(c) for c in (crops or CROPS)]
+    frames = []
+    for loc, loc_df in raw_df.groupby("location", sort=True):
+        fe = engineer_features(loc_df).iloc[MIN_HISTORY_DAYS - 1:].reset_index(drop=True)
         for crop in crops:
-            crop_df = loc_fe.copy()
-
-            # Soil features for this zone
-            soil = get_soil_profile(zone)
-            crop_df["soil_ph"]            = soil["ph"]
-            crop_df["soil_ec"]            = soil["ec"]
-            crop_df["soil_oc"]            = soil["organic_carbon"]
-            crop_df["soil_nitrogen"]      = soil["nitrogen"]
-            crop_df["soil_phosphorus"]    = soil["phosphorus"]
-            crop_df["soil_potassium"]     = soil["potassium"]
-            crop_df["soil_clay_pct"]      = soil["clay_pct"]
-            crop_df["soil_sand_pct"]      = soil["sand_pct"]
-            crop_df["soil_bulk_density"]  = soil["bulk_density"]
-
-            # Crop one-hot
-            for c in crops:
-                crop_df[f"crop_{c.lower()}"] = int(c == crop)
-
-            # Zone one-hot
-            for z in ["Dryland", "Irrigated", "Delta", "Semi-arid", "Humid"]:
-                crop_df[f"zone_{z.lower().replace('-','_')}"] = int(z == zone)
-
-            # Pest risk label
-            crop_df["risk_score"] = crop_df.apply(
-                lambda r: _compute_risk_score(r, crop, zone), axis=1
-            )
-            crop_df["risk_label"] = crop_df["risk_score"].apply(_score_to_label)
-
-            # Keep minimal metadata for audit
-            crop_df["location"] = loc
-            crop_df["zone_name"] = zone
-            crop_df["crop_name"] = crop
-
-            all_frames.append(crop_df)
-
-    combined = pd.concat(all_frames, ignore_index=True)
-    print(
-        f"Training matrix: {len(combined):,} rows × "
-        f"{combined.shape[1]} cols from {len(locations)} locations, "
-        f"{len(crops)} crops"
-    )
-    return combined
+            f = add_crop_one_hot(fe.copy(), crop)
+            idx, pest = crop_risk_index(f, crop)
+            f["risk_score"] = idx
+            f["risk_label"] = index_to_label(idx)
+            f["dominant_pest"] = pest
+            f["location"] = loc
+            f["crop_name"] = crop
+            frames.append(f)
+    out = pd.concat(frames, ignore_index=True)
+    print(f"Training matrix: {len(out):,} rows from {out['location'].nunique()} locations x {len(crops)} crops")
+    return out
 
 
-def get_feature_columns(df: pd.DataFrame) -> List[str]:
-    """Return the model feature columns (exclude meta, label, dates)."""
-    exclude = {
-        "date", "location", "zone", "zone_name", "crop_name",
-        "risk_score", "risk_label",
-        "month", "day_of_year",  # kept as month_sin/cos instead
-    }
-    return [c for c in df.columns if c not in exclude
-            and df[c].dtype in [np.float64, np.float32, np.int64, np.int32, int, float]]
+def get_feature_columns(df: Optional[pd.DataFrame] = None) -> List[str]:
+    """Model input columns (fixed, ordered). If df is given, verify presence."""
+    if df is not None:
+        validate_model_frame(df.head(1), MODEL_FEATURES)
+    return list(MODEL_FEATURES)
 
 
-# ── Live inference feature builder ───────────────────────────
+# ── Live inference feature builder ────────────────────────────
 
 def build_live_feature_row(
     weather_series: pd.DataFrame,
@@ -307,55 +255,61 @@ def build_live_feature_row(
     climate_zone: str,
 ) -> pd.DataFrame:
     """
-    Build a single-row feature DataFrame for today's inference.
-
-    `weather_series` must contain at least 30 days of history
-    ending on (or near) today, so rolling/lag features are valid.
+    Single-row frame for the most recent day in `weather_series`
+    (needs ≥ MIN_HISTORY_DAYS daily rows). Contains every MODEL_FEATURES
+    column plus informational soil / zone columns (not model inputs).
+    Raises FeatureError on insufficient history, unknown crop or bad data.
     """
-    crops = ["Cotton", "Sorghum", "Millets", "Rice", "Sugarcane", "Pulses"]
-    zones = ["Dryland", "Irrigated", "Delta", "Semi-arid", "Humid"]
+    if weather_series is None or len(weather_series) < MIN_HISTORY_DAYS:
+        n = 0 if weather_series is None else len(weather_series)
+        raise FeatureError(f"need >= {MIN_HISTORY_DAYS} days of weather history, got {n}")
+    fe = build_feature_frame(weather_series, crop)
+    row = fe.iloc[[-1]].reset_index(drop=True)
 
-    # Engineer on the full series, take last row (= today)
-    fe_df = engineer_features(weather_series)
-    row = fe_df.iloc[-1].to_dict()
-
-    # Crop one-hot
-    for c in crops:
-        row[f"crop_{c.lower()}"] = int(c.lower() == crop.lower())
-
-    # Zone one-hot
-    for z in zones:
-        row[f"zone_{z.lower().replace('-','_')}"] = int(z.lower() == climate_zone.lower())
-
-    # Soil
-    row["soil_ph"]           = soil.get("ph", 7.0)
-    row["soil_ec"]           = soil.get("ec", 0.2)
-    row["soil_oc"]           = soil.get("organic_carbon", 0.5)
-    row["soil_nitrogen"]     = soil.get("nitrogen", 200)
-    row["soil_phosphorus"]   = soil.get("phosphorus", 20)
-    row["soil_potassium"]    = soil.get("potassium", 180)
-    row["soil_clay_pct"]     = soil.get("clay_pct", 25)
-    row["soil_sand_pct"]     = soil.get("sand_pct", 50)
-    row["soil_bulk_density"] = soil.get("bulk_density", 1.5)
-
-    return pd.DataFrame([row])
+    soil = soil or {}
+    row["soil_ph"] = soil.get("ph")
+    row["soil_oc"] = soil.get("organic_carbon")
+    row["climate_zone"] = climate_zone
+    validate_model_frame(row, MODEL_FEATURES)
+    return row
 
 
 # ── Helper functions ──────────────────────────────────────────
 
-def _heat_index(temp_c: float, rh: float) -> float:
-    t = temp_c * 9 / 5 + 32
-    hi = (
-        -42.379 + 2.04901523 * t + 10.14333127 * rh
-        - 0.22475541 * t * rh - 6.83783e-3 * t**2
-        - 5.481717e-2 * rh**2 + 1.22874e-3 * t**2 * rh
-        + 8.5282e-4 * t * rh**2 - 1.99e-6 * t**2 * rh**2
-    )
-    return round((hi - 32) * 5 / 9, 2)
+def heat_index_c(temp_c: pd.Series, rh: pd.Series) -> pd.Series:
+    """
+    NWS heat index (°C). Steadman simple formula below 80 °F, otherwise the
+    Rothfusz regression with the NWS low/high-humidity adjustments.
+    Source: https://www.wpc.ncep.noaa.gov/html/heatindex_equation.shtml
+    """
+    t = np.asarray(temp_c, dtype=float) * 9 / 5 + 32
+    r = np.asarray(rh, dtype=float)
+    simple = 0.5 * (t + 61.0 + (t - 68.0) * 1.2 + r * 0.094)
+    hi = (-42.379 + 2.04901523 * t + 10.14333127 * r - 0.22475541 * t * r
+          - 6.83783e-3 * t ** 2 - 5.481717e-2 * r ** 2 + 1.22874e-3 * t ** 2 * r
+          + 8.5282e-4 * t * r ** 2 - 1.99e-6 * t ** 2 * r ** 2)
+    low_rh = (r < 13) & (t >= 80) & (t <= 112)
+    hi = np.where(low_rh, hi - ((13 - r) / 4) * np.sqrt(np.clip(17 - np.abs(t - 95), 0, None) / 17), hi)
+    high_rh = (r > 85) & (t >= 80) & (t <= 87)
+    hi = np.where(high_rh, hi + ((r - 85) / 10) * ((87 - t) / 5), hi)
+    avg = (simple + t) / 2
+    out_f = np.where(avg < 80, simple, hi)
+    return pd.Series(np.round((out_f - 32) * 5 / 9, 2), index=getattr(temp_c, "index", None))
 
 
 def _vpd_series(temp: pd.Series, rh: pd.Series) -> pd.Series:
-    """Vapour pressure deficit (kPa) — plant stress indicator."""
+    """Vapour pressure deficit (kPa), FAO-56 eq. 11 (Tetens) with daily mean T."""
     es = 0.6108 * np.exp(17.27 * temp / (temp + 237.3))
-    ea = es * rh / 100
-    return (es - ea).round(3)
+    return (es * (1 - rh / 100)).round(3)
+
+
+def hargreaves_et0(df: pd.DataFrame) -> pd.Series:
+    """
+    Hargreaves ET0 (mm/day), FAO-56 eq. 52: 0.0023 (Tmean+17.8) (Tmax-Tmin)^0.5 · 0.408·Ra.
+    Ra = extraterrestrial radiation = NASA POWER TOA_SW_DWN (MJ/m²/day) when
+    present; otherwise falls back to surface ALLSKY_SFC_SW_DWN (underestimates).
+    """
+    tmax, tmin = df["t2m_max"], df["t2m_min"]
+    ra = df["toa_sw_dwn"] if "toa_sw_dwn" in df.columns else df["allsky_sfc_sw_dwn"]
+    et0 = 0.0023 * ((tmax + tmin) / 2 + 17.8) * np.sqrt((tmax - tmin).clip(lower=0)) * 0.408 * ra
+    return et0.clip(lower=0).round(3)

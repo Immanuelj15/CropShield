@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { useToast } from '../../components/ui/Toast'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
 
 const EMPTY_RULE = {
   crop_type: '', suitable_soil_types: 'Red Sandy Loam, Black Cotton Soil', water_requirement: 'Medium',
@@ -27,23 +27,21 @@ export default function AdminCropRules() {
   const [newCost, setNewCost] = useState(EMPTY_COST)
   const [confirmTarget, setConfirmTarget] = useState(null) // { type, id, label }
 
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
 
   const fetchCropRules = async () => {
-    try { const res = await fetch(`${API_BASE}/crop-recommendation/rules`); if (res.ok) setCropRules(await res.json()) }
+    try { setCropRules((await apiFetch('/crop-recommendation/rules')) || []) }
     catch (e) { console.debug('Error fetching crop rules:', e) }
   }
   const fetchCropCosts = async () => {
-    try { const res = await fetch(`${API_BASE}/crop-recommendation/cost-templates`); if (res.ok) setCropCosts(await res.json()) }
+    try { setCropCosts((await apiFetch('/crop-recommendation/cost-templates')) || []) }
     catch (e) { console.debug('Error fetching crop costs:', e) }
   }
   const fetchCropWaterCoeffs = async () => {
-    try { const res = await fetch(`${API_BASE}/irrigation/coefficients/all`); if (res.ok) setCropWaterCoeffs(await res.json()) }
+    try { setCropWaterCoeffs((await apiFetch('/irrigation/coefficients/all')) || []) }
     catch (e) { console.debug('Error fetching crop water coeffs:', e) }
   }
   const fetchCropNutrients = async () => {
-    try { const res = await fetch(`${API_BASE}/fertilizer/requirements/all`); if (res.ok) setCropNutrients(await res.json()) }
+    try { setCropNutrients((await apiFetch('/fertilizer/requirements/all')) || []) }
     catch (e) { console.debug('Error fetching crop nutrients:', e) }
   }
 
@@ -68,18 +66,14 @@ export default function AdminCropRules() {
         avoid_after_same_crop_seasons: Number(newRule.avoid_after_same_crop_seasons),
         source_note: newRule.source_note,
       }
-      const res = await fetch(`${API_BASE}/crop-recommendation/rules`, { method: 'POST', headers: authHeaders, body: JSON.stringify(payload) })
-      if (res.ok) {
-        toast.success(`Crop suitability rule for ${newRule.crop_type} registered.`)
-        fetchCropRules()
-        setNewRule({ ...newRule, crop_type: '' })
-      } else {
-        const err = await res.json().catch(() => ({}))
-        toast.error(err.detail || 'Failed to save rule')
-      }
+      await apiFetch('/crop-recommendation/rules', { method: 'POST', json: payload })
+      toast.success(`Crop suitability rule for ${newRule.crop_type} registered.`)
+      fetchCropRules()
+      setNewRule({ ...newRule, crop_type: '' })
     } catch (err) {
       console.error(err)
-      toast.error('Network error while saving rule.')
+      // normalized: 422 detail arrays become a readable string (P2-6)
+      toast.error(err.message || 'Failed to save rule')
     }
   }
 
@@ -99,18 +93,13 @@ export default function AdminCropRules() {
         total_cost_per_acre: total,
         source_note: newCost.source_note,
       }
-      const res = await fetch(`${API_BASE}/crop-recommendation/cost-templates`, { method: 'POST', headers: authHeaders, body: JSON.stringify(payload) })
-      if (res.ok) {
-        toast.success(`Cultivation cost template for ${newCost.crop_type} registered.`)
-        fetchCropCosts()
-        setNewCost({ ...newCost, crop_type: '' })
-      } else {
-        const err = await res.json().catch(() => ({}))
-        toast.error(err.detail || 'Failed to save cost template')
-      }
+      await apiFetch('/crop-recommendation/cost-templates', { method: 'POST', json: payload })
+      toast.success(`Cultivation cost template for ${newCost.crop_type} registered.`)
+      fetchCropCosts()
+      setNewCost({ ...newCost, crop_type: '' })
     } catch (err) {
       console.error(err)
-      toast.error('Network error while saving cost template.')
+      toast.error(err.message || 'Failed to save cost template')
     }
   }
 
@@ -119,21 +108,21 @@ export default function AdminCropRules() {
     const { type, id } = confirmTarget
     try {
       if (type === 'rule') {
-        const res = await fetch(`${API_BASE}/crop-recommendation/rules/${id}`, { method: 'DELETE', headers: authHeaders })
-        if (res.ok) fetchCropRules()
+        await apiFetch(`/crop-recommendation/rules/${encodeURIComponent(id)}`, { method: 'DELETE' })
+        fetchCropRules()
       } else if (type === 'cost') {
-        const res = await fetch(`${API_BASE}/crop-recommendation/cost-templates/${id}`, { method: 'DELETE', headers: authHeaders })
-        if (res.ok) fetchCropCosts()
+        await apiFetch(`/crop-recommendation/cost-templates/${encodeURIComponent(id)}`, { method: 'DELETE' })
+        fetchCropCosts()
       } else if (type === 'water') {
-        const res = await fetch(`${API_BASE}/irrigation/coefficients/${id}`, { method: 'DELETE' })
-        if (res.ok) fetchCropWaterCoeffs()
+        await apiFetch(`/irrigation/coefficients/${encodeURIComponent(id)}`, { method: 'DELETE' })
+        fetchCropWaterCoeffs()
       } else if (type === 'nutrient') {
-        const res = await fetch(`${API_BASE}/fertilizer/requirements/${id}`, { method: 'DELETE' })
-        if (res.ok) fetchCropNutrients()
+        await apiFetch(`/fertilizer/requirements/${encodeURIComponent(id)}`, { method: 'DELETE' })
+        fetchCropNutrients()
       }
     } catch (err) {
       console.error(err)
-      toast.error('Failed to delete item.')
+      toast.error(err.message || 'Failed to delete item.')
     } finally {
       setConfirmTarget(null)
     }

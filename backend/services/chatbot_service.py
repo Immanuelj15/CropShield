@@ -128,14 +128,13 @@ async def build_response(
         farm = await Farm.get(farm_id)
     if not farm and user_id:
         farm = await Farm.find_one({"owner_id": user_id})
-    if not farm:
-        # Fallback to reference centroid or general farm
-        farm = await Farm.find_one({"is_reference_point": True}) or await Farm.find_one()
+    # No fallback to other users' farms: without an owned farm, answer from generic context only.
 
     # 1. Today's Risk Intent
     if intent.intent_id == "today_risk":
-        log_query = {"farm_id": farm.id} if farm else {}
-        log = await PestWarningLog.find(log_query).sort(-PestWarningLog.created_at).first_or_none()
+        log = None
+        if farm:
+            log = await PestWarningLog.find({"farm_id": farm.id}).sort(-PestWarningLog.created_at).first_or_none()
 
         crop = farm.crop_type if farm else (log.crop_type if log else "Cotton")
         risk_level = log.risk_level if log else "Low"
@@ -175,8 +174,9 @@ async def build_response(
 
     # 2. Treatment Advice Intent
     if intent.intent_id == "treatment_advice":
-        log_query = {"farm_id": farm.id} if farm else {}
-        log = await PestWarningLog.find(log_query).sort(-PestWarningLog.created_at).first_or_none()
+        log = None
+        if farm:
+            log = await PestWarningLog.find({"farm_id": farm.id}).sort(-PestWarningLog.created_at).first_or_none()
 
         pest_name = "Pests"
         if log and log.detected_pests:
@@ -207,8 +207,9 @@ async def build_response(
 
     # 3. Weather Today Intent
     if intent.intent_id == "weather_today":
-        snap_query = {"farm_id": farm.id} if farm else {}
-        snap = await WeatherSnapshot.find(snap_query).sort(-WeatherSnapshot.created_at).first_or_none()
+        snap = None
+        if farm:
+            snap = await WeatherSnapshot.find({"farm_id": farm.id}).sort(-WeatherSnapshot.created_at).first_or_none()
 
         if snap:
             temp = snap.temperature_c if snap.temperature_c is not None else float(snap.raw.get("t2m", snap.raw.get("T2M", 28.5)))

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Calendar, RefreshCw,
@@ -13,7 +13,8 @@ import FertilizerCard from '../components/FertilizerCard'
 import ActivityTimelineItem from '../components/ActivityTimelineItem'
 import { useToast } from '../components/ui/Toast'
 
-const API_BASE = '/api/v1'
+import { apiFetch, isAbortError } from '../utils/http'
+import { fetchMyFarms, farmIdOf } from '../utils/farms'
 
 const TAMIL_NADU_15_CROPS = [
   'Cotton', 'Rice', 'Sorghum', 'Millets', 'Sugarcane',
@@ -41,138 +42,156 @@ export default function FarmActivityPlannerPage() {
   const [setupSowingDate, setSetupSowingDate] = useState(new Date().toISOString().split('T')[0])
   const [actionSuccess, setActionSuccess] = useState(null)
 
-  // 1. Fetch user's farms
+  const [farmsError, setFarmsError] = useState(null)
+  const [planError, setPlanError] = useState(null)
+  const [completingId, setCompletingId] = useState(null)
+
+  // 1. Fetch the caller's own farms
   useEffect(() => {
-    fetchFarms()
+    const controller = new AbortController()
+    fetchFarms(controller.signal)
+    return () => controller.abort()
   }, [])
 
-  const fetchFarms = async () => {
+  const fetchFarms = async (signal) => {
     setLoadingFarms(true)
+    setFarmsError(null)
     try {
-      const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('token')
-      const headers = token ? { Authorization: `Bearer ${token}` } : {}
-      const res = await fetch(`${API_BASE}/farms`, { headers })
-      if (res.ok) {
-        const data = await res.json()
-        setFarms(data)
-        if (data.length > 0) {
-          const firstId = data[0].id || data[0]._id
-          setSelectedFarmId(firstId)
-          setSetupCrop(data[0].crop_type || 'Cotton')
-        }
+      const data = await fetchMyFarms({ signal })
+      setFarms(data)
+      if (data.length > 0) {
+        setSelectedFarmId(farmIdOf(data[0]))
+        setSetupCrop(data[0].crop_type || 'Cotton')
       }
     } catch (e) {
+      if (isAbortError(e)) return
       console.error('Error fetching farms:', e)
+      setFarmsError(e.message || 'Could not load your farms.')
     } finally {
-      setLoadingFarms(false)
+      if (!signal?.aborted) setLoadingFarms(false)
     }
   }
 
-  // 2. Fetch active plan & telemetry whenever selected farm changes
+  // 2. Fetch active plan & telemetry whenever selected farm changes.
+  // P2-8: clear the previous farm's plan immediately and ignore stale responses,
+  // so "Complete" can never post farm A's activity ids against farm B.
+  const planRequestRef = useRef({ id: 0, controller: null })
+
   useEffect(() => {
+    setActivePlan(null)
+    setIrrigationData(null)
+    setFertilizerData(null)
+    setPlanError(null)
     if (selectedFarmId) {
       fetchFarmPlanAndTelemetry(selectedFarmId)
     }
+    return () => planRequestRef.current.controller?.abort()
   }, [selectedFarmId])
 
   const fetchFarmPlanAndTelemetry = async (farmId) => {
+    planRequestRef.current.controller?.abort()
+    const controller = new AbortController()
+    const requestId = planRequestRef.current.id + 1
+    planRequestRef.current = { id: requestId, controller }
+    const isCurrent = () => planRequestRef.current.id === requestId
+
     setLoadingPlan(true)
+    setPlanError(null)
+    const id = encodeURIComponent(farmId)
+    const opts = { signal: controller.signal }
     try {
       // Parallel requests for plan, irrigation, and fertilizer
-      const [planRes, irrigRes, fertRes] = await Promise.all([
-        fetch(`${API_BASE}/activity-planner/${farmId}`),
-        fetch(`${API_BASE}/irrigation/${farmId}`),
-        fetch(`${API_BASE}/fertilizer/${farmId}`),
+      const [planRes, irrigRes, fertRes] = await Promise.allSettled([
+        apiFetch(`/activity-planner/${id}`, opts),
+        apiFetch(`/irrigation/${id}`, opts),
+        apiFetch(`/fertilizer/${id}`, opts),
       ])
+      if (!isCurrent()) return
 
-      if (planRes.ok) {
-        const pData = await planRes.json()
-        if (pData.active && pData.plan) {
-          setActivePlan(pData.plan)
-        } else {
-          setActivePlan(null)
+      if (planRes.status === 'fulfilled') {
+        const pData = planRes.value
+        setActivePlan(pData?.active && pData?.plan ? pData.plan : null)
+      } else {
+        setActivePlan(null)
+        if (!isAbortError(planRes.reason) && planRes.reason?.status !== 404) {
+          setPlanError(planRes.reason?.message || 'Could not load the activity plan.')
         }
       }
-
-      if (irrigRes.ok) {
-        setIrrigationData(await irrigRes.json())
-      } else {
-        setIrrigationData(null)
-      }
-
-      if (fertRes.ok) {
-        setFertilizerData(await fertRes.json())
-      } else {
-        setFertilizerData(null)
-      }
+      setIrrigationData(irrigRes.status === 'fulfilled' ? irrigRes.value : null)
+      setFertilizerData(fertRes.status === 'fulfilled' ? fertRes.value : null)
     } catch (e) {
+      if (isAbortError(e) || !isCurrent()) return
       console.error('Error loading farm plan:', e)
+      setActivePlan(null)
+      setPlanError(e.message || 'Could not load the activity plan.')
     } finally {
-      setLoadingPlan(false)
+      if (isCurrent()) setLoadingPlan(false)
     }
   }
 
   // 3. Generate New Activity Plan
   const handleGeneratePlan = async (e) => {
     if (e) e.preventDefault()
-    if (!selectedFarmId) return
+    if (!selectedFarmId || generating) return
+    const farmIdAtRequest = selectedFarmId
 
     setGenerating(true)
     try {
-      const res = await fetch(`${API_BASE}/activity-planner/generate`, {
+      const newPlan = await apiFetch('/activity-planner/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          farm_id: selectedFarmId,
+        json: {
+          farm_id: farmIdAtRequest,
           crop_type: setupCrop,
           sowing_date: setupSowingDate,
-        }),
+        },
       })
-
-      if (res.ok) {
-        const newPlan = await res.json()
-        setActivePlan(newPlan)
-        setShowSetupModal(false)
-        setActionSuccess(`Generated full-season plan for ${setupCrop}!`)
-        setTimeout(() => setActionSuccess(null), 3500)
-        // Refresh telemetry
-        fetchFarmPlanAndTelemetry(selectedFarmId)
-      } else {
-        const err = await res.json().catch(() => ({}))
-        toast.error(err.detail || 'Failed to generate plan.')
-      }
-    } catch (e) {
-      console.error(e)
+      if (farmIdAtRequest !== selectedFarmIdRef.current) return // farm switched meanwhile
+      setActivePlan(newPlan)
+      setShowSetupModal(false)
+      setActionSuccess(`Generated full-season plan for ${setupCrop}!`)
+      setTimeout(() => setActionSuccess(null), 3500)
+      // Refresh telemetry
+      fetchFarmPlanAndTelemetry(farmIdAtRequest)
+    } catch (err) {
+      console.error(err)
+      toast.error(err.message || 'Failed to generate plan.')
     } finally {
       setGenerating(false)
     }
   }
 
-  // 4. Mark activity as completed
+  const selectedFarmIdRef = useRef(selectedFarmId)
+  selectedFarmIdRef.current = selectedFarmId
+
+  // 4. Mark activity as completed (only for the plan currently shown for this farm)
   const handleCompleteActivity = async (activityId) => {
+    if (!selectedFarmId || !activePlan || completingId) return
+    const farmIdAtRequest = selectedFarmId
+    setCompletingId(activityId)
     try {
-      const res = await fetch(
-        `${API_BASE}/activity-planner/${selectedFarmId}/activities/${activityId}/complete`,
+      await apiFetch(
+        `/activity-planner/${encodeURIComponent(farmIdAtRequest)}/activities/${encodeURIComponent(activityId)}/complete`,
         { method: 'POST' }
       )
-      if (res.ok) {
-        // Optimistic UI update
-        setActivePlan((prev) => {
-          if (!prev) return prev
-          const updatedTimeline = prev.timeline.map((act) =>
-            act.activity_id === activityId
-              ? { ...act, status: 'completed', completed_at: new Date().toISOString() }
-              : act
-          )
-          return { ...prev, timeline: updatedTimeline }
-        })
-      }
+      if (farmIdAtRequest !== selectedFarmIdRef.current) return
+      setActivePlan((prev) => {
+        if (!prev) return prev
+        const updatedTimeline = prev.timeline.map((act) =>
+          act.activity_id === activityId
+            ? { ...act, status: 'completed', completed_at: new Date().toISOString() }
+            : act
+        )
+        return { ...prev, timeline: updatedTimeline }
+      })
     } catch (e) {
       console.error('Failed to mark complete:', e)
+      toast.error(e.message || 'Could not mark the activity as completed.')
+    } finally {
+      setCompletingId(null)
     }
   }
 
-  const selectedFarm = farms.find((f) => (f.id || f._id) === selectedFarmId)
+  const selectedFarm = farms.find((f) => farmIdOf(f) === selectedFarmId)
 
   // Timeline filtering
   const timeline = activePlan?.timeline || []
@@ -218,7 +237,7 @@ export default function FarmActivityPlannerPage() {
                   className="bg-transparent text-white text-xs font-bold outline-none pr-3 py-1 cursor-pointer"
                 >
                   {farms.map((f) => (
-                    <option key={f.id || f._id} value={f.id || f._id} className="text-stone-900">
+                    <option key={farmIdOf(f)} value={farmIdOf(f)} className="text-stone-900">
                       {f.farm_name} ({f.crop_type} · {f.district})
                     </option>
                   ))}
@@ -231,7 +250,8 @@ export default function FarmActivityPlannerPage() {
                 if (selectedFarm) setSetupCrop(selectedFarm.crop_type || 'Cotton')
                 setShowSetupModal(true)
               }}
-              className="px-4 py-2.5 bg-brand-500 hover:bg-brand-400 text-stone-950 rounded-2xl text-xs font-extrabold shadow-md transition-all flex items-center gap-1.5"
+              disabled={!selectedFarmId}
+              className="disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 bg-brand-500 hover:bg-brand-400 text-stone-950 rounded-2xl text-xs font-extrabold shadow-md transition-all flex items-center gap-1.5"
             >
               <Plus size={14} />
               <span>{activePlan ? 'Re-plan Season' : 'Create Plan'}</span>
@@ -271,6 +291,26 @@ export default function FarmActivityPlannerPage() {
           </div>
         )}
       </div>
+
+      {(farmsError || planError) && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-800 text-xs font-bold rounded-2xl flex items-center justify-between gap-2" role="alert">
+          <span>{farmsError || planError}</span>
+          <button
+            type="button"
+            onClick={() => (farmsError ? fetchFarms() : fetchFarmPlanAndTelemetry(selectedFarmId))}
+            className="px-3 py-1 rounded-lg bg-white border border-red-200 hover:bg-red-100"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!loadingFarms && !farmsError && farms.length === 0 && (
+        <div className="p-6 bg-white border border-stone-200 rounded-2xl text-center text-sm text-stone-600 space-y-2">
+          <p className="font-bold text-stone-800">No farm registered yet</p>
+          <p className="text-xs">Register your farm in <a href="/farmer/manage-farms" className="text-brand-700 underline font-semibold">Manage My Farm</a> to create a season plan.</p>
+        </div>
+      )}
 
       {actionSuccess && (
         <div className="p-4 bg-brand-50 border border-brand-200 text-brand-800 text-xs font-bold rounded-2xl flex items-center gap-2 animate-fadeIn shadow-sm">
@@ -368,7 +408,8 @@ export default function FarmActivityPlannerPage() {
                 </div>
                 <button
                   onClick={() => handleCompleteActivity(act.activity_id)}
-                  className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shrink-0 transition-colors shadow-xs flex items-center gap-1"
+                  disabled={!!completingId}
+                  className="disabled:opacity-50 px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold shrink-0 transition-colors shadow-xs flex items-center gap-1"
                 >
                   <CheckCircle2 size={13} />
                   <span>Done</span>

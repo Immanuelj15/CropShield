@@ -1,47 +1,51 @@
 import { useState, useEffect } from 'react'
 import { Sparkles, RefreshCw, BarChart3 } from 'lucide-react'
 import { useToast } from '../../components/ui/Toast'
-
-const API_BASE = '/api/v1'
+import DemoDataBadge from '../../components/ui/DemoDataBadge'
+import { apiFetch } from '../../utils/http'
 
 export default function AdminModels() {
   const toast = useToast()
   const [modelLogs, setModelLogs] = useState([])
   const [retraining, setRetraining] = useState(false)
   const [calibrationReport, setCalibrationReport] = useState(null)
-
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const [lastRetrain, setLastRetrain] = useState(null)
 
   const fetchModelStatus = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/models/status`, { headers: authHeaders })
-      if (res.ok) setModelLogs(await res.json())
-    } catch (e) { console.error(e) }
+      const data = await apiFetch('/admin/models/status')
+      setModelLogs(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error(e)
+      toast.error(e.message || 'Could not load model status.')
+    }
   }
 
   useEffect(() => { fetchModelStatus() }, [])
 
   const fetchCalibrationReport = async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/model-calibration`, { headers: authHeaders })
-      if (res.ok) setCalibrationReport(await res.json())
-    } catch (e) { console.error(e) }
+      setCalibrationReport(await apiFetch('/admin/model-calibration'))
+    } catch (e) {
+      console.error(e)
+      toast.error(e.message || 'Could not load the calibration report.')
+    }
   }
 
   const handleTriggerRetrain = async () => {
+    if (retraining) return
     setRetraining(true)
     try {
-      const res = await fetch(`${API_BASE}/admin/models/retrain`, { method: 'POST', headers: authHeaders })
-      if (res.ok) {
-        toast.success('Retraining complete! Model updated to 78.92% accuracy with 24 verified samples.')
-        fetchModelStatus()
-      } else {
-        toast.error('Retraining failed.')
-      }
+      const data = await apiFetch('/admin/models/retrain', { method: 'POST' })
+      setLastRetrain(data)
+      // Show what the server actually reported (no invented accuracy numbers)
+      toast.success(data?.simulated
+        ? 'Retraining run recorded (demo data — metrics are simulated).'
+        : (data?.message || 'Retraining run completed.'))
+      fetchModelStatus()
     } catch (e) {
       console.error(e)
-      toast.error('Network error while triggering retraining.')
+      toast.error(e.message || 'Retraining failed.')
     } finally {
       setRetraining(false)
     }
@@ -51,7 +55,10 @@ export default function AdminModels() {
     <div className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
         <div>
-          <h2 className="text-xl font-bold text-stone-900">Model Versioning & Retraining Logs</h2>
+          <h2 className="text-xl font-bold text-stone-900 flex items-center gap-2">
+            Model Versioning & Retraining Logs
+            <DemoDataBadge show={!!lastRetrain?.simulated || modelLogs.some((l) => l?.simulated)} />
+          </h2>
           <p className="text-xs text-stone-500 mt-0.5">Audit log of automated and expert-supervised retraining iterations.</p>
         </div>
         <button
@@ -67,11 +74,14 @@ export default function AdminModels() {
         {modelLogs.map(log => (
           <div key={log.id} className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2 text-xs">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-stone-900">{log.model_name} (Status: {log.status.toUpperCase()})</span>
-              <span className="text-[11px] text-stone-400">{new Date(log.created_at).toLocaleString()}</span>
+              <span className="font-bold text-stone-900 flex items-center gap-2">
+                {log.model_name} (Status: {String(log.status || '').toUpperCase()})
+                <DemoDataBadge show={!!log.simulated} />
+              </span>
+              <span className="text-[11px] text-stone-400">{log.created_at ? new Date(log.created_at).toLocaleString() : ''}</span>
             </div>
             <div className="flex items-center gap-4 text-stone-600">
-              <span>Accuracy: <strong>{Math.round(log.accuracy * 1000) / 10}%</strong></span>
+              <span>Accuracy: <strong>{typeof log.accuracy === 'number' ? `${Math.round(log.accuracy * 1000) / 10}%` : 'Not available'}</strong></span>
               <span>Dataset Rows: <strong>{log.dataset_rows}</strong></span>
               <span>Verified Feedback Samples: <strong>{log.verified_samples_ingested}</strong></span>
             </div>
@@ -137,12 +147,12 @@ export default function AdminModels() {
             <div className="space-y-4">
               <div className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm text-center">
                 <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Expected Calibration Error</span>
-                <span className="text-3xl font-black text-stone-900 block mt-1">{(calibrationReport.expected_calibration_error * 100).toFixed(2)}%</span>
+                <span className="text-3xl font-black text-stone-900 block mt-1">{typeof calibrationReport.expected_calibration_error === 'number' ? `${(calibrationReport.expected_calibration_error * 100).toFixed(2)}%` : 'N/A'}</span>
                 <span className="text-[11px] text-green-700 font-semibold block mt-1">Target: &lt; 5%</span>
               </div>
               <div className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm text-center">
                 <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Brier Score Loss</span>
-                <span className="text-3xl font-black text-stone-900 block mt-1">{calibrationReport.brier_score?.toFixed(4)}</span>
+                <span className="text-3xl font-black text-stone-900 block mt-1">{typeof calibrationReport.brier_score === 'number' ? calibrationReport.brier_score.toFixed(4) : 'N/A'}</span>
                 <span className="text-[11px] text-green-700 font-semibold block mt-1">Lower is better</span>
               </div>
               <div className="p-4 bg-white rounded-2xl border border-stone-200 shadow-sm">

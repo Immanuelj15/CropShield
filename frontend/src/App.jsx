@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate, useNavigate, useLocati
 import { Leaf, AlertTriangle, Clock, Menu, X, Sprout, Map, Mic, ShieldCheck, Lock, LogOut, User as UserIcon, Settings, Compass, MapPin, Bell, Sparkles, Calendar, Wallet, Camera } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import TodayPage from './pages/TodayPage'
 import YieldPage from './pages/YieldPage'
 import OutbreakMapPage from './pages/OutbreakMapPage'
 import RegionalScanPage from './pages/RegionalScanPage'
@@ -25,32 +24,25 @@ import ChatbotWidget from './components/ChatbotWidget'
 import OfflineBanner from './components/OfflineBanner'
 import LanguageSelector from './components/LanguageSelector'
 import Sidebar from './components/ui/Sidebar'
+import ErrorBoundary from './components/ui/ErrorBoundary'
+import { getToken, getUser, getUserCacheId, logout, AUTH_CHANGED_EVENT } from './utils/http'
 import clsx from 'clsx'
 
 // Ensure stale localStorage tokens from previous sessions do not bypass login
 try {
-  if (!sessionStorage.getItem('cropshield_token')) {
+  if (!getToken()) {
     localStorage.removeItem('cropshield_token')
     localStorage.removeItem('cropshield_user')
   }
+  // Legacy unscoped warning cache could belong to a previous user on a shared phone
+  localStorage.removeItem('cropshield_last_warning')
 } catch {
   // Ignore storage access errors
 }
 
-function getAuthToken() {
-  return sessionStorage.getItem('cropshield_token')
-}
-
-function getAuthUser() {
-  const token = getAuthToken()
-  if (!token) return null
-  const rawUser = sessionStorage.getItem('cropshield_user')
-  try {
-    return rawUser ? JSON.parse(rawUser) : null
-  } catch {
-    return null
-  }
-}
+// Single source of truth for the session lives in utils/http.js
+const getAuthToken = getToken
+const getAuthUser = getUser
 
 function ProtectedRoute({ children }) {
   const location = useLocation()
@@ -142,20 +134,18 @@ function Navbar() {
     const handleAuthChange = () => {
       setCurrentUser(getAuthUser())
     }
-    window.addEventListener('cropshield_auth_changed', handleAuthChange)
+    window.addEventListener(AUTH_CHANGED_EVENT, handleAuthChange)
     window.addEventListener('storage', handleAuthChange)
     return () => {
-      window.removeEventListener('cropshield_auth_changed', handleAuthChange)
+      window.removeEventListener(AUTH_CHANGED_EVENT, handleAuthChange)
       window.removeEventListener('storage', handleAuthChange)
     }
   }, [])
 
   const handleLogout = () => {
-    sessionStorage.clear()
-    localStorage.removeItem('cropshield_token')
-    localStorage.removeItem('cropshield_user')
+    // Clears session, per-user caches, SW API caches and the push subscription (best effort).
+    logout()
     setCurrentUser(null)
-    window.dispatchEvent(new Event('cropshield_auth_changed'))
     navigate('/login', { replace: true })
   }
 
@@ -372,7 +362,8 @@ function Navbar() {
         )}
       </header>
 
-      <VoiceAssistantModal isOpen={voiceOpen} onClose={() => setVoiceOpen(false)} />
+      {/* keyed by user so chat history never carries over to the next login */}
+      <VoiceAssistantModal key={getUserCacheId(currentUser) || 'anon'} isOpen={voiceOpen} onClose={() => setVoiceOpen(false)} />
     </>
   )
 }
@@ -390,16 +381,27 @@ function Footer() {
   )
 }
 
+// Per-route error boundary: a crash on one screen no longer blanks the whole app,
+// and navigating to another route resets it.
+function RouteErrorBoundary({ children }) {
+  const location = useLocation()
+  return (
+    <ErrorBoundary variant="route" resetKey={location.pathname}>
+      {children}
+    </ErrorBoundary>
+  )
+}
+
 function AppRoutes() {
   const { t } = useTranslation('common')
   const [currentUser, setCurrentUser] = useState(getAuthUser())
 
   useEffect(() => {
     const handleAuthChange = () => setCurrentUser(getAuthUser())
-    window.addEventListener('cropshield_auth_changed', handleAuthChange)
+    window.addEventListener(AUTH_CHANGED_EVENT, handleAuthChange)
     window.addEventListener('storage', handleAuthChange)
     return () => {
-      window.removeEventListener('cropshield_auth_changed', handleAuthChange)
+      window.removeEventListener(AUTH_CHANGED_EVENT, handleAuthChange)
       window.removeEventListener('storage', handleAuthChange)
     }
   }, [])
@@ -549,13 +551,14 @@ function AppRoutes() {
       {showSidebar ? (
         <div className="flex items-start max-w-[1550px] mx-auto">
           <Sidebar items={sidebarItems} accent={currentUser.role === 'admin' ? 'violet' : 'sky'} className="sticky top-16" />
-          <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8">{routes}</main>
+          <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-8"><RouteErrorBoundary>{routes}</RouteErrorBoundary></main>
         </div>
       ) : (
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{routes}</main>
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"><RouteErrorBoundary>{routes}</RouteErrorBoundary></main>
       )}
       <Footer />
-      <ChatbotWidget />
+      {/* keyed by user so chatbot history resets on logout / user switch */}
+      <ChatbotWidget key={getUserCacheId(currentUser) || 'anon'} />
     </>
   )
 }

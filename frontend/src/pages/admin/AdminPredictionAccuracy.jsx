@@ -3,17 +3,14 @@ import { TrendingUp, RefreshCw, Sparkles, Sprout, MapPin } from 'lucide-react'
 import clsx from 'clsx'
 import StatCard from '../../components/ui/StatCard'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
 
 export default function AdminPredictionAccuracy() {
   const [predictionAccuracy, setPredictionAccuracy] = useState(null)
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
 
   const fetchPredictionAccuracy = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/admin/prediction-accuracy`, { headers: authHeaders })
-      if (res.ok) setPredictionAccuracy(await res.json())
+      setPredictionAccuracy(await apiFetch('/admin/prediction-accuracy'))
     } catch (e) { console.error(e) }
   }, [])
 

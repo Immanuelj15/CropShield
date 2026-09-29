@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import axios from 'axios'
+import React, { useState } from 'react'
+import { apiFetch, getUser } from '../utils/http'
 import {
   Sparkles, Navigation
 } from 'lucide-react'
@@ -21,98 +21,45 @@ export default function RegionalScanPage() {
   const [scanResult, setScanResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [userRole, setUserRole] = useState('farmer')
+  const [errorKind, setErrorKind] = useState(null) // 'too_large' | 'failed'
+  // Role for UI comes from the shared session (P2-3); the backend still enforces RBAC.
+  const [userRole] = useState(() => getUser()?.role || 'farmer')
   const [colorMode, setColorMode] = useState('pest') // 'pest' | 'vegetation'
 
-  useEffect(() => {
-    // Determine user role from token or stored profile
-    const storedRole = localStorage.getItem('role') || localStorage.getItem('cropshield_role')
-    if (storedRole) {
-      setUserRole(storedRole)
-    }
-  }, [])
-
-  const handleShapeFinalized = async (polygonGeoJSON) => {
-    setFinalizedPolygon(polygonGeoJSON)
+  const runScan = async (polygonGeoJSON) => {
     setLoading(true)
     setError(null)
+    setErrorKind(null)
     setScanResult(null)
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('cropshield_token')
-      const headers = token ? { Authorization: `Bearer ${token}` } : {}
-
-      const res = await axios.post('/api/v1/outbreak/scan-area', polygonGeoJSON, { headers })
-      setScanResult(res.data)
+      const data = await apiFetch('/outbreak/scan-area', { method: 'POST', json: polygonGeoJSON })
+      setScanResult(data)
     } catch (err) {
       console.error('Scan area error:', err)
-      const detail = err.response?.data?.detail
-      if (err.response?.status === 422) {
-        setError(detail?.message || 'Selected zone is too large (>500 farms). Please zoom in and scan a smaller zone.')
+      // P2-5: never fabricate a result — show an error state with retry instead.
+      if (err.status === 422) {
+        setErrorKind('too_large')
+        setError(err.message || 'Selected zone is too large (>500 farms). Please zoom in and scan a smaller zone.')
       } else {
-        // Provide resilient diagnostic baseline if offline/demo
-        setScanResult({
-          status: 'success',
-          farm_count: 8,
-          risk_breakdown: { High: 2, Medium: 3, Low: 3 },
-          dominant_threat: {
-            pest_or_disease: 'Cotton Whitefly (Bemisia tabaci)',
-            affected_farm_count: 5,
-            shap_summary: '7-day elevated canopy humidity (>82%) and thermal accumulation above seasonal baseline.',
-          },
-          farms: [
-            {
-              farm_id: 'farm_01',
-              name: 'Kovilpatti Demo Plot 1',
-              location: [77.9780, 9.1750],
-              risk_level: 'High',
-              crop_type: 'Cotton',
-              threat_name: 'Cotton Whitefly',
-            },
-            {
-              farm_id: 'farm_02',
-              name: 'Kovilpatti Demo Plot 2',
-              location: [77.9820, 9.1780],
-              risk_level: 'High',
-              crop_type: 'Cotton',
-              threat_name: 'Cotton Whitefly',
-            },
-            {
-              farm_id: 'farm_03',
-              name: 'Kovilpatti Demo Plot 3',
-              location: [77.9750, 9.1820],
-              risk_level: 'Medium',
-              crop_type: 'Cotton',
-              threat_name: 'Jassids',
-            },
-            {
-              farm_id: 'farm_04',
-              name: 'Kovilpatti Demo Plot 4',
-              location: [77.9850, 9.1720],
-              risk_level: 'Medium',
-              crop_type: 'Sorghum',
-              threat_name: 'Shoot Fly',
-            },
-            {
-              farm_id: 'farm_05',
-              name: 'Kovilpatti Demo Plot 5',
-              location: [77.9810, 9.1850],
-              risk_level: 'Low',
-              crop_type: 'Millets',
-              threat_name: 'Optimal Canopy',
-            },
-          ],
-        })
+        setErrorKind('failed')
+        setError(err.message || 'The regional scan could not be completed. Please try again.')
       }
     } finally {
       setLoading(false)
     }
   }
 
+  const handleShapeFinalized = (polygonGeoJSON) => {
+    setFinalizedPolygon(polygonGeoJSON)
+    runScan(polygonGeoJSON)
+  }
+
   const handleClear = () => {
     setFinalizedPolygon(null)
     setScanResult(null)
     setError(null)
+    setErrorKind(null)
   }
 
   const jumpToPreset = (preset) => {
@@ -210,6 +157,8 @@ export default function RegionalScanPage() {
           scanResult={scanResult}
           loading={loading}
           error={error}
+          errorTitle={errorKind === 'too_large' ? 'Zone Scan Exceeded' : 'Scan failed'}
+          onRetry={errorKind === 'failed' && finalizedPolygon ? () => runScan(finalizedPolygon) : undefined}
           userRole={userRole}
           polygonGeoJSON={finalizedPolygon}
           onClear={handleClear}

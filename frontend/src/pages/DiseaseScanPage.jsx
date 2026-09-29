@@ -1,11 +1,13 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Upload, Camera, CheckCircle2, Leaf, Cpu,
   AlertTriangle, RefreshCw, Sparkles, FileImage,
   ShieldCheck, Droplets
 } from 'lucide-react'
-import axios from 'axios'
+import api from '../utils/api'
+import { apiFetch } from '../utils/http'
+import { farmIdOf } from '../utils/farms'
 import { compressImage } from '../utils/imageCompression'
 
 export default function DiseaseScanPage() {
@@ -18,6 +20,27 @@ export default function DiseaseScanPage() {
   const [result, setResult] = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
   const fileInputRef = useRef(null)
+  const [farmId, setFarmId] = useState(null)
+
+  // Link scans to the caller's farm when they have one (P2-3). Failure is non-fatal.
+  useEffect(() => {
+    const controller = new AbortController()
+    apiFetch('/farms/me', { signal: controller.signal })
+      .then((farm) => setFarmId(farmIdOf(farm) || null))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [])
+
+  // Revoke preview object URLs when replaced and on unmount (P3-9)
+  const previewRef = useRef(null)
+  const setPreview = (url) => {
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current)
+    previewRef.current = url
+    setImagePreview(url)
+  }
+  useEffect(() => () => {
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current)
+  }, [])
 
   const handleImageChange = async (e) => {
     const file = e.target.files?.[0]
@@ -41,8 +64,7 @@ export default function DiseaseScanPage() {
     }
 
     try {
-      const previewUrl = URL.createObjectURL(file)
-      setImagePreview(previewUrl)
+      setPreview(URL.createObjectURL(file))
       
       // Perform client-side compression immediately
       const { file: compressedFile, meta } = await compressImage(file)
@@ -54,7 +76,8 @@ export default function DiseaseScanPage() {
   }
 
   const runScan = async () => {
-    if (!imageFile && !imagePreview) {
+    if (loading) return
+    if (!imageFile) {
       setErrorMsg('Please select or capture a leaf photo first.')
       return
     }
@@ -67,18 +90,12 @@ export default function DiseaseScanPage() {
     // Append compressed blob as JPEG
     formData.append('file', imageFile, 'leaf_scan.jpg')
     formData.append('crop_hint', selectedCrop)
+    if (farmId) formData.append('farm_id', farmId)
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('cropshield_token')
-      const headers = {
-        'Content-Type': 'multipart/form-data',
-      }
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      }
-
-      const res = await axios.post('/api/v1/disease/detect', formData, {
-        headers,
+      // Shared axios instance: Bearer token from sessionStorage + 401 redirect + normalized errors
+      const res = await api.post('/disease/detect', formData, {
+        timeout: 60000,
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {
             const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
@@ -90,10 +107,9 @@ export default function DiseaseScanPage() {
       setResult(res.data)
       setUploadProgress(100)
     } catch (err) {
-      const detail = err.response?.data?.detail
-      const message = typeof detail === 'string' ? detail : detail?.message || err.message
+      const message = err.message
 
-      if (err.response?.status === 400 || err.response?.status === 413) {
+      if (err.status === 400 || err.status === 413) {
         setErrorMsg(`Upload rejected: ${message}`)
       } else {
         setErrorMsg(message || 'Could not reach the disease diagnosis service. Please check your connection and try again.')
@@ -106,7 +122,7 @@ export default function DiseaseScanPage() {
 
   const resetScan = () => {
     setImageFile(null)
-    setImagePreview(null)
+    setPreview(null)
     setCompressionInfo(null)
     setResult(null)
     setErrorMsg(null)
@@ -280,7 +296,24 @@ export default function DiseaseScanPage() {
         {/* Diagnosis & Treatment Results (7 Cols) */}
         <div className="lg:col-span-7">
           <AnimatePresence mode="wait">
-            {result ? (
+            {result && result.model_available === false ? (
+              <motion.div
+                key="model-unavailable-card"
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                className="card p-7 space-y-3 border-l-4 border-amber-500 shadow-lg"
+                role="alert"
+              >
+                <h3 className="text-xl font-black text-amber-900 flex items-center gap-2">
+                  <AlertTriangle size={20} className="text-amber-600" /> Disease model unavailable — result not reliable
+                </h3>
+                <p className="text-sm text-stone-700 leading-relaxed">
+                  {result.message || 'The leaf-disease model is not loaded on the server, so no diagnosis, confidence or treatment can be given for this photo.'}
+                </p>
+                <p className="text-xs text-stone-500">Do not apply any treatment based on this scan. Ask an agronomist through the support desk instead.</p>
+              </motion.div>
+            ) : result ? (
               <motion.div
                 key="result-card"
                 initial={{ opacity: 0, y: 16 }}
@@ -294,7 +327,7 @@ export default function DiseaseScanPage() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="px-2.5 py-0.5 bg-brand-100 text-brand-800 text-xs font-bold rounded-full uppercase tracking-wider">
-                        {result.crop} Diagnosis
+                        {result.crop || selectedCrop} Diagnosis
                       </span>
                       <span
                         className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
@@ -309,23 +342,28 @@ export default function DiseaseScanPage() {
                       </span>
                     </div>
                     <h3 className="text-2xl font-black text-stone-900 tracking-tight">
-                      {result.disease_name}
+                      {result.disease_name || result.predicted_class || 'Unknown'}
                     </h3>
+                    {result.is_heuristic && (
+                      <p className="text-[11px] font-semibold text-amber-700">Heuristic estimate — confirm with an agronomist.</p>
+                    )}
                     <p className="text-xs text-stone-500 font-mono italic">
                       Pathogen: {result.pathogen}
                     </p>
                   </div>
 
                   {/* Animated Confidence Gauge */}
+                  {typeof result.confidence === 'number' && (
                   <div className="text-right">
                     <span className="text-xs text-stone-500 font-medium">Model Confidence</span>
                     <p className="text-3xl font-black text-brand-700">
                       {Math.round(result.confidence * 100)}%
                     </p>
-                    <span className="text-[11px] text-stone-400 font-mono">
-                      {result.model_name || 'resnet18_plantvillage_v1'}
-                    </span>
+                    {result.model_name && (
+                      <span className="text-[11px] text-stone-400 font-mono">{result.model_name}</span>
+                    )}
                   </div>
+                  )}
                 </div>
 
                 {/* Differential Diagnosis (Top-K) */}
@@ -346,10 +384,10 @@ export default function DiseaseScanPage() {
                         >
                           <div className="flex justify-between items-center mb-1">
                             <span className="truncate pr-1 text-[11px] font-mono">
-                              {item.class.split('___').pop().replace(/_/g, ' ')}
+                              {String(item.class || '').split('___').pop().replace(/_/g, ' ')}
                             </span>
                             <span className="font-bold text-brand-800 shrink-0">
-                              {(item.confidence * 100).toFixed(1)}%
+                              {typeof item.confidence === 'number' ? `${(item.confidence * 100).toFixed(1)}%` : '—'}
                             </span>
                           </div>
                           <div className="w-full bg-stone-200/80 rounded-full h-1.5 overflow-hidden">
@@ -357,7 +395,7 @@ export default function DiseaseScanPage() {
                               className={`h-1.5 rounded-full ${
                                 idx === 0 ? 'bg-brand-600' : 'bg-stone-400'
                               }`}
-                              style={{ width: `${Math.min(100, item.confidence * 100)}%` }}
+                              style={{ width: `${Math.min(100, (Number(item.confidence) || 0) * 100)}%` }}
                             />
                           </div>
                         </div>
@@ -367,27 +405,33 @@ export default function DiseaseScanPage() {
                 )}
 
                 {/* Treatment Advisories Grid */}
+                {(result.organic_treatment || result.chemical_treatment) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Organic Solution */}
+                  {result.organic_treatment && (
                   <div className="p-5 rounded-2xl bg-brand-50/70 border border-brand-200/80 space-y-2">
                     <h4 className="font-bold text-brand-900 text-sm flex items-center gap-2">
                       <CheckCircle2 size={16} className="text-brand-700" /> Organic & Bio-Control Solution
                     </h4>
                     <p className="text-xs text-brand-900 leading-relaxed">
-                      {result.organic_treatment || 'Apply 2% Neem oil or Trichoderma viride bio-fungicide.'}
+                      {result.organic_treatment}
                     </p>
                   </div>
+                  )}
 
                   {/* Chemical Recommendation */}
+                  {result.chemical_treatment && (
                   <div className="p-5 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-2">
                     <h4 className="font-bold text-blue-950 text-sm flex items-center gap-2">
                       <Droplets size={16} className="text-blue-700" /> Targeted Chemical Treatment
                     </h4>
                     <p className="text-xs text-blue-900 leading-relaxed">
-                      {result.chemical_treatment || 'Apply systemic fungicide or bactericide as per TNAU crop schedule.'}
+                      {result.chemical_treatment}
                     </p>
                   </div>
+                  )}
                 </div>
+                )}
 
                 {/* Agronomic Prevention Tips */}
                 {result.prevention && (

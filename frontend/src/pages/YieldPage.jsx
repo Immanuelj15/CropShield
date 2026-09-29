@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { TrendingUp, Sprout, BarChart2, Check } from 'lucide-react'
-import axios from 'axios'
+import api from '../utils/api'
 import { ErrorState } from '../components'
 
 export default function YieldPage() {
@@ -20,7 +20,7 @@ export default function YieldPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await axios.post('/api/v1/yield/predict', {
+      const res = await api.post('/yield/predict', {
         crop,
         temperature_c: parseFloat(temperature),
         humidity_pct: parseFloat(humidity),
@@ -32,7 +32,7 @@ export default function YieldPage() {
       setYieldResult(res.data)
     } catch (err) {
       setYieldResult(null)
-      setError(err?.response?.data?.detail || err?.message || 'Could not reach the yield forecasting service. Please try again.')
+      setError(err?.message || 'Could not reach the yield forecasting service. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -131,6 +131,22 @@ export default function YieldPage() {
                 </div>
               </div>
 
+              {/* Model confidence: the formula model has no validated confidence (may be null) */}
+              <div className="card p-4 text-xs flex flex-wrap items-center justify-between gap-2">
+                <span className="font-bold text-stone-700 uppercase tracking-wider">Model Confidence</span>
+                <span className="font-bold text-stone-900">
+                  {typeof yieldResult.confidence_score === 'number'
+                    ? `${Math.round(yieldResult.confidence_score * 100)}%`
+                    : 'Not available'}
+                </span>
+                {(yieldResult.is_heuristic || yieldResult.source) && (
+                  <p className="w-full text-[11px] text-stone-500">
+                    {yieldResult.is_heuristic ? 'Formula-based estimate, not a validated ML prediction.' : ''}
+                    {yieldResult.source ? ` Source: ${yieldResult.source}` : ''}
+                  </p>
+                )}
+              </div>
+
               {/* Factors */}
               <div className="card p-6 space-y-4">
                 <h3 className="text-sm font-bold text-stone-800 uppercase tracking-wider flex items-center gap-2">
@@ -138,7 +154,7 @@ export default function YieldPage() {
                 </h3>
 
                 <div className="space-y-3">
-                  {yieldResult.factor_contributions.map((fc, i) => (
+                  {(yieldResult.factor_contributions || []).map((fc, i) => (
                     <div key={i} className="flex items-center justify-between text-xs font-medium border-b border-stone-100 pb-2">
                       <span className="text-stone-700">{fc.factor}</span>
                       <span className={`font-bold ${fc.impact_pct >= 0 ? 'text-brand-600' : 'text-red-600'}`}>

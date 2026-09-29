@@ -18,6 +18,9 @@ def compute_fused_health_score(
     climate_risk_score: float,
     image_diagnosis_confidence: Optional[float] = None,
     ndvi_value: Optional[float] = None,
+    image_predicted_class: Optional[str] = None,
+    image_is_healthy: Optional[bool] = None,
+    image_model_available: bool = True,
 ) -> Dict[str, Any]:
     """
     Weighted fusion of three independent risk signals into one 0-100 overall
@@ -25,7 +28,11 @@ def compute_fused_health_score(
 
     Args:
         climate_risk_score: 0.0 to 1.0 (from XGBoost model; higher = higher threat)
-        image_diagnosis_confidence: 0.0 to 1.0 (from CNN disease detector; higher = severe disease)
+        image_diagnosis_confidence: 0.0 to 1.0 — CNN confidence of its predicted class
+        image_predicted_class: predicted class name (a class containing "healthy" is treated as healthy)
+        image_is_healthy: explicit override of the healthy/disease interpretation
+        image_model_available: False → the image signal is skipped (model unavailable /
+            heuristic output must never influence the score)
         ndvi_value: -1.0 to 1.0 (from Sentinel-2 NDVI; higher = dense chlorophyll biomass)
 
     Returns:
@@ -40,9 +47,13 @@ def compute_fused_health_score(
     climate_health = 1.0 - clamped_climate_risk
 
     image_health: Optional[float] = None
-    if image_diagnosis_confidence is not None:
+    if image_model_available and image_diagnosis_confidence is not None:
         clamped_image_conf = max(0.0, min(1.0, float(image_diagnosis_confidence)))
-        image_health = 1.0 - clamped_image_conf
+        healthy = image_is_healthy
+        if healthy is None and image_predicted_class:
+            healthy = "healthy" in image_predicted_class.lower()
+        # Confident "healthy" → high health; confident disease → low health.
+        image_health = clamped_image_conf if healthy else 1.0 - clamped_image_conf
 
     ndvi_health: Optional[float] = None
     if ndvi_value is not None:
@@ -109,6 +120,8 @@ def compute_fused_health_score(
         "raw_inputs": {
             "climate_risk_score": round(clamped_climate_risk, 4),
             "image_diagnosis_confidence": round(float(image_diagnosis_confidence), 4) if image_diagnosis_confidence is not None else None,
+            "image_predicted_class": image_predicted_class,
+            "image_signal_used": image_health is not None,
             "ndvi_value": round(float(ndvi_value), 4) if ndvi_value is not None else None
         },
         "explanation_text": explanation_str

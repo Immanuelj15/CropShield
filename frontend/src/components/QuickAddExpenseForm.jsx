@@ -5,6 +5,9 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { queueOfflineAction } from '../utils/offlineQueue'
+import { apiFetch, isNetworkError } from '../utils/http'
+
+const MAX_AMOUNT = 1e9
 
 const CATEGORIES = [
   { id: 'seeds', label: 'Seeds', icon: '🌱', color: 'hover:border-amber-400 peer-checked:bg-amber-500 peer-checked:text-white' },
@@ -29,42 +32,68 @@ export default function QuickAddExpenseForm({
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [notes, setNotes] = useState('')
-  const [receiptUrl, setReceiptUrl] = useState('')
+  const [receiptUrl, setReceiptUrl] = useState('') // only ever a server URL (/uploads/receipts/...)
+  const [receiptFile, setReceiptFile] = useState(null) // selected file, kept so a failed upload can be retried
+  const [receiptError, setReceiptError] = useState(null)
   const [uploadingReceipt, setUploadingReceipt] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(false) // saved or queued: keep the form disabled until it is closed
   const [error, setError] = useState(null)
   const [queuedOffline, setQueuedOffline] = useState(false)
 
-  const handleReceiptUpload = async (e) => {
-    const file = e.target.files?.[0]
+  const uploadReceipt = async (file) => {
     if (!file) return
     setUploadingReceipt(true)
-    setError(null)
+    setReceiptError(null)
+    setReceiptUrl('')
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await fetch('/api/v1/expenses/receipt-upload', {
-        method: 'POST',
-        body: fd,
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setReceiptUrl(data.url)
-      } else {
-        setError('Failed to upload receipt image.')
-      }
+      if (farmId) fd.append('farm_id', farmId)
+      const data = await apiFetch('/expenses/receipt-upload', { method: 'POST', body: fd })
+      if (!data?.url) throw new Error('Upload did not return a receipt URL.')
+      setReceiptUrl(data.url)
     } catch (err) {
-      console.warn('Receipt upload fallback:', err)
-      setReceiptUrl(URL.createObjectURL(file))
+      // Never fall back to a local blob: URL — it would be saved to the database and be useless elsewhere.
+      console.warn('Receipt upload failed:', err)
+      setReceiptError(
+        isNetworkError(err)
+          ? 'Receipt could not be uploaded (offline). Retry, or remove it and save without a receipt.'
+          : `Receipt upload failed: ${err.message}. Retry, or remove it and save without a receipt.`
+      )
     } finally {
       setUploadingReceipt(false)
     }
   }
 
+  const handleReceiptUpload = (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setReceiptFile(file)
+    uploadReceipt(file)
+  }
+
+  const clearReceipt = () => {
+    setReceiptFile(null)
+    setReceiptUrl('')
+    setReceiptError(null)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!amount || Number(amount) <= 0) {
-      setError('Please enter a valid expense amount.')
+    if (submitting || done) return
+    const numericAmount = Number(amount)
+    if (!amount || !Number.isFinite(numericAmount) || numericAmount <= 0 || numericAmount > MAX_AMOUNT) {
+      setError('Please enter a valid expense amount (up to ₹100 crore).')
+      return
+    }
+    if (uploadingReceipt) {
+      setError('Please wait for the receipt upload to finish.')
+      return
+    }
+    if (receiptFile && !receiptUrl) {
+      setError('The receipt was not uploaded. Retry the upload or remove the receipt to save without it.')
       return
     }
 
@@ -74,37 +103,31 @@ export default function QuickAddExpenseForm({
     const payload = {
       farm_id: farmId,
       season,
-      crop_type: cropType,
+      crop_type: cropType || 'General',
       district,
       category,
-      amount: Number(amount),
+      amount: numericAmount,
       date,
       notes: notes.trim(),
       receipt_photo_url: receiptUrl || null,
     }
 
     try {
-      const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('cropshield_token')
-      const res = await fetch('/api/v1/expenses', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (res.ok) {
-        onSuccess?.()
-        onClose?.()
-      } else {
-        throw new Error('Server returned error.')
-      }
+      await apiFetch('/expenses', { method: 'POST', json: payload })
+      setDone(true)
+      onSuccess?.()
+      onClose?.()
     } catch (err) {
+      if (!isNetworkError(err)) {
+        // Server answered (4xx/5xx): show the real error instead of pretending it was queued.
+        setError(err.message || 'Could not record expense. Please retry.')
+        return
+      }
       console.warn('Network issue, storing expense in offline queue...', err)
       try {
         await queueOfflineAction('expense_log', payload)
         setQueuedOffline(true)
+        setDone(true)
         setTimeout(() => {
           onSuccess?.()
           onClose?.()
@@ -253,16 +276,44 @@ export default function QuickAddExpenseForm({
             <label className="w-full p-2 rounded-xl border border-dashed border-stone-300 hover:border-brand-500 bg-stone-50 hover:bg-brand-50/40 text-stone-600 flex items-center justify-center gap-2 cursor-pointer transition">
               <Upload size={14} className="text-stone-400" />
               <span className="font-semibold truncate max-w-[140px]">
-                {uploadingReceipt ? 'Uploading...' : receiptUrl ? 'Receipt Attached ✓' : 'Snap / Upload'}
+                {uploadingReceipt ? 'Uploading...' : receiptUrl ? 'Receipt Attached ✓' : receiptFile ? 'Choose another' : 'Snap / Upload'}
               </span>
               <input
                 type="file"
                 accept="image/*,.pdf"
                 capture="environment"
                 onChange={handleReceiptUpload}
+                disabled={uploadingReceipt || submitting || done}
                 className="sr-only"
               />
             </label>
+            {receiptError && (
+              <div className="mt-1.5 space-y-1">
+                <p className="text-[11px] text-red-600 font-semibold">{receiptError}</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => uploadReceipt(receiptFile)}
+                    disabled={uploadingReceipt || !receiptFile}
+                    className="px-2 py-1 rounded-lg border border-stone-300 text-[11px] font-bold hover:bg-stone-50 disabled:opacity-50"
+                  >
+                    Retry upload
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearReceipt}
+                    className="px-2 py-1 rounded-lg border border-red-200 text-red-600 text-[11px] font-bold hover:bg-red-50"
+                  >
+                    Remove receipt
+                  </button>
+                </div>
+              </div>
+            )}
+            {receiptUrl && !receiptError && (
+              <button type="button" onClick={clearReceipt} className="mt-1 text-[11px] text-stone-500 underline">
+                Remove receipt
+              </button>
+            )}
           </div>
         </div>
 
@@ -283,7 +334,7 @@ export default function QuickAddExpenseForm({
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || done || uploadingReceipt}
           className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
         >
           {submitting ? (

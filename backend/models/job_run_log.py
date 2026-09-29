@@ -12,7 +12,7 @@ from pydantic import Field
 
 class JobRunLog(Document):
     job_name: str = "daily_ingestion_job"
-    status: str = "success"  # "success" | "partial_failure" | "failed" | "running"
+    status: str = "success"  # "success" | "partial_failure" | "failed" | "running" | "skipped"
     run_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
     duration_seconds: float = 0.0

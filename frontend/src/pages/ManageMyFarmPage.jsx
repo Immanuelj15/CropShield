@@ -13,6 +13,8 @@ import BoundaryDrawingStep from '../components/BoundaryDrawingStep'
 import { ErrorState } from '../components'
 import ConfirmDialog from '../components/ui/ConfirmDialog'
 import { useToast } from '../components/ui/Toast'
+import { apiFetch, getUser } from '../utils/http'
+import { fetchMyFarms, farmIdOf, canManageFarm } from '../utils/farms'
 
 const TN_DISTRICTS = [
   'Ariyalur', 'Chengalpattu', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri',
@@ -111,32 +113,18 @@ export default function ManageMyFarmPage() {
   const [submitting, setSubmitting] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null) // { id, title }
   const toast = useToast()
+  const currentUser = getUser()
 
   // Fetch registered farms
   const loadFarms = async () => {
     setLoading(true)
     setError(null)
     try {
-      const token = sessionStorage.getItem('cropshield_token')
-      const res = await fetch('/api/v1/farms', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      if (res.ok) {
-        const data = await res.json()
-        setFarms(data || [])
-      } else {
-        // Fallback to /api/v1/farmer/profile
-        const pRes = await fetch('/api/v1/farmer/profile', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-        if (pRes.ok) {
-          const profile = await pRes.json()
-          setFarms(profile.farms || [])
-        }
-      }
+      // Only the caller's own farms (admin: all) — contract 3
+      setFarms(await fetchMyFarms())
     } catch (err) {
       console.error('Failed to load farms:', err)
-      setError('Unable to load registered fields.')
+      setError(err.message || 'Unable to load registered fields.')
     } finally {
       setLoading(false)
     }
@@ -162,6 +150,10 @@ export default function ManageMyFarmPage() {
 
   // Open Edit Modal
   const handleOpenEdit = (farm) => {
+    if (!canManageFarm(farm, currentUser)) {
+      toast.error('You can only edit your own farms.')
+      return
+    }
     setEditingFarm(farm)
     setFarmName(farm.farm_name || farm.name || '')
     setDistrict(farm.district || 'Thoothukudi')
@@ -202,6 +194,7 @@ export default function ManageMyFarmPage() {
   // Submit Save or Update
   const handleSubmitFarm = async (e) => {
     e.preventDefault()
+    if (submitting) return
     if (!farmName.trim()) {
       toast.error('Please enter a field name.')
       return
@@ -220,39 +213,19 @@ export default function ManageMyFarmPage() {
     }
 
     try {
-      const token = sessionStorage.getItem('cropshield_token')
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      }
-
-      let res
       if (editingFarm) {
-        const farmId = editingFarm.id || editingFarm._id
-        res = await fetch(`/api/v1/farms/${farmId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(payload),
-        })
+        const farmId = farmIdOf(editingFarm)
+        await apiFetch(`/farms/${encodeURIComponent(farmId)}`, { method: 'PUT', json: payload })
       } else {
-        res = await fetch('/api/v1/farms', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        })
+        await apiFetch('/farms', { method: 'POST', json: payload })
       }
-
-      if (res.ok) {
-        setIsModalOpen(false)
-        toast.success(editingFarm ? 'Field updated successfully.' : 'Field registered successfully.')
-        loadFarms()
-      } else {
-        const err = await res.json()
-        toast.error(err.detail || 'Failed to save farm details.')
-      }
+      setIsModalOpen(false)
+      toast.success(editingFarm ? 'Field updated successfully.' : 'Field registered successfully.')
+      loadFarms()
     } catch (err) {
       console.error('Error saving farm:', err)
-      toast.error('Network error while saving field.')
+      // err.message is the normalized FastAPI detail (422 arrays become readable text)
+      toast.error(err.message || 'Failed to save farm details.')
     } finally {
       setSubmitting(false)
     }
@@ -261,16 +234,12 @@ export default function ManageMyFarmPage() {
   // Delete farm
   const handleDeleteFarm = async (farmId) => {
     try {
-      const res = await fetch(`/api/v1/farms/${farmId}`, { method: 'DELETE' })
-      if (res.ok) {
-        toast.success('Field removed.')
-        loadFarms()
-      } else {
-        toast.error('Failed to delete farm.')
-      }
+      await apiFetch(`/farms/${encodeURIComponent(farmId)}`, { method: 'DELETE' })
+      toast.success('Field removed.')
+      loadFarms()
     } catch (err) {
       console.error('Delete error:', err)
-      toast.error('Error deleting farm.')
+      toast.error(err.message || 'Failed to delete farm.')
     } finally {
       setDeleteTarget(null)
     }
@@ -363,7 +332,8 @@ export default function ManageMyFarmPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {farms.map((farm) => {
-            const farmId = farm.id || farm._id
+            const farmId = farmIdOf(farm)
+            const canManage = canManageFarm(farm, currentUser)
             const farmTitle = farm.farm_name || farm.name || 'Unnamed Field'
             const acres = farm.area_hectares
               ? Math.round(farm.area_hectares * 2.471 * 10) / 10
@@ -396,6 +366,7 @@ export default function ManageMyFarmPage() {
                       </div>
                     </div>
 
+                    {canManage && (
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => handleOpenEdit(farm)}
@@ -412,6 +383,7 @@ export default function ManageMyFarmPage() {
                         <Trash2 size={16} />
                       </button>
                     </div>
+                    )}
                   </div>
 
                   {/* Satellite Mini Map Preview */}

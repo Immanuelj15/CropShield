@@ -17,8 +17,52 @@ from backend.models.farm import Farm
 from backend.models.crop_water_coefficient import CropWaterCoefficient
 from backend.models.crop_nutrient_requirement import CropNutrientRequirement
 from backend.models.farm_activity_plan import FarmActivityPlan
+from backend.db.mongo_helpers import get_collection
 
 logger = logging.getLogger("cropshield.activity_planner")
+
+try:
+    from zoneinfo import ZoneInfo
+    _IST = ZoneInfo("Asia/Kolkata")
+except Exception:  # pragma: no cover
+    _IST = None
+
+
+def today_ist() -> date:
+    """Farm calendar day in Asia/Kolkata (server may run in UTC)."""
+    return datetime.now(_IST).date() if _IST else date.today()
+
+
+def compute_item_status(scheduled: Any, today: date) -> str:
+    item_dt = parse_date(scheduled)
+    return "due_today" if item_dt == today else ("overdue" if item_dt < today else "upcoming")
+
+
+async def refresh_plan_statuses(plan: FarmActivityPlan, today: Optional[date] = None) -> int:
+    """
+    Recomputes upcoming/due_today/overdue for every non-completed item and persists ONLY the changed
+    item statuses with per-item atomic $set + arrayFilters. A filter on status != "completed" guarantees
+    a completion made concurrently by the farmer is never overwritten. Also updates `plan` in memory.
+    Returns the number of items changed.
+    """
+    today = today or today_ist()
+    coll = get_collection(FarmActivityPlan)
+    changed = 0
+    for item in plan.timeline:
+        if item.get("status") == "completed" or not item.get("activity_id"):
+            continue
+        new_status = compute_item_status(item.get("scheduled_date"), today)
+        if item.get("status") == new_status:
+            continue
+        res = await coll.update_one(
+            {"_id": plan.id},
+            {"$set": {"timeline.$[a].status": new_status, "last_updated": datetime.utcnow()}},
+            array_filters=[{"a.activity_id": item["activity_id"], "a.status": {"$ne": "completed"}}],
+        )
+        if res.modified_count:
+            item["status"] = new_status
+            changed += 1
+    return changed
 
 
 def parse_date(d: Any) -> date:
@@ -129,17 +173,14 @@ async def generate_activity_plan(
         raise ValueError(f"Farm not found with id: {farm_id}")
 
     crop = crop_type or getattr(farm, "crop_type", "Cotton") or "Cotton"
-    sowing_dt = parse_date(sowing_date_input or date.today())
-    today = date.today()
+    sowing_dt = parse_date(sowing_date_input or today_ist())
+    today = today_ist()
 
-    # Deactivate existing active plans for this farm
-    existing_plans = await FarmActivityPlan.find(
-        FarmActivityPlan.farm_id == farm.id,
-        FarmActivityPlan.is_active == True,
-    ).to_list()
-    for p in existing_plans:
-        p.is_active = False
-        await p.save()
+    # Deactivate existing active plans for this farm (atomic; no whole-document saves)
+    await get_collection(FarmActivityPlan).update_many(
+        {"farm_id": farm.id, "is_active": True},
+        {"$set": {"is_active": False, "last_updated": datetime.utcnow()}},
+    )
 
     # 1. Fetch Water Coefficients & Growth Stages
     water_coef = await CropWaterCoefficient.find_one(CropWaterCoefficient.crop_type == crop)
@@ -337,19 +378,8 @@ async def get_active_activity_plan(farm_id: str) -> Optional[Dict[str, Any]]:
     if not plan:
         return None
 
-    today = date.today()
-    updated = False
-    for item in plan.timeline:
-        if item.get("status") != "completed":
-            item_dt = parse_date(item.get("scheduled_date"))
-            new_status = "due_today" if item_dt == today else ("overdue" if item_dt < today else "upcoming")
-            if item.get("status") != new_status:
-                item["status"] = new_status
-                updated = True
-
-    if updated:
-        plan.last_updated = datetime.utcnow()
-        await plan.save()
+    # Per-item atomic status refresh — never clobbers concurrent completions
+    await refresh_plan_statuses(plan)
 
     # Convert to clean dict response
     data = plan.dict()
@@ -368,19 +398,24 @@ async def mark_activity_completed(farm_id: str, activity_id: str) -> Dict[str, A
     if not plan:
         raise ValueError("No active farm activity plan found for this farm.")
 
-    found = False
-    for item in plan.timeline:
-        if item.get("activity_id") == activity_id:
-            item["status"] = "completed"
-            item["completed_at"] = datetime.utcnow().isoformat()
-            found = True
-            break
-
-    if not found:
+    if not any(item.get("activity_id") == activity_id for item in plan.timeline):
         raise ValueError(f"Activity with id '{activity_id}' not found in timeline.")
 
-    plan.last_updated = datetime.utcnow()
-    await plan.save()
+    # Atomic per-item update (the reminder job may be updating other items concurrently)
+    completed_at = datetime.utcnow().isoformat()
+    await get_collection(FarmActivityPlan).update_one(
+        {"_id": plan.id},
+        {"$set": {
+            "timeline.$[a].status": "completed",
+            "timeline.$[a].completed_at": completed_at,
+            "last_updated": datetime.utcnow(),
+        }},
+        array_filters=[{"a.activity_id": activity_id, "a.status": {"$ne": "completed"}}],
+    )
+    for item in plan.timeline:
+        if item.get("activity_id") == activity_id and item.get("status") != "completed":
+            item["status"] = "completed"
+            item["completed_at"] = completed_at
 
     completed_count = sum(1 for a in plan.timeline if a.get("status") == "completed")
     total_count = len(plan.timeline)

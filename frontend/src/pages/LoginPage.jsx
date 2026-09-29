@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Shield, User, Lock, ArrowRight, CheckCircle2, Sprout, ShieldAlert, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import LanguageSelector from '../components/LanguageSelector'
+import { apiFetch, getUser, logout, setSession, isNetworkError } from '../utils/http'
 
 const DEMO_ACCOUNTS = {
   farmer: {
@@ -41,16 +42,17 @@ export default function LoginPage() {
   const [email, setEmail] = useState(DEMO_ACCOUNTS.farmer.email)
   const [password, setPassword] = useState(DEMO_ACCOUNTS.farmer.password)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [success, setSuccess] = useState(null)
-  const [activeUser, setActiveUser] = useState(() => {
+  const [error, setError] = useState(() => {
     try {
-      const raw = sessionStorage.getItem('cropshield_user')
-      return raw ? JSON.parse(raw) : null
+      return new URLSearchParams(window.location.search).get('expired')
+        ? t('auth:session_expired', 'Your session has expired. Please sign in again.')
+        : null
     } catch {
       return null
     }
   })
+  const [success, setSuccess] = useState(null)
+  const [activeUser, setActiveUser] = useState(() => getUser())
 
   const handleRoleSelect = (roleKey) => {
     setSelectedRole(roleKey)
@@ -60,11 +62,8 @@ export default function LoginPage() {
   }
 
   const handleLogoutExisting = () => {
-    sessionStorage.clear()
-    localStorage.removeItem('cropshield_token')
-    localStorage.removeItem('cropshield_user')
+    logout()
     setActiveUser(null)
-    window.dispatchEvent(new Event('cropshield_auth_changed'))
   }
 
   const handleLogin = async (e) => {
@@ -74,47 +73,43 @@ export default function LoginPage() {
     setSuccess(null)
 
     try {
-      const response = await fetch('/api/v1/auth/login', {
+      const data = await apiFetch('/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: email, email: email, password: password }),
+        json: { username: email, email: email, password: password },
+        auth: false,
+        skipAuthRedirect: true,
       })
-
-      if (response.ok) {
-        const data = await response.json()
-        const userObj = {
-          email: data.username || email,
-          role: data.role || selectedRole,
-          name: t(`common:${DEMO_ACCOUNTS[selectedRole]?.labelKey}`) || 'User',
-        }
-        sessionStorage.setItem('cropshield_token', data.access_token)
-        sessionStorage.setItem('cropshield_user', JSON.stringify(userObj))
-        // Clean out legacy localStorage so no stale tokens persist
-        localStorage.removeItem('cropshield_token')
-        localStorage.removeItem('cropshield_user')
-
-        setActiveUser(userObj)
-        window.dispatchEvent(new Event('cropshield_auth_changed'))
-        setSuccess(t('auth:signing_in'))
-        
-        setTimeout(() => {
-          if (userObj.role === 'farmer') {
-            navigate('/farmer/today', { replace: true })
-          } else if (userObj.role === 'agronomist') {
-            navigate('/agronomist/dashboard', { replace: true })
-          } else if (userObj.role === 'admin') {
-            navigate('/admin/dashboard', { replace: true })
-          } else {
-            navigate('/farmer/today', { replace: true })
-          }
-        }, 500)
-
-      } else {
-        const errData = await response.json().catch(() => ({}))
-        setError(errData.detail || t('auth:invalid_credentials'))
+      const role = data?.role || 'farmer'
+      const roleLabelKey = DEMO_ACCOUNTS[role]?.labelKey
+      const userObj = {
+        user_id: data?.user_id || null,
+        email: data?.username || email,
+        role,
+        name: data?.name || (roleLabelKey ? t(`common:${roleLabelKey}`) : 'User'),
       }
+      setSession(data.access_token, userObj)
+
+      setActiveUser(userObj)
+      setSuccess(t('auth:signing_in'))
+
+      setTimeout(() => {
+        if (userObj.role === 'farmer') {
+          navigate('/farmer/today', { replace: true })
+        } else if (userObj.role === 'agronomist') {
+          navigate('/agronomist/dashboard', { replace: true })
+        } else if (userObj.role === 'admin') {
+          navigate('/admin/dashboard', { replace: true })
+        } else {
+          navigate('/farmer/today', { replace: true })
+        }
+      }, 500)
     } catch (err) {
-      setError(t('validation:network_error'))
+      if (isNetworkError(err)) {
+        setError(t('validation:network_error'))
+      } else {
+        // err.message is the normalized FastAPI `detail` (string or 422 array → string)
+        setError(err?.data?.detail ? err.message : t('auth:invalid_credentials'))
+      }
     } finally {
       setLoading(false)
     }

@@ -99,19 +99,21 @@ FALLBACK_PEST_COSTS = {
     },
 }
 
-# Standard expected yield defaults (kg/acre)
+# Expected yield defaults (kg/acre) derived from the official Tamil Nadu state-average yields
+# (DES Tamil Nadu, Statistical Hand Book 2022-23, Table 4.3) held in
+# ml/yield_prediction/yield_model.CROP_BASE_YIELDS (t/ha). Not duplicated here.
+from ml.yield_prediction.yield_model import CROP_BASE_YIELDS, YIELD_SOURCE
+
+KG_PER_ACRE_PER_T_HA = 404.686
+CROP_ALIASES = {"Paddy": "Rice", "Kapas": "Cotton", "Sugar cane": "Sugarcane"}
 DEFAULT_YIELDS_KG_ACRE = {
-    "Cotton": 890.0,     # ~2.2 tons/ha = ~890 kg/acre
-    "Rice": 1820.0,      # ~4.5 tons/ha = ~1,820 kg/acre
-    "Paddy": 1820.0,
-    "Sugarcane": 30350.0,# ~75 tons/ha = ~30,350 kg/acre
-    "Maize": 2428.0,     # ~6.0 tons/ha = ~2,428 kg/acre
-    "Groundnut": 1133.0, # ~2.8 tons/ha = ~1,133 kg/acre
-    "Tomato": 14160.0,   # ~35 tons/ha = ~14,160 kg/acre
-    "Millets": 810.0,    # ~2.0 tons/ha = ~810 kg/acre
-    "Pulses": 607.0,     # ~1.5 tons/ha = ~607 kg/acre
-    "default": 1000.0,
+    crop: round(t_ha * KG_PER_ACRE_PER_T_HA, 1) for crop, t_ha in CROP_BASE_YIELDS.items()
 }
+
+
+def _canonical_crop(crop: str) -> str:
+    c = (crop or "").strip()
+    return CROP_ALIASES.get(c, c)
 
 
 def compute_economic_impact(
@@ -201,41 +203,38 @@ async def get_economic_impact_for_prediction(
     detected_pests: Optional[List[Dict[str, Any]]] = None,
     weather_snapshot: Optional[Dict[str, Any]] = None,
     soil: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
+) -> Optional[Dict[str, Any]]:
     """
     Orchestrates yield estimation, Agmarknet price retrieval, advisory treatment cost lookup,
     and returns a structured economic impact assessment dictionary.
     """
     # ── 1. Calculate Expected Yield ──────────────────────────────────────────
-    expected_yield = DEFAULT_YIELDS_KG_ACRE.get(crop, DEFAULT_YIELDS_KG_ACRE["default"])
+    # Official TN state-average yield for the crop, adjusted only for the farm's soil
+    # profile. Season weather and irrigation are not known here, so the yield model's
+    # typical-TN reference conditions are used for them (today's rainfall x 30 and an
+    # assumed "Drip" system were not real inputs). Unknown crop -> no impact estimate.
+    crop_key = _canonical_crop(crop)
+    if crop_key not in DEFAULT_YIELDS_KG_ACRE:
+        logger.info("No official base yield for crop %r; economic impact not computed.", crop)
+        return None
+    expected_yield = DEFAULT_YIELDS_KG_ACRE[crop_key]
     try:
         from ml.yield_prediction.yield_model import predict_crop_yield
-        temp_c = float(weather_snapshot.get("temperature_c", 28.5)) if weather_snapshot else 28.5
-        rh_pct = float(weather_snapshot.get("humidity_pct", 72.0)) if weather_snapshot else 72.0
-        rain_mm = float(weather_snapshot.get("rainfall_today_mm", 0.0)) * 30.0 if weather_snapshot else 650.0
-
-        soil_n = float(soil.get("nitrogen", 180.0)) if soil else 180.0
-        soil_p = float(soil.get("phosphorus", 45.0)) if soil else 45.0
-        soil_k = float(soil.get("potassium", 150.0)) if soil else 150.0
-        soil_ph = float(soil.get("ph", 6.8)) if soil else 6.8
-        soil_oc = float(soil.get("organic_carbon", 0.65)) if soil else 0.65
-
-        yield_pred = predict_crop_yield(
-            crop=crop,
-            temperature_c=temp_c,
-            humidity_pct=rh_pct,
-            rainfall_mm=max(300.0, rain_mm),
-            soil_n=soil_n,
-            soil_p=soil_p,
-            soil_k=soil_k,
-            soil_ph=soil_ph,
-            organic_carbon=soil_oc,
-            irrigation_type="Drip",
-        )
-        if yield_pred and "expected_yield_kg_acre" in yield_pred:
+        try:
+            from ml.yield_prediction.yield_model import _REFERENCE_CONDITIONS as _ref
+        except ImportError:
+            _ref = {}
+        conditions = dict(_ref)
+        if soil:
+            for key, soil_key in (("soil_n", "nitrogen"), ("soil_p", "phosphorus"), ("soil_k", "potassium"),
+                                  ("soil_ph", "ph"), ("organic_carbon", "organic_carbon")):
+                if soil.get(soil_key) is not None:
+                    conditions[key] = float(soil[soil_key])
+        yield_pred = predict_crop_yield(crop=crop_key, **conditions)
+        if yield_pred and yield_pred.get("expected_yield_kg_acre") is not None:
             expected_yield = yield_pred["expected_yield_kg_acre"]
     except Exception as yield_err:
-        logger.warning("Yield prediction fallback used: %s", yield_err)
+        logger.warning("Yield model adjustment skipped (using official state average): %s", yield_err)
 
     # ── 2. Retrieve Market Price from Agmarknet Database ─────────────────────
     market_price = FALLBACK_MARKET_PRICES.get(crop, FALLBACK_MARKET_PRICES["default"])
@@ -303,7 +302,7 @@ async def get_economic_impact_for_prediction(
         cost_source_note = "TNAU 2024 Regional Input Cost Benchmark"
 
     # ── 4. Compute Economic Impact ───────────────────────────────────────────
-    return compute_economic_impact(
+    result = compute_economic_impact(
         expected_yield_kg_per_acre=expected_yield,
         market_price_per_kg=market_price,
         risk_level=risk_level,
@@ -313,3 +312,6 @@ async def get_economic_impact_for_prediction(
         cost_source_note=cost_source_note,
         market_price_source=market_source,
     )
+    if isinstance(result, dict):
+        result.setdefault("yield_source", YIELD_SOURCE)
+    return result

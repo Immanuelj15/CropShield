@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.db.database import get_db
-from backend.services.geocoding_service import geocode_location
+from backend.services import geocoding_service
 from backend.services import weather_service, soil_service
 from ml.location_prediction.feature_builder import build_advanced_feature_vector
 from ml.location_prediction.model_ensemble import evaluate_model_ensemble
@@ -20,18 +20,25 @@ from backend.services.recommendation_engine import generate_smart_recommendation
 router = APIRouter()
 
 class LocationPredictRequest(BaseModel):
-    state: str = Field("Tamil Nadu")
-    district: str = Field("Thoothukudi")
-    taluk: str = Field("Kovilpatti")
-    village: str = Field("Kovilpatti")
-    crop: str = Field("Cotton")
-    crop_variety: Optional[str] = Field("Bt-Cotton")
+    state: str = Field("Tamil Nadu", max_length=100)
+    district: str = Field("Thoothukudi", max_length=100)
+    taluk: str = Field("Kovilpatti", max_length=100)
+    village: str = Field("Kovilpatti", max_length=100)
+    crop: str = Field("Cotton", max_length=100)
+    crop_variety: Optional[str] = Field("Bt-Cotton", max_length=100)
     sowing_date: Optional[str] = Field(None, example="2026-06-15")
 
 @router.post("/predict-location")
 async def predict_location_early_warning(req: LocationPredictRequest, db: Session = Depends(get_db)):
     # 1. Automatic Geocoding
-    geo_info = geocode_location(req.state, req.district, req.taluk, req.village)
+    geocode_async = getattr(geocoding_service, "geocode_location_async", None)
+    if geocode_async is not None:
+        geo_info = await geocode_async(req.state, req.district, req.taluk, req.village)
+    else:
+        import asyncio
+        geo_info = await asyncio.to_thread(
+            geocoding_service.geocode_location, req.state, req.district, req.taluk, req.village
+        )
     lat, lon = geo_info["latitude"], geo_info["longitude"]
     location_str = f"{req.village or req.taluk}, {req.district}"
 

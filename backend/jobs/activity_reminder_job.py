@@ -22,21 +22,65 @@ from backend.models.farm_activity_plan import FarmActivityPlan
 from backend.models.weather_snapshot import WeatherSnapshot
 from backend.models.job_run_log import JobRunLog
 from backend.services.notification_service import notify_farmer
-from backend.services.activity_planner_service import parse_date
+from backend.services.activity_planner_service import parse_date, refresh_plan_statuses, today_ist
+from backend.db.mongo_helpers import get_collection
+from backend.jobs.locks import activity_reminder_lock
 
 logger = logging.getLogger("cropshield.activity_reminder")
+
+
+async def _claim_item_reminder(plan_id, activity_id: str, today_str: str) -> bool:
+    """
+    Atomically marks a timeline item as notified today. Returns True only for the first caller,
+    so each activity reminder is sent at most once per day (and never for completed items).
+    """
+    res = await get_collection(FarmActivityPlan).update_one(
+        {"_id": plan_id},
+        {"$set": {
+            "timeline.$[a].last_notified_date": today_str,
+            "timeline.$[a].notified_at": datetime.utcnow().isoformat(),
+        }},
+        array_filters=[{
+            "a.activity_id": activity_id,
+            "a.status": {"$ne": "completed"},
+            "a.last_notified_date": {"$ne": today_str},
+        }],
+    )
+    return res.modified_count > 0
+
+
+async def _claim_plan_marker(plan_id, marker: str, today_str: str) -> bool:
+    """Atomically claims a once-per-day plan-level reminder (harvest window, weather warnings)."""
+    field = "reminder_markers." + marker
+    res = await get_collection(FarmActivityPlan).update_one(
+        {"_id": plan_id, field: {"$ne": today_str}},
+        {"$set": {field: today_str}},
+    )
+    return res.modified_count > 0
 
 
 async def run_activity_reminder_job() -> Dict[str, Any]:
     """
     Executes daily check of all active farm activity plans and dispatches alerts.
+    Serialized by activity_reminder_lock; an overlapping call returns status "skipped".
+    Idempotent per day: re-running it does not re-send reminders already sent today.
     """
+    if activity_reminder_lock.locked():
+        logger.warning("Activity reminder job skipped: a run is already in progress.")
+        return {"job_name": "daily_activity_reminder_job", "status": "skipped",
+                "reason": "already_running", "activity_alerts_sent": 0, "smart_weather_alerts_sent": 0}
+    async with activity_reminder_lock:
+        return await _run_activity_reminders()
+
+
+async def _run_activity_reminders() -> Dict[str, Any]:
     start_time = datetime.utcnow()
     total_plans = 0
     alerts_dispatched = 0
     weather_warnings = 0
     failed_farms = 0
-    today = date.today()
+    today = today_ist()
+    today_str = today.isoformat()
 
     logger.info("Starting Daily Activity Reminder & Smart Farming Alert sweep...")
 
@@ -50,28 +94,22 @@ async def run_activity_reminder_job() -> Dict[str, Any]:
                 continue
 
             # Farm owner user ID for notification
-            owner_id = getattr(farm, "owner_id", None) or getattr(farm, "user_id", None) or str(farm.id)
+            # Only real owners (never the farm id)
+            owner_id = getattr(farm, "owner_id", None) or getattr(farm, "user_id", None)
 
             crop = plan.crop_type or getattr(farm, "crop_type", "Crop")
 
-            # 1. Update activity statuses
-            plan_updated = False
-            due_activities: List[Dict[str, Any]] = []
+            # 1. Update activity statuses: per-item atomic $set + arrayFilters (never touches completed items)
+            await refresh_plan_statuses(plan, today)
 
-            for act in plan.timeline:
-                if act.get("status") == "completed":
-                    continue
+            if not owner_id:
+                logger.info("Farm %s has no owner_id; statuses refreshed, notifications skipped.", farm.id)
+                continue
 
-                act_dt = parse_date(act.get("scheduled_date"))
-                if act_dt == today:
-                    act["status"] = "due_today"
-                    due_activities.append(act)
-                    plan_updated = True
-                elif act_dt < today:
-                    act["status"] = "overdue"
-                    plan_updated = True
-                else:
-                    act["status"] = "upcoming"
+            due_activities: List[Dict[str, Any]] = [
+                act for act in plan.timeline
+                if act.get("status") == "due_today" and parse_date(act.get("scheduled_date")) == today
+            ]
 
             # Check if harvest is approaching within 5 days
             harvest_dt = parse_date(plan.estimated_harvest_date)
@@ -81,10 +119,6 @@ async def run_activity_reminder_job() -> Dict[str, Any]:
                     "title": "Harvest Window Approaching",
                     "days_left": (harvest_dt - today).days,
                 })
-
-            if plan_updated:
-                plan.last_updated = datetime.utcnow()
-                await plan.save()
 
             # 2. Dispatch Alerts for activities due today
             for item in due_activities:
@@ -128,6 +162,16 @@ async def run_activity_reminder_job() -> Dict[str, Any]:
                 else:
                     continue
 
+                # Idempotency: claim today's reminder atomically before sending
+                if act_type == "harvest_window":
+                    claimed = await _claim_plan_marker(plan.id, "harvest_window", today_str)
+                elif item.get("activity_id"):
+                    claimed = await _claim_item_reminder(plan.id, item["activity_id"], today_str)
+                else:
+                    claimed = False
+                if not claimed:
+                    continue
+
                 await notify_farmer(owner_id, event, msgs)
                 alerts_dispatched += 1
 
@@ -141,7 +185,7 @@ async def run_activity_reminder_job() -> Dict[str, Any]:
                 t_max = float(latest_weather.raw.get("T2M_MAX", latest_weather.temperature_c or 30.0))
 
                 # Heavy Rain Warning (> 75mm in 7 days)
-                if rain_7d > 75.0:
+                if rain_7d > 75.0 and await _claim_plan_marker(plan.id, "heavy_rain_warning", today_str):
                     rain_msgs = {
                         "en": f"AgriGuard Weather Alert: Heavy cumulative rainfall ({rain_7d:.0f}mm) recorded. Postpone irrigation and clear drainage furrows.",
                         "ta": f"அக்ரிகார்ட் வானிலை எச்சரிக்கை: அதிக மழை ({rain_7d:.0f}மிமீ) பதிவாகியுள்ளது. பாசனத்தை நிறுத்தி, வடிகால் வசதி செய்யவும்.",
@@ -153,7 +197,7 @@ async def run_activity_reminder_job() -> Dict[str, Any]:
                     weather_warnings += 1
 
                 # Extreme Heat Warning (> 38°C)
-                if t_max >= 38.0:
+                if t_max >= 38.0 and await _claim_plan_marker(plan.id, "heat_warning", today_str):
                     heat_msgs = {
                         "en": f"AgriGuard Heat Advisory: Extreme temperature ({t_max:.1f}°C) detected. Irrigate before 8 AM and maintain soil mulch.",
                         "ta": f"அக்ரிகார்ட் வெப்ப எச்சரிக்கை: கடுமையான வெப்பநிலை ({t_max:.1f}°C). காலை 8 மணிக்குள் பாசனம் செய்து தழைக்கூளம் இடவும்.",
@@ -183,18 +227,17 @@ async def run_activity_reminder_job() -> Dict[str, Any]:
     try:
         log_entry = JobRunLog(
             job_name="daily_activity_reminder_job",
-            run_date=today.isoformat(),
-            status="SUCCESS" if failed_farms == 0 else "PARTIAL",
-            total_farms=total_plans,
-            successful_farms=total_plans - failed_farms,
-            failed_farms=failed_farms,
+            status="success" if failed_farms == 0 else ("partial_failure" if failed_farms < total_plans else "failed"),
+            run_at=start_time,
+            completed_at=datetime.utcnow(),
             duration_seconds=round(duration_sec, 2),
-            details=status_summary,
-            created_at=datetime.utcnow(),
+            farms_processed=total_plans,
+            success_count=total_plans - failed_farms,
+            failed_count=failed_farms,
         )
         await log_entry.insert()
     except Exception as e:
-        logger.debug(f"Could not persist JobRunLog: {e}")
+        logger.warning(f"Could not persist JobRunLog: {e}")
 
     logger.info("Activity Reminder job completed: %d activity alerts, %d weather alerts sent.", alerts_dispatched, weather_warnings)
     return status_summary

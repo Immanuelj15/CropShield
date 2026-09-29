@@ -2,6 +2,11 @@
 CropShield / AgriGuard — Farm Profit & Expense (P&L) Service
 Tracks actual expenses & revenues across seasons, recomputes P&L summaries,
 and compares actual net profit against AI pre-season predicted ranges for model validation.
+
+Money is stored as float rupees, always rounded to 2 decimal places (paise precision).
+Request models bound every amount to 0 < x <= 1e9 and reject NaN/inf, so products and
+sums stay finite. (Converting storage to integer paise was judged too invasive for the
+existing demo datasets and frontend; rounding is applied consistently instead.)
 """
 import os
 import csv
@@ -16,63 +21,96 @@ from backend.models.season_pnl_summary import SeasonPnlSummary
 from backend.models.farm import Farm
 from backend.models.crop_cost_template import CropCostTemplate
 
+try:
+    from pymongo.errors import DuplicateKeyError
+except Exception:  # pragma: no cover
+    DuplicateKeyError = Exception  # type: ignore
+
+EXPENSE_CATEGORIES = ("seeds", "fertilizer", "labor", "irrigation", "pesticides", "other")
+GENERIC_CROP_NAMES = {"", "general", "general crop", "all", "other"}
+
 logger = logging.getLogger("cropshield.pnl_service")
+
+
+def _round_money(value: float) -> float:
+    return round(float(value), 2)
+
+
+async def _load_farm(farm_id: str) -> Optional[Farm]:
+    """Loads the real Farm for this id (no arbitrary-farm fallback)."""
+    try:
+        from beanie import PydanticObjectId
+        if PydanticObjectId.is_valid(str(farm_id)):
+            return await Farm.get(PydanticObjectId(str(farm_id)))
+    except Exception:
+        logger.debug("Farm lookup failed for %s", farm_id, exc_info=True)
+    return None
 
 
 async def get_predicted_profit_range_for_season(
     farm_id: str,
     season: str,
-    crop_type: Optional[str] = None
+    crop_type: Optional[str] = None,
+    existing_summary: Optional[SeasonPnlSummary] = None,
 ) -> Optional[Dict[str, float]]:
     """
-    Retrieves or derives the pre-season predicted profit range for this farm and season.
-    Reuses existing SeasonPnlSummary, Farm details, or standard CACP / suitability profit modeling.
+    Derives the pre-season predicted profit range for this farm and season from the
+    real farm area + crop cost template. Recomputed every time (not frozen), so farm
+    area / crop changes are reflected. If the farm id does not resolve to a real farm
+    (e.g. seeded demo ids), the previously stored range is kept; otherwise None.
     """
-    # 1. Check if already recorded on SeasonPnlSummary
-    summary = await SeasonPnlSummary.find_one(
-        SeasonPnlSummary.farm_id == str(farm_id),
-        SeasonPnlSummary.season == season
-    )
-    if summary and summary.predicted_profit_range:
-        return summary.predicted_profit_range
+    farm = await _load_farm(farm_id)
+    if not farm:
+        if existing_summary and existing_summary.predicted_profit_range:
+            return existing_summary.predicted_profit_range
+        return None
 
-    # 2. Check if farm has an assigned crop or cost template
-    crop = crop_type
-    land_area = 2.5
+    crop = crop_type if (crop_type and crop_type.strip().lower() not in GENERIC_CROP_NAMES) else farm.crop_type
     if not crop:
-        farm = None
-        try:
-            from beanie import PydanticObjectId
-            if PydanticObjectId.is_valid(farm_id):
-                farm = await Farm.get(PydanticObjectId(farm_id))
-        except Exception:
-            pass
-        if not farm:
-            farm = await Farm.find_one({"_id": str(farm_id)}) or await Farm.find_one()
-        if farm:
-            crop = farm.crop_type
-            land_area = (farm.area_hectares or 1.0) * 2.471
-
-    if not crop:
-        crop = "Cotton"
+        return None
+    land_area_acres = float(farm.area_hectares or 0.0) * 2.471
+    if land_area_acres <= 0:
+        return None
 
     # Derive baseline pre-season prediction from Cost Template & Market Band
     cost_tpl = await CropCostTemplate.find_one(CropCostTemplate.crop_type == crop)
-    if cost_tpl:
-        est_cost = cost_tpl.total_cost_per_acre * land_area
-        # Typical profit band: 25% - 65% net return on cost
-        return {
-            "min": round(est_cost * 0.25, 1),
-            "max": round(est_cost * 0.65, 1),
-        }
+    if not cost_tpl:
+        return None
+    est_cost = cost_tpl.total_cost_per_acre * land_area_acres
+    # Typical profit band: 25% - 65% net return on cost
+    return {
+        "min": _round_money(est_cost * 0.25),
+        "max": _round_money(est_cost * 0.65),
+    }
 
-    return {"min": 25000.0, "max": 45000.0}
+
+def _compute_accuracy(predicted: Optional[Dict[str, float]], actual_profit: float) -> Optional[Dict[str, Any]]:
+    if not predicted or "min" not in predicted or "max" not in predicted:
+        return None
+    p_min = min(predicted["min"], predicted["max"])
+    p_max = max(predicted["min"], predicted["max"])
+    midpoint = (p_min + p_max) / 2.0
+    deviation_pct = (
+        round(abs(actual_profit - midpoint) / abs(midpoint) * 100.0, 1) if midpoint != 0 else None
+    )
+    return {
+        "actual_within_predicted_range": bool(p_min <= actual_profit <= p_max),
+        "deviation_pct": deviation_pct,
+    }
 
 
-async def recompute_pnl_summary(farm_id: str, season: str, crop_type: Optional[str] = None) -> SeasonPnlSummary:
+async def recompute_pnl_summary(
+    farm_id: str,
+    season: str,
+    crop_type: Optional[str] = None,
+    persist: bool = True,
+):
     """
     Aggregates all expenses and revenues for a farm + season, calculates actual net profit,
     and checks whether actual profit falls within the predicted profit range.
+
+    persist=True  -> race-safe upsert of the SeasonPnlSummary; returns the stored document.
+    persist=False -> returns an unsaved SeasonPnlSummary (used by GET routes: no writes on GET).
     """
     expenses = await FarmExpense.find(
         FarmExpense.farm_id == str(farm_id),
@@ -98,9 +136,9 @@ async def recompute_pnl_summary(farm_id: str, season: str, crop_type: Optional[s
     for exp in expenses:
         cat = exp.category.lower().strip() if exp.category else "other"
         if cat in breakdown:
-            breakdown[cat] += exp.amount
+            breakdown[cat] += float(exp.amount or 0.0)
         else:
-            breakdown["other"] += exp.amount
+            breakdown["other"] += float(exp.amount or 0.0)
         if not detected_crop and exp.crop_type:
             detected_crop = exp.crop_type
         if not detected_district and exp.district:
@@ -112,61 +150,87 @@ async def recompute_pnl_summary(farm_id: str, season: str, crop_type: Optional[s
         if not detected_district and rev.district:
             detected_district = rev.district
 
-    total_expenses = sum(breakdown.values())
-    total_revenue = sum(r.total_revenue for r in revenues)
-    actual_profit = total_revenue - total_expenses
+    total_expenses = _round_money(sum(breakdown.values()))
+    total_revenue = _round_money(sum(float(r.total_revenue or 0.0) for r in revenues))
+    actual_profit = _round_money(total_revenue - total_expenses)
 
-    # Fetch predicted profit range
-    predicted = await get_predicted_profit_range_for_season(farm_id, season, detected_crop)
+    existing = await SeasonPnlSummary.find_one(
+        SeasonPnlSummary.farm_id == str(farm_id),
+        SeasonPnlSummary.season == season
+    )
 
-    accuracy = None
-    if predicted and "min" in predicted and "max" in predicted:
-        p_min = min(predicted["min"], predicted["max"])
-        p_max = max(predicted["min"], predicted["max"])
-        within_range = p_min <= actual_profit <= p_max
-        midpoint = (p_min + p_max) / 2.0
-        deviation_pct = round(abs(actual_profit - midpoint) / abs(midpoint) * 100.0, 1) if midpoint != 0 else 0.0
-        accuracy = {
-            "actual_within_predicted_range": bool(within_range),
-            "deviation_pct": deviation_pct,
-        }
+    # Predicted profit range (recomputed from the real farm; never an arbitrary farm)
+    predicted = await get_predicted_profit_range_for_season(
+        farm_id, season, detected_crop, existing_summary=existing
+    )
+    accuracy = _compute_accuracy(predicted, actual_profit)
 
     data = {
-        "crop_type": detected_crop or "General Crop",
+        "crop_type": detected_crop or "General",
         "district": detected_district or "Tamil Nadu",
-        "total_expenses": round(total_expenses, 2),
-        "expense_breakdown": {k: round(v, 2) for k, v in breakdown.items()},
-        "total_revenue": round(total_revenue, 2),
-        "actual_profit": round(actual_profit, 2),
+        "total_expenses": total_expenses,
+        "expense_breakdown": {k: _round_money(v) for k, v in breakdown.items()},
+        "total_revenue": total_revenue,
+        "actual_profit": actual_profit,
         "predicted_profit_range": predicted,
         "prediction_accuracy": accuracy,
         "last_updated": datetime.utcnow(),
     }
 
-    summary = await SeasonPnlSummary.find_one(
-        SeasonPnlSummary.farm_id == str(farm_id),
-        SeasonPnlSummary.season == season
-    )
-    if summary:
-        await summary.update({"$set": data})
-        summary = await SeasonPnlSummary.get(summary.id)
-    else:
-        summary = SeasonPnlSummary(farm_id=str(farm_id), season=season, **data)
-        await summary.insert()
+    if not persist:
+        if existing:
+            return existing.model_copy(update=data)
+        return SeasonPnlSummary(farm_id=str(farm_id), season=season, **data)
+
+    summary = await _upsert_summary(str(farm_id), season, data, existing)
 
     logger.info("Recomputed P&L for farm %s (%s): profit=₹%.2f, within_range=%s",
                 farm_id, season, actual_profit, accuracy.get("actual_within_predicted_range") if accuracy else None)
     return summary
 
 
+async def _upsert_summary(
+    farm_id: str,
+    season: str,
+    data: Dict[str, Any],
+    existing: Optional[SeasonPnlSummary],
+) -> SeasonPnlSummary:
+    """
+    Race-safe upsert on the unique (farm_id, season) index: update when present, else insert;
+    if a concurrent request inserted first (DuplicateKeyError), fall back to an update.
+    """
+    if existing is None:
+        try:
+            summary = SeasonPnlSummary(farm_id=farm_id, season=season, **data)
+            await summary.insert()
+            return summary
+        except DuplicateKeyError:
+            existing = await SeasonPnlSummary.find_one(
+                SeasonPnlSummary.farm_id == farm_id,
+                SeasonPnlSummary.season == season
+            )
+            if existing is None:
+                raise
+    await existing.update({"$set": data})
+    refreshed = await SeasonPnlSummary.get(existing.id)
+    return refreshed or existing
+
+
 async def log_expense(farm_id: str, expense_data: dict) -> FarmExpense:
     """Logs a new farm expense and recomputes the seasonal P&L summary."""
     data = {**expense_data, "farm_id": str(farm_id)}
+    data["amount"] = _round_money(data.get("amount", 0.0))
+    data["crop_type"] = data.get("crop_type") or "General"
     expense = FarmExpense(**data)
     await expense.insert()
     season = data.get("season", "Kharif 2026")
     crop_type = data.get("crop_type")
-    await recompute_pnl_summary(farm_id, season, crop_type=crop_type)
+    # The expense is already stored: a summary refresh failure must not surface as a failed
+    # insert (the client would retry and double-count). Log it; the next write recomputes.
+    try:
+        await recompute_pnl_summary(farm_id, season, crop_type=crop_type)
+    except Exception:
+        logger.exception("P&L summary recompute failed after expense insert (farm=%s, season=%s)", farm_id, season)
     return expense
 
 
@@ -175,13 +239,18 @@ async def log_revenue(farm_id: str, revenue_data: dict) -> FarmRevenue:
     data = {**revenue_data, "farm_id": str(farm_id)}
     qty = float(data.get("quantity_sold_kg", 0.0))
     price = float(data.get("price_per_kg", 0.0))
-    data["total_revenue"] = round(qty * price, 2)
+    data["price_per_kg"] = _round_money(price)
+    data["total_revenue"] = _round_money(qty * price)
+    data["crop_type"] = data.get("crop_type") or "General"
 
     revenue = FarmRevenue(**data)
     await revenue.insert()
     season = data.get("season", "Kharif 2026")
     crop_type = data.get("crop_type")
-    await recompute_pnl_summary(farm_id, season, crop_type=crop_type)
+    try:
+        await recompute_pnl_summary(farm_id, season, crop_type=crop_type)
+    except Exception:
+        logger.exception("P&L summary recompute failed after revenue insert (farm=%s, season=%s)", farm_id, season)
     return revenue
 
 
@@ -357,7 +426,7 @@ async def seed_pnl_demo_data(csv_dir: str = ".") -> Dict[str, int]:
                     pred_max = max(p_min, p_max)
                     within = row.get("actual_within_predicted_range", "False").lower() in ("true", "1")
                     mid = (pred_min + pred_max) / 2.0
-                    dev = round(abs(profit - mid) / abs(mid) * 100.0, 1) if mid != 0 else 0.0
+                    dev = round(abs(profit - mid) / abs(mid) * 100.0, 1) if mid != 0 else None
 
                     docs.append(SeasonPnlSummary(
                         farm_id=farm_id,

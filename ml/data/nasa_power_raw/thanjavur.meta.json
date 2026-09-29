@@ -1,0 +1,60 @@
+{
+  "api": {
+    "version": "v2.10.0",
+    "name": "POWER Daily API"
+  },
+  "sources": [
+    "SYN1DEG",
+    "MERRA2",
+    "POWER"
+  ],
+  "fill_value": -999.0,
+  "time_standard": "LST",
+  "units": {
+    "T2M": "C",
+    "T2M_MAX": "C",
+    "T2M_MIN": "C",
+    "RH2M": "%",
+    "WS2M": "m/s",
+    "PRECTOTCORR": "mm/day",
+    "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+    "TOA_SW_DWN": "MJ/m^2/day"
+  },
+  "grid_point": [
+    79.138,
+    10.787,
+    39.16
+  ],
+  "location": {
+    "name": "Thanjavur",
+    "lat": 10.787,
+    "lon": 79.1378,
+    "zone": "Delta"
+  },
+  "community": "AG",
+  "parameters": [
+    "T2M",
+    "T2M_MAX",
+    "T2M_MIN",
+    "RH2M",
+    "WS2M",
+    "PRECTOTCORR",
+    "ALLSKY_SFC_SW_DWN",
+    "TOA_SW_DWN"
+  ],
+  "start_year": 2005,
+  "end_year": 2024,
+  "rows": 7305,
+  "missing_values": {
+    "T2M": 0,
+    "T2M_MAX": 0,
+    "T2M_MIN": 0,
+    "RH2M": 0,
+    "WS2M": 0,
+    "PRECTOTCORR": 0,
+    "ALLSKY_SFC_SW_DWN": 0,
+    "TOA_SW_DWN": 0
+  },
+  "downloaded_utc": "2026-09-29T19:22:51Z",
+  "endpoint": "https://power.larc.nasa.gov/api/temporal/daily/point"
+}

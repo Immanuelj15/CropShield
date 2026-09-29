@@ -1,23 +1,15 @@
 """
 AgriGuard AI — Automated Counterfactual Engine & Tree-SHAP Integration Tests
 Validates non-differentiable counterfactual optimization, mutable parameter deltas,
-and end-to-end /predict-today composite response structure.
+and end-to-end /predict-today composite response structure (auth required, data_quality flag).
+The endpoint test uses the isolated test database and skips when MongoDB is unreachable.
+It calls NASA POWER; offline it falls back to synthetic weather, which is flagged and never alerts.
 """
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from backend.main import app
-from backend.db.mongodb import init_mongodb, close_mongodb
+from httpx import AsyncClient
+
 from backend.services.counterfactual_service import generate_counterfactual_prescription
-
-
-@pytest_asyncio.fixture(scope="function")
-async def client():
-    await init_mongodb()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    await close_mongodb()
+from conftest import DEMO_FARMER, login_headers
 
 
 def test_counterfactual_service_logic():
@@ -54,17 +46,14 @@ def test_counterfactual_service_logic():
         assert "delta" in delta
 
 
+@pytest.mark.mongo
 @pytest.mark.asyncio
 async def test_predict_today_endpoint_counterfactual(client: AsyncClient):
     """Verify POST /api/v1/predict-today delivers SHAP + counterfactual prescription."""
-    # Login as farmer to obtain authorized JWT
-    login_res = await client.post(
-        "/api/v1/auth/login",
-        json={"email": "farmer@cropshield.org", "password": "farmer123"}
-    )
-    assert login_res.status_code == 200
-    token = login_res.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+    payload_anon = {"crop": "Cotton"}
+    assert (await client.post("/api/v1/predict-today", json=payload_anon)).status_code == 401
+
+    headers = await login_headers(client, *DEMO_FARMER)
 
     payload = {
         "latitude": 9.1728,
@@ -75,7 +64,7 @@ async def test_predict_today_endpoint_counterfactual(client: AsyncClient):
     }
 
     res = await client.post("/api/v1/predict-today", json=payload, headers=headers)
-    assert res.status_code == 200
+    assert res.status_code == 200, res.text
     data = res.json()
 
     # Core risk metrics
@@ -100,3 +89,8 @@ async def test_predict_today_endpoint_counterfactual(client: AsyncClient):
     assert "sensor_id" not in data
     assert "device_id" not in data
     assert "hardware_status" not in data
+
+    # Contract item 8: weather provenance is always reported
+    dq = data["data_quality"]
+    assert dq["weather_source"] in ("NASA_POWER", "synthetic")
+    assert dq["is_synthetic"] is (dq["weather_source"] == "synthetic")

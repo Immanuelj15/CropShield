@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Activity, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
 
 export default function AdminApiHealth() {
   const [apiStatus, setApiStatus] = useState(null)
@@ -9,37 +9,41 @@ export default function AdminApiHealth() {
   const [ingestionMsg, setIngestionMsg] = useState(null)
   const [showFailures, setShowFailures] = useState(false)
 
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const [loadError, setLoadError] = useState(null)
 
   const fetchApiStatus = async () => {
+    setLoadError(null)
     try {
-      const res = await fetch(`${API_BASE}/admin/api-status`, { headers: authHeaders })
-      if (res.ok) setApiStatus(await res.json())
-    } catch (e) { console.error(e) }
+      setApiStatus(await apiFetch('/admin/api-status'))
+    } catch (e) {
+      console.error(e)
+      setLoadError(e.message || 'Could not load API status.')
+    }
   }
 
   useEffect(() => { fetchApiStatus() }, [])
 
   const handleRunIngestionNow = async () => {
+    if (runningIngestion) return
     setRunningIngestion(true)
     setIngestionMsg(null)
     try {
-      const res = await fetch(`${API_BASE}/admin/jobs/run-ingestion-now`, { method: 'POST', headers: authHeaders })
-      const data = await res.json()
-      if (res.ok) {
-        setIngestionMsg({ type: 'success', text: data.message })
-        fetchApiStatus()
-      } else {
-        setIngestionMsg({ type: 'error', text: data.detail || 'Ingestion failed' })
-      }
+      const data = await apiFetch('/admin/jobs/run-ingestion-now', { method: 'POST' })
+      setIngestionMsg({ type: 'success', text: data?.message || 'Ingestion started.' })
+      fetchApiStatus()
     } catch (err) {
-      setIngestionMsg({ type: 'error', text: err.message })
+      if (err.status === 409) {
+        // Backend job lock: another ingestion run (scheduled, retry sweep or another admin) is active
+        setIngestionMsg({ type: 'info', text: 'An ingestion run is already in progress. Please wait for it to finish and check the job log.' })
+      } else {
+        setIngestionMsg({ type: 'error', text: err.message || 'Ingestion failed' })
+      }
     } finally {
       setRunningIngestion(false)
     }
   }
 
+  if (loadError && !apiStatus) return <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl text-center p-6">{loadError}</p>
   if (!apiStatus) return <p className="text-sm text-stone-400 text-center py-12">Loading API status…</p>
 
   return (
@@ -104,9 +108,9 @@ export default function AdminApiHealth() {
 
         {ingestionMsg && (
           <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2 ${
-            ingestionMsg.type === 'success' ? 'bg-green-50 text-green-900 border border-green-200' : 'bg-red-50 text-red-900 border border-red-200'
+            ingestionMsg.type === 'success' ? 'bg-green-50 text-green-900 border border-green-200' : ingestionMsg.type === 'info' ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-red-50 text-red-900 border border-red-200'
           }`}>
-            {ingestionMsg.type === 'success' ? <CheckCircle2 size={16} className="text-green-600" /> : <AlertTriangle size={16} className="text-red-600" />}
+            {ingestionMsg.type === 'success' ? <CheckCircle2 size={16} className="text-green-600" /> : <AlertTriangle size={16} className={ingestionMsg.type === 'info' ? 'text-amber-600' : 'text-red-600'} />}
             <span>{ingestionMsg.text}</span>
           </div>
         )}

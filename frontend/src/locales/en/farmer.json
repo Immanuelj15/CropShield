@@ -39,5 +39,14 @@
   "filter_crop": "Filter by Crop",
   "alerts_title": "Community Outbreak Alerts (5km Grid)",
   "no_alerts": "No regional outbreaks reported within your 5km grid.",
-  "history_title": "Past Prediction History"
+  "history_title": "Past Prediction History",
+  "advisories_tab": "Digital Advisories",
+  "regional_alerts_title": "Regional Alerts",
+  "field_history_title": "Prediction History",
+  "estimated_profit_range": "Estimated Net Profit Range",
+  "no_farm_title": "No farm registered yet",
+  "no_farm_cta": "Register your farm in Manage My Farm",
+  "synthetic_weather_notice": "Estimated weather (live data unavailable). Treat this risk as indicative only.",
+  "model_unavailable": "Disease model unavailable — result not reliable",
+  "rule_based_estimate": "Rule-based estimate (model unavailable)"
 }

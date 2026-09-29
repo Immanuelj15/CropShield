@@ -13,7 +13,7 @@ const TYPE_BADGE = {
 export default function FarmerTreatmentsTab({
   treatments, treatmentsLoading, treatmentsError, onRetry,
   showTreatmentModal, setShowTreatmentModal, newTreatment, setNewTreatment,
-  treatmentSuccess, handleSaveTreatment,
+  treatmentSuccess, handleSaveTreatment, treatmentSaving = false,
 }) {
   const columns = [
     { key: 'treatment_date', header: 'Date' },
@@ -135,8 +135,12 @@ export default function FarmerTreatmentsTab({
               <button type="button" onClick={() => setShowTreatmentModal(false)} className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 hover:bg-stone-100">
                 Cancel
               </button>
-              <button type="submit" className="px-5 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md">
-                Save to Farm Log
+              <button
+                type="submit"
+                disabled={treatmentSaving}
+                className="px-5 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {treatmentSaving ? 'Saving…' : 'Save to Farm Log'}
               </button>
             </div>
           </form>

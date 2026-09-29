@@ -1,42 +1,106 @@
 """
-AgriGuard AI — Automated Role-Based Authentication & Scope Verification Tests
-Validates JWT RBAC, farmer self-service, agronomist verification, and admin controls.
+AgriGuard AI — Role-Based Authentication & Scope Verification Tests
+JWT RBAC, register hardening (role ignored, min length), /auth/me from token, login by email
+only, legacy password-hash upgrade, agronomist verification and admin controls.
+Runs against the isolated test database (see conftest.py); skips when MongoDB is unreachable.
 """
+import hashlib
+import uuid
+
 import pytest
-import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from backend.main import app
-from backend.db.mongodb import init_mongodb, close_mongodb
+from httpx import AsyncClient
+
+from conftest import DEMO_ADMIN, DEMO_AGRONOMIST, DEMO_FARMER, login_headers, register_farmer
+
+pytestmark = pytest.mark.mongo
 
 
-@pytest_asyncio.fixture(scope="function")
-async def client():
-    await init_mongodb()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    await close_mongodb()
+# ── Register / login / me ─────────────────────────────────────────────────────────────
 
+@pytest.mark.asyncio
+async def test_register_with_admin_role_creates_farmer(client: AsyncClient):
+    headers, data = await register_farmer(client, "Role Escalation", role="admin")
+    assert data["role"] == "farmer"
+
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["role"] == "farmer"
+
+    from backend.models.user import User
+    stored = await User.find_one({"email": data["username"]})
+    assert stored is not None and stored.role == "farmer"
+
+    # ...and it really has no admin rights
+    assert (await client.get("/api/v1/admin/users", headers=headers)).status_code == 403
 
 
 @pytest.mark.asyncio
+async def test_register_rejects_short_password(client: AsyncClient):
+    res = await client.post("/api/v1/auth/register", json={
+        "username": "shorty", "email": f"short.{uuid.uuid4().hex[:6]}@example.com", "password": "abc123",
+    })
+    assert res.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_auth_me_requires_token_and_returns_token_user(client: AsyncClient):
+    assert (await client.get("/api/v1/auth/me")).status_code == 401
+    # the old ?username= lookup must not leak another profile
+    assert (await client.get("/api/v1/auth/me", params={"username": DEMO_ADMIN[0]})).status_code == 401
+    bad = await client.get("/api/v1/auth/me", headers={"Authorization": "Bearer not-a-jwt"})
+    assert bad.status_code == 401
+
+    headers = await login_headers(client, *DEMO_FARMER)
+    me = await client.get("/api/v1/auth/me", params={"username": DEMO_ADMIN[0]}, headers=headers)
+    assert me.status_code == 200
+    assert me.json()["email"] == DEMO_FARMER[0]
+    assert me.json()["role"] == "farmer"
+
+
+@pytest.mark.asyncio
+async def test_login_is_by_email_only(client: AsyncClient):
+    res = await client.post("/api/v1/auth/login", json={"username": "Ramanathan Farmer", "password": DEMO_FARMER[1]})
+    assert res.status_code in (400, 401)
+    wrong = await client.post("/api/v1/auth/login", json={"email": DEMO_FARMER[0], "password": "wrong-password"})
+    assert wrong.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_legacy_sha256_hash_logs_in_and_is_upgraded(client: AsyncClient):
+    from backend.models.user import User
+
+    email = f"legacy.{uuid.uuid4().hex[:8]}@example.com"
+    password = "legacy-pass-123"
+    legacy_hash = hashlib.sha256((password + "agriguard_salt_tn").encode("utf-8")).hexdigest()
+    await User(name="Legacy User", email=email, password_hash=legacy_hash, role="farmer", is_active=True).insert()
+
+    res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert res.status_code == 200, res.text
+
+    stored = await User.find_one({"email": email})
+    assert stored.password_hash != legacy_hash
+    assert stored.password_hash.startswith(("$2a$", "$2b$", "$2y$", "pbkdf2_sha256$"))
+
+    # the upgraded hash still works
+    again = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert again.status_code == 200
+
+
+# ── Role scopes ───────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
 async def test_farmer_login_and_scope(client: AsyncClient):
-    # 1. Login as Farmer
-    res = await client.post("/api/v1/auth/login", json={"email": "farmer@cropshield.org", "password": "farmer123"})
+    res = await client.post("/api/v1/auth/login", json={"email": DEMO_FARMER[0], "password": DEMO_FARMER[1]})
     assert res.status_code == 200
     data = res.json()
-    token = data["access_token"]
     assert data["role"] == "farmer"
     assert data["user_id"] is not None
+    headers = {"Authorization": f"Bearer {data['access_token']}"}
 
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # 2. Access Farmer-scoped route -> Success
     farm_res = await client.get("/api/v1/farms/me", headers=headers)
     assert farm_res.status_code == 200
     assert "farm_name" in farm_res.json()
 
-    # 3. Access Treatment Log -> Create and list
     t_res = await client.post("/api/v1/treatments", json={
         "treatment_date": "2026-09-09",
         "treatment_type": "organic",
@@ -48,69 +112,53 @@ async def test_farmer_login_and_scope(client: AsyncClient):
     assert t_res.status_code == 201
     assert t_res.json()["status"] == "success"
 
-    # 4. Attempt to access Admin-scoped route -> 403 Forbidden
-    admin_res = await client.get("/api/v1/admin/users", headers=headers)
-    assert admin_res.status_code == 403
-
-    # 5. Attempt to access Agronomist verification queue -> 403 Forbidden
-    agro_res = await client.get("/api/v1/detect/pending", headers=headers)
-    assert agro_res.status_code == 403
+    assert (await client.get("/api/v1/admin/users", headers=headers)).status_code == 403
+    assert (await client.get("/api/v1/detect/pending", headers=headers)).status_code == 403
+    assert (await client.post("/api/v1/admin/jobs/run-ingestion-now", headers=headers)).status_code == 403
+    assert (await client.post("/api/v1/activity-planner/run-reminders-now", headers=headers)).status_code == 403
 
 
 @pytest.mark.asyncio
-async def test_agronomist_verification_and_weather(client: AsyncClient):
-    # 1. Login as Agronomist
-    res = await client.post("/api/v1/auth/login", json={"email": "agronomist@cropshield.org", "password": "agro123"})
-    assert res.status_code == 200
-    data = res.json()
-    token = data["access_token"]
-    assert data["role"] == "agronomist"
+async def test_farmer_without_farm_gets_no_fallback(client: AsyncClient):
+    headers, _ = await register_farmer(client, "No Farm")
+    assert (await client.get("/api/v1/farms", headers=headers)).json() == []
+    assert (await client.get("/api/v1/farms/me", headers=headers)).status_code == 404
+    profile = await client.get("/api/v1/farmer/profile", headers=headers)
+    assert profile.status_code == 200
+    assert profile.json()["farm"] is None
 
-    headers = {"Authorization": f"Bearer {token}"}
 
-    # 2. Get pending verification queue -> Success
+@pytest.mark.asyncio
+async def test_agronomist_verification_and_reports(client: AsyncClient):
+    headers = await login_headers(client, *DEMO_AGRONOMIST)
+
     pending_res = await client.get("/api/v1/detect/pending", headers=headers)
     assert pending_res.status_code == 200
-    p_data = pending_res.json()
-    assert "items" in p_data
+    assert "items" in pending_res.json()
 
-    # 3. Verify / Confirm a threat case -> Success with audit trail
-    verify_res = await client.post("/api/v1/detect/demo_threat_01/verify", json={
-        "decision": "confirm",
-        "confirmed_pest": "Pink Bollworm",
-        "severity": "High",
-        "notes": "Expert field confirmation in Thoothukudi."
+    # Demo / unknown ids no longer "succeed": 404
+    demo = await client.post("/api/v1/detect/demo_threat_01/verify", json={
+        "decision": "confirm", "confirmed_pest": "Pink Bollworm", "severity": "High", "notes": "demo",
     }, headers=headers)
-    assert verify_res.status_code == 200
-    v_data = verify_res.json()
-    assert v_data["audit_trail_recorded"] is True
-    assert "Dr. V. Sundaram" in v_data["verified_by"]
+    assert demo.status_code == 404
 
-    # 4. Get regional report
     rep_res = await client.get("/api/v1/reports/regional?range=weekly", headers=headers)
     assert rep_res.status_code == 200
     assert "report_id" in rep_res.json()
+    assert rep_res.json()["simulated"] is True
 
 
 @pytest.mark.asyncio
-async def test_admin_pure_software_management(client: AsyncClient):
-    # 1. Login as Admin
-    res = await client.post("/api/v1/auth/login", json={"email": "admin@cropshield.org", "password": "admin123"})
-    assert res.status_code == 200
-    token = res.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_admin_software_management(client: AsyncClient):
+    headers = await login_headers(client, *DEMO_ADMIN)
 
-    # 2. Check NASA POWER API health (pure software monitor)
     api_res = await client.get("/api/v1/admin/api-status", headers=headers)
     assert api_res.status_code == 200
-    api_data = api_res.json()
-    assert "NASA POWER" in api_data["external_service"]
-    assert api_data["monitoring_mode"] == "Pure Software REST API (No Hardware / No IoT)"
+    assert "NASA POWER" in api_res.json()["external_service"]
 
-    # 3. Register a farm zone with GPS coordinates (no sensors)
     farm_reg = await client.post("/api/v1/admin/farms", json={
-        "farm_name": "Madurai Jasmine & Pulses Zone",
-        "owner_email": "farmer@cropshield.org",
+        "farm_name": f"Madurai Jasmine & Pulses Zone {uuid.uuid4().hex[:4]}",
+        "owner_email": DEMO_FARMER[0],
         "district": "Madurai",
         "climate_zone": "Dryland",
         "crop_type": "Pulses",
@@ -119,9 +167,16 @@ async def test_admin_pure_software_management(client: AsyncClient):
         "longitude": 78.1198
     }, headers=headers)
     assert farm_reg.status_code == 201
-    assert farm_reg.json()["farm_name"] == "Madurai Jasmine & Pulses Zone"
 
-    # 4. Trigger model retraining pipeline
-    retrain_res = await client.post("/api/v1/admin/models/retrain", headers=headers)
-    assert retrain_res.status_code == 200
-    assert retrain_res.json()["status"] == "success"
+    # Retraining is explicitly simulated: no accuracy claim
+    retrain = await client.post("/api/v1/admin/models/retrain", headers=headers)
+    assert retrain.status_code == 200
+    body = retrain.json()
+    assert body["status"] == "simulated"
+    assert body["simulated"] is True
+    assert body["new_accuracy"] is None
+
+    thresholds = await client.get("/api/v1/admin/thresholds", headers=headers)
+    assert thresholds.status_code == 200
+    t = thresholds.json()
+    assert 0 < t["low_max"] < t["medium_max"] <= 100

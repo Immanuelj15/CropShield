@@ -2,32 +2,26 @@
 AgriGuard AI — Multilingual Condition-Based Chatbot Tests
 Tests Tamil, Hindi, and English rule matching, live database resolution,
 and the POST /api/v1/chatbot/ask endpoint.
+DB-backed tests use the isolated test database and skip when MongoDB is unreachable.
 """
 
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 
-from backend.main import app
-from backend.db.mongodb import init_mongodb, close_mongodb
-from backend.models.chatbot_intent import ChatbotIntent
-from backend.models.chatbot_conversation import ChatbotConversation
 from backend.services import chatbot_service
-from scripts.seed_chatbot_intents import seed_chatbot_intents
 
 
-@pytest_asyncio.fixture(scope="function")
-async def client():
-    await init_mongodb()
+@pytest_asyncio.fixture
+async def chat_client(client):
+    """Shared in-process client (isolated test DB) with the chatbot intents seeded."""
+    from scripts.seed_chatbot_intents import seed_chatbot_intents
+
     await seed_chatbot_intents()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    await close_mongodb()
+    yield client
 
 
-@pytest.mark.asyncio
-async def test_detect_language():
+def test_detect_language():
     # Tamil Unicode block
     assert chatbot_service.detect_language("வணக்கம், என் பயிர் நிலை என்ன?") == "ta"
     assert chatbot_service.detect_language("இன்றைய வானிலை") == "ta"
@@ -41,8 +35,9 @@ async def test_detect_language():
     assert chatbot_service.detect_language("Hello AgriGuard") == "en"
 
 
+@pytest.mark.mongo
 @pytest.mark.asyncio
-async def test_condition_matching_engine(client: AsyncClient):
+async def test_condition_matching_engine(chat_client: AsyncClient):
     # 1. English intent matching
     intent_en, lang_en = await chatbot_service.match_intent("What is my crop risk today?")
     assert intent_en is not None
@@ -76,8 +71,15 @@ async def test_condition_matching_engine(client: AsyncClient):
     assert intent_unmatched is None
 
 
+@pytest.mark.mongo
 @pytest.mark.asyncio
-async def test_chatbot_ask_endpoint_and_audit_logging(client: AsyncClient):
+async def test_chatbot_ask_endpoint_and_audit_logging(chat_client: AsyncClient):
+    from backend.models.chatbot_conversation import ChatbotConversation
+
+    client = chat_client
+    # asking requires a logged-in user
+    assert (await client.post("/api/v1/chatbot/ask", json={"message": "hello"})).status_code == 401
+
     # 1. Authenticate as farmer
     login_resp = await client.post("/api/v1/auth/login", json={
         "email": "farmer@cropshield.org",

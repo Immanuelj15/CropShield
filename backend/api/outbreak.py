@@ -18,32 +18,29 @@ from backend.models.alert import Alert as MongoAlert
 from backend.models.user import User as MongoUser
 from backend.models.vegetation_snapshot import VegetationSnapshot as MongoVegetationSnapshot
 from backend.services.ndvi_service import derive_vegetation_status
-from backend.utils.auth_utils import get_optional_current_user, require_roles
+from backend.models.schemas import GeoJSONPolygon
+from backend.utils.auth_utils import get_current_user, require_roles, is_farm_owner
 from ml.spatial_outbreak.clustering import calculate_spatial_outbreak_risk, get_full_district_heatmap_data
 
 router = APIRouter()
 
 
 class SpatialRiskRequest(BaseModel):
-    latitude: float = 9.1728
-    longitude: float = 77.8710
-    bandwidth_km: float = 50.0
+    latitude: float = Field(9.1728, ge=-90, le=90)
+    longitude: float = Field(77.8710, ge=-180, le=180)
+    bandwidth_km: float = Field(50.0, gt=0, le=500)
 
 
-class PolygonGeoJSON(BaseModel):
-    type: str = "Polygon"
-    coordinates: List[List[List[float]]] = Field(
-        ...,
-        description="GeoJSON LinearRing coordinate arrays [[[lon, lat], [lon, lat], ...]]"
-    )
+# Validated GeoJSON polygon (>= 4 [lon, lat] positions, closed ring, valid ranges)
+PolygonGeoJSON = GeoJSONPolygon
 
 
 class BroadcastScanAdvisoryRequest(BaseModel):
     polygon: PolygonGeoJSON
-    title: str = Field(..., description="Advisory headline")
-    message: str = Field(..., description="Prescribed agronomic action or alert message")
-    severity: str = Field("High", description="Severity level: High | Medium | Low")
-    target_threat: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=200, description="Advisory headline")
+    message: str = Field(..., min_length=1, max_length=2000, description="Prescribed agronomic action or alert message")
+    severity: str = Field("High", max_length=20, description="Severity level: High | Medium | Low")
+    target_threat: Optional[str] = Field(None, max_length=200)
 
 
 @router.get("/outbreak/heatmap")
@@ -65,7 +62,7 @@ def get_spatial_risk_prediction(req: SpatialRiskRequest):
 @router.post("/outbreak/scan-area")
 async def scan_drawn_area(
     req: PolygonGeoJSON,
-    current_user: Optional[MongoUser] = Depends(get_optional_current_user)
+    current_user: MongoUser = Depends(get_current_user)
 ):
     """
     Draw-to-Scan Spatial Aggregator:
@@ -74,22 +71,8 @@ async def scan_drawn_area(
     3. Caps query at 500 farms (returns HTTP 422 if exceeded).
     4. Aggregates latest pest warning logs, risk breakdown, and dominant threat with SHAP synthesis.
     """
-    if not req.coordinates or not req.coordinates[0]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_POLYGON", "message": "Polygon coordinates must contain at least one ring."}
-        )
-
+    # Ring already validated + closed by GeoJSONPolygon
     ring = req.coordinates[0]
-    if len(ring) < 4:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "INVALID_POLYGON", "message": "Polygon ring must have at least 4 coordinate pairs (first=last)."}
-        )
-
-    # Ensure ring is closed in GeoJSON standard
-    if ring[0] != ring[-1]:
-        ring.append(ring[0])
 
     poly_geometry = {
         "type": "Polygon",
@@ -105,10 +88,10 @@ async def scan_drawn_area(
                 }
             }
         }).to_list()
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"code": "GEOSPATIAL_QUERY_ERROR", "message": f"GeoJSON query failed: {str(e)}"}
+            detail={"code": "GEOSPATIAL_QUERY_ERROR", "message": "GeoJSON query failed (check the polygon is valid and not self-intersecting)."}
         )
 
     # Check farm volume cap
@@ -192,9 +175,15 @@ async def scan_drawn_area(
         ndvi_stat = derive_vegetation_status(ndvi_val, veg.ndvi_trend if veg else 0.0) if veg else "healthy"
 
         coords = farm.location.get("coordinates", [77.8710, 9.1728]) if isinstance(farm.location, dict) else [77.8710, 9.1728]
+        # Farmers only see names of their own farms (or public reference points)
+        can_see_name = (
+            current_user.role in ("agronomist", "admin")
+            or getattr(farm, "is_reference_point", False)
+            or is_farm_owner(farm, current_user)
+        )
         farms_output.append({
             "farm_id": str(farm.id),
-            "name": farm.farm_name,
+            "name": farm.farm_name if can_see_name else "Neighbouring farm",
             "location": coords,  # [lon, lat]
             "risk_level": r_level,
             "crop_type": farm.crop_type,
@@ -244,22 +233,26 @@ async def broadcast_scan_advisory(
     Dispatches regional advisory alerts to all farm owners located inside the specified polygon.
     Guarded for Agronomists and Admins only.
     """
-    ring = req.polygon.coordinates[0]
-    if ring[0] != ring[-1]:
-        ring.append(ring[0])
+    ring = req.polygon.coordinates[0]  # validated + closed by GeoJSONPolygon
 
     poly_geometry = {
         "type": "Polygon",
         "coordinates": [ring]
     }
 
-    farms_in_area = await MongoFarm.find({
-        "location": {
-            "$geoWithin": {
-                "$geometry": poly_geometry
+    try:
+        farms_in_area = await MongoFarm.find({
+            "location": {
+                "$geoWithin": {
+                    "$geometry": poly_geometry
+                }
             }
-        }
-    }).to_list()
+        }).limit(5000).to_list()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "GEOSPATIAL_QUERY_ERROR", "message": "GeoJSON query failed (check the polygon)."}
+        )
 
     if not farms_in_area:
         return {

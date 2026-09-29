@@ -10,15 +10,17 @@ Platform governance, system configuration, and data management:
 7. Reports & Analytics (platform-wide trends, vulnerable zones)
 8. Model Management (retraining runs, version history)
 """
+import asyncio
+import logging
 import time
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any, Union, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
-from beanie import PydanticObjectId
+from pydantic import BaseModel, Field, field_validator
 import httpx
 
-from backend.utils.auth_utils import require_roles, hash_password
+from backend.utils.auth_utils import require_roles, hash_password, parse_object_id, MIN_PASSWORD_LENGTH
+from backend.services import risk_thresholds as risk_thresholds_service
 from backend.models.user import User as MongoUser
 from backend.models.farm import Farm as MongoFarm
 from backend.models.advisory import PestDiseaseAdvisory as MongoAdvisory
@@ -30,16 +32,53 @@ from backend.models.job_run_log import JobRunLog as MongoJobRunLog
 from backend.models.retry_queue import RetryQueue as MongoRetryQueue
 from backend.services.geospatial_service import run_daily_prediction_pipeline_for_all_farms
 
+logger = logging.getLogger("cropshield.admin_api")
+
 router = APIRouter(prefix="/admin", tags=["Admin Platform Management"])
 
-# In-memory platform configuration (persisted per server session)
-PLATFORM_THRESHOLDS = {
-    "high_risk_threshold": 0.65,
-    "medium_risk_threshold": 0.35,
-    "haversine_cluster_radius_km": 5.0,
-    "notification_frequency_hours": 12,
-    "preemptive_alert_enabled": True,
-}
+UserRoleLiteral = Literal["farmer", "agronomist", "admin"]
+
+
+def _pest_model_benchmarks() -> Dict[str, Any]:
+    """Real pest-model metrics from ml/training/saved_models/metrics.json (no invented numbers)."""
+    import json
+    from pathlib import Path
+    from backend.utils.config import settings as _settings
+    path = Path(_settings.MODEL_PATH).parent / "metrics.json"
+    try:
+        m = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("Could not read model metrics (%s): %s", path, e)
+        return {"available": False, "message": "Model metrics file not found."}
+    test = m.get("test_calibrated") or m.get("test_raw") or {}
+    return {
+        "available": True,
+        "pest_warning_model": m.get("model_name"),
+        "model_version": m.get("model_version"),
+        "test_accuracy": test.get("accuracy", m.get("accuracy")),
+        "test_f1_macro": test.get("f1_macro"),
+        "test_f1_weighted": test.get("f1_weighted", m.get("f1_weighted")),
+        "auc_roc": test.get("auc_ovr_weighted", m.get("auc_roc")),
+        "majority_class_baseline_accuracy": m.get("majority_class_baseline_accuracy"),
+        "calibration_method": m.get("calibration_method"),
+        "label_source": m.get("label_source"),
+        "interpretation": m.get("interpretation"),
+        "trained_utc": m.get("trained_utc"),
+        # The yield model is a formula over official TN state-average yields: it has no fitted R².
+        "yield_model": "Official TN state-average yield x uncalibrated adjustment factors (no validated accuracy)",
+    }
+
+
+def _legacy_alert_thresholds() -> Dict[str, Any]:
+    """Legacy /admin/alert-thresholds shape (0–1 fractions), backed by the persisted risk thresholds."""
+    t = risk_thresholds_service.get_risk_thresholds()
+    return {
+        "high_risk_threshold": round(float(t["medium_max"]) / 100.0, 4),
+        "medium_risk_threshold": round(float(t["low_max"]) / 100.0, 4),
+        "haversine_cluster_radius_km": t.get("haversine_cluster_radius_km", 5.0),
+        "notification_frequency_hours": t.get("notification_frequency_hours", 12),
+        "preemptive_alert_enabled": t.get("preemptive_alert_enabled", True),
+    }
 
 
 # ── Schemas ───────────────────────────────────────────────────
@@ -62,33 +101,47 @@ class PestDiseaseCreate(BaseModel):
 
 
 class FarmGPSRegister(BaseModel):
-    farm_name: str
-    owner_email: Optional[str] = "farmer@cropshield.org"
-    district: str = "Thoothukudi"
-    climate_zone: str = "Dryland"  # "Delta" | "Dryland" | "Coastal" | "Hills"
-    crop_type: str = "Cotton"
-    soil_type: Optional[str] = "Black Soil (Vertisol)"
-    area_hectares: float = 2.0
+    farm_name: str = Field(..., min_length=1, max_length=200)
+    owner_email: Optional[str] = Field(None, max_length=254)
+    district: str = Field("Thoothukudi", max_length=100)
+    climate_zone: str = Field("Dryland", max_length=100)  # "Delta" | "Dryland" | "Coastal" | "Hills"
+    crop_type: str = Field("Cotton", max_length=100)
+    soil_type: Optional[str] = Field("Black Soil (Vertisol)", max_length=100)
+    area_hectares: float = Field(2.0, gt=0, le=100000)
     latitude: float = Field(..., ge=-90, le=90)
     longitude: float = Field(..., ge=-180, le=180)
 
 
 class UserCreateAdmin(BaseModel):
-    name: str
-    email: str
-    password: str
-    role: str = "farmer"  # "farmer" | "agronomist" | "admin"
-    phone: Optional[str] = None
-    district: Optional[str] = "Coimbatore"
-    region_assigned: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=150)
+    email: str = Field(..., min_length=3, max_length=254)
+    password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=128)
+    role: UserRoleLiteral = "farmer"
+    phone: Optional[str] = Field(None, max_length=20)
+    district: Optional[str] = Field("Coimbatore", max_length=100)
+    region_assigned: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("A valid email address is required.")
+        return v
 
 
 class UserUpdateAdmin(BaseModel):
-    name: Optional[str] = None
-    role: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=150)
+    role: Optional[UserRoleLiteral] = None
     is_active: Optional[bool] = None
-    region_assigned: Optional[str] = None
-    district: Optional[str] = None
+    region_assigned: Optional[str] = Field(None, max_length=100)
+    district: Optional[str] = Field(None, max_length=100)
+
+
+class RiskThresholdsUpdate(BaseModel):
+    """Risk score boundaries on a 0–100 scale (contract item 11)."""
+    low_max: float = Field(..., gt=0, lt=100)
+    medium_max: float = Field(..., gt=0, lt=100)
 
 
 class ThresholdsUpdate(BaseModel):
@@ -159,7 +212,7 @@ async def delete_pest_disease(
     current_user: MongoUser = Depends(require_roles(["admin"]))
 ):
     """Admin: Delete a pest or disease profile."""
-    record = await MongoAdvisory.get(PydanticObjectId(item_id))
+    record = await MongoAdvisory.get(parse_object_id(item_id, "Record not found."))
     if not record:
         raise HTTPException(status_code=404, detail="Record not found.")
     await record.delete()
@@ -177,16 +230,17 @@ async def list_registered_farms(
     return [
         {
             "id": str(f.id),
+            "farm_id": str(f.id),
             "farm_name": f.farm_name,
-            "owner_id": str(f.owner_id),
+            "owner_id": str(f.owner_id) if f.owner_id else None,
             "district": f.district,
             "climate_zone": f.climate_zone,
             "crop_type": f.crop_type,
             "soil_type": f.soil_type,
             "area_hectares": f.area_hectares,
             "gps_coordinates": {
-                "latitude": f.location["coordinates"][1] if f.location else None,
-                "longitude": f.location["coordinates"][0] if f.location else None,
+                "latitude": f.location["coordinates"][1] if (f.location and f.location.get("coordinates")) else None,
+                "longitude": f.location["coordinates"][0] if (f.location and f.location.get("coordinates")) else None,
             },
             "created_at": f.created_at,
         }
@@ -203,8 +257,13 @@ async def register_farm_gps(
     Admin: Register a new farm zone via GPS coordinates.
     Pure software registration — no hardware sensors or physical setup.
     """
-    owner = await MongoUser.find_one(MongoUser.email == req.owner_email) if req.owner_email else None
-    owner_id = owner.id if owner else current_user.id
+    owner = None
+    if req.owner_email:
+        owner = await MongoUser.find_one(MongoUser.email == req.owner_email.strip().lower())
+        if not owner:
+            raise HTTPException(status_code=404, detail="Owner account not found for owner_email.")
+    # Without an owner_email the farm is an ownerless reference/zone farm (no notifications are sent for it).
+    owner_id = owner.id if owner else None
 
     farm = MongoFarm(
         owner_id=owner_id,
@@ -269,7 +328,7 @@ async def create_user_admin(
     new_user = MongoUser(
         name=req.name,
         email=req.email.lower(),
-        password_hash=hash_password(req.password),
+        password_hash=await asyncio.to_thread(hash_password, req.password),
         role=req.role,
         phone=req.phone,
         district=req.district,
@@ -288,9 +347,13 @@ async def update_user_status(
     current_user: MongoUser = Depends(require_roles(["admin"]))
 ):
     """Admin: Update user permissions, role, or active status."""
-    target_user = await MongoUser.get(PydanticObjectId(user_id))
+    target_user = await MongoUser.get(parse_object_id(user_id, "User not found."))
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found.")
+    if target_user.id == current_user.id and (
+        (req.is_active is False) or (req.role is not None and req.role != "admin")
+    ):
+        raise HTTPException(status_code=400, detail="Admins cannot deactivate or demote their own account.")
 
     if req.name is not None: target_user.name = req.name
     if req.role is not None: target_user.role = req.role
@@ -308,8 +371,8 @@ async def update_user_status(
 async def get_alert_thresholds(
     current_user: MongoUser = Depends(require_roles(["admin"]))
 ):
-    """Admin: View system-wide risk alert sensitivity thresholds."""
-    return PLATFORM_THRESHOLDS
+    """Admin: View system-wide risk alert sensitivity thresholds (persisted; legacy 0–1 shape)."""
+    return _legacy_alert_thresholds()
 
 
 @router.put("/alert-thresholds")
@@ -317,23 +380,52 @@ async def update_alert_thresholds(
     req: ThresholdsUpdate,
     current_user: MongoUser = Depends(require_roles(["admin"]))
 ):
-    """Admin: Configure risk score sensitivity and notification rules."""
+    """Admin: Configure risk score sensitivity and notification rules (persisted to MongoDB)."""
+    updates: Dict[str, Any] = {}
     if req.high_risk_threshold is not None:
-        PLATFORM_THRESHOLDS["high_risk_threshold"] = req.high_risk_threshold
+        updates["medium_max"] = req.high_risk_threshold * 100.0
     if req.medium_risk_threshold is not None:
-        PLATFORM_THRESHOLDS["medium_risk_threshold"] = req.medium_risk_threshold
+        updates["low_max"] = req.medium_risk_threshold * 100.0
     if req.haversine_cluster_radius_km is not None:
-        PLATFORM_THRESHOLDS["haversine_cluster_radius_km"] = req.haversine_cluster_radius_km
+        updates["haversine_cluster_radius_km"] = req.haversine_cluster_radius_km
     if req.notification_frequency_hours is not None:
-        PLATFORM_THRESHOLDS["notification_frequency_hours"] = req.notification_frequency_hours
+        updates["notification_frequency_hours"] = req.notification_frequency_hours
     if req.preemptive_alert_enabled is not None:
-        PLATFORM_THRESHOLDS["preemptive_alert_enabled"] = req.preemptive_alert_enabled
+        updates["preemptive_alert_enabled"] = req.preemptive_alert_enabled
+    try:
+        await risk_thresholds_service.save_risk_thresholds(updates, updated_by=current_user.email)
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
 
     return {
         "status": "updated",
         "updated_by": current_user.name,
-        "current_thresholds": PLATFORM_THRESHOLDS
+        "current_thresholds": _legacy_alert_thresholds(),
     }
+
+
+@router.get("/thresholds")
+async def get_risk_thresholds_endpoint(
+    current_user: MongoUser = Depends(require_roles(["admin"]))
+):
+    """Admin: Risk score boundaries (0–100): Low < low_max <= Medium < medium_max <= High."""
+    t = risk_thresholds_service.get_risk_thresholds()
+    return {"low_max": t["low_max"], "medium_max": t["medium_max"]}
+
+
+@router.put("/thresholds")
+async def update_risk_thresholds_endpoint(
+    req: RiskThresholdsUpdate,
+    current_user: MongoUser = Depends(require_roles(["admin"]))
+):
+    """Admin: Persist new risk score boundaries (0–100). Used by live inference immediately."""
+    try:
+        t = await risk_thresholds_service.save_risk_thresholds(
+            {"low_max": req.low_max, "medium_max": req.medium_max}, updated_by=current_user.email
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    return {"low_max": t["low_max"], "medium_max": t["medium_max"]}
 
 
 # ── 5. Advisory Content Upload ─────────────────────────────────
@@ -436,16 +528,22 @@ async def run_ingestion_now(
     from backend.jobs.daily_ingestion_job import run_daily_ingestion_job
     try:
         report = await run_daily_ingestion_job(is_manual=True)
-        return {
-            "status": "success",
-            "message": f"Daily ingestion pipeline executed: {report['success_count']}/{report['farms_processed']} succeeded.",
-            "report": report
-        }
-    except Exception as e:
+    except Exception:
+        logger.exception("Manual daily ingestion run failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Daily ingestion run failed: {str(e)}"
+            detail="Daily ingestion run failed."
         )
+    if isinstance(report, dict) and report.get("status") == "skipped":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=report.get("message") or "Another ingestion run is already in progress. Try again later.",
+        )
+    return {
+        "status": "success",
+        "message": f"Daily ingestion pipeline executed: {report.get('success_count', 0)}/{report.get('farms_processed', 0)} succeeded.",
+        "report": report
+    }
 
 
 
@@ -479,31 +577,35 @@ async def get_platform_analytics(
         for d, count in dist_map.items()
     ]
 
+    last_real_retrain = await MongoRetrainingLog.find(
+        MongoRetrainingLog.status == "completed"
+    ).sort(-MongoRetrainingLog.created_at).first_or_none()
+    metrics = _pest_model_benchmarks()
+
     return {
+        # Counts, model metrics (metrics.json) and retrain date are real; the district
+        # vulnerability labels are static demo values (not computed from live predictions).
+        "simulated": True,
+        "simulated_sections": ["vulnerability_by_district"],
         "platform_summary": {
             "total_registered_users": total_users,
             "total_registered_farms": total_farms,
             "total_treatments_logged": total_treatments,
             "total_knowledge_advisories": total_advisories,
             "total_geospatial_alerts_dispatched": total_alerts,
-            "active_models_running": 2,  # XGBoost Multicrop + ResNet18 Disease
         },
         "vulnerability_by_district": vuln_list or [
             {"district": "Thoothukudi", "risk_level": "High", "dominant_threat": "Pink Bollworm", "farm_count": 14},
             {"district": "Thanjavur", "risk_level": "Medium", "dominant_threat": "Brown Planthopper", "farm_count": 28},
             {"district": "Coimbatore", "risk_level": "Low", "dominant_threat": "Aphids (Sub-threshold)", "farm_count": 17},
         ],
-        "model_performance_benchmarks": {
-            "pest_warning_model": "XGBoost Multicrop v2.0",
-            "accuracy": "78.45%",
-            "auc_roc": 0.7820,
-            "cv_f1_score": 0.7274,
-            "yield_model_r2": "0.9917",
-        },
+        "model_performance_benchmarks": metrics,
         "retraining_feedback_status": {
-            "agronomist_verified_samples": max(verified_samples, 24),
+            "agronomist_verified_samples": verified_samples,
             "pending_in_queue": unverified_pending,
-            "last_retrain_date": "2026-09-08",
+            "last_retrain_date": (
+                last_real_retrain.created_at.date().isoformat() if last_real_retrain else metrics.get("trained_utc")
+            ),
         }
     }
 
@@ -519,6 +621,11 @@ async def trigger_daily_batch_predictions(
     Fetches NASA weather, predicts risk, writes to pest_warning_logs, and dispatches 5km alerts.
     """
     result = await run_daily_prediction_pipeline_for_all_farms()
+    if isinstance(result, dict) and result.get("status") == "skipped":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=result.get("message") or "Another ingestion run is already in progress. Try again later.",
+        )
     return {
         "status": "success",
         "message": f"Daily prediction pipeline executed across {result['total_farms_processed']} registered farm zones.",
@@ -531,38 +638,38 @@ async def trigger_model_retraining(
     current_user: MongoUser = Depends(require_roles(["admin"]))
 ):
     """
-    Admin: Triggers scheduled model retraining pipeline incorporating agronomist-verified feedback samples.
+    Admin: SIMULATED retraining request. No model is retrained by this endpoint (training runs
+    offline via ml/training/*). It records a RetrainingLog entry with status "simulated" and
+    makes no accuracy-improvement claim.
     """
     now = datetime.utcnow()
     verified_count = await MongoWarningLog.find(MongoWarningLog.verified_by != None).count()
-    verified_count = max(verified_count, 24)
-    total_samples = 10000 + verified_count
-
-    new_acc = round(0.7845 + min(0.04, (verified_count / 1000) * 0.05), 4)
-    new_auc = round(0.7820 + min(0.03, (verified_count / 1000) * 0.04), 4)
 
     log = MongoRetrainingLog(
         triggered_by=current_user.id,
         triggered_by_role="admin",
         model_name="xgboost_multicrop_v2",
-        dataset_rows=total_samples,
+        dataset_rows=0,
         verified_samples_ingested=verified_count,
-        accuracy=new_acc,
-        auc_roc=new_auc,
-        status="completed",
-        metrics={"f1_weighted": round(new_acc - 0.05, 4), "samples": total_samples},
-        notes=f"Retrained by Admin {current_user.name} on {verified_count} agronomist-verified feedback samples.",
+        status="simulated",
+        metrics={"simulated": True, "verified_samples_available": verified_count},
+        notes=(
+            f"Simulated retrain requested by Admin {current_user.name}; {verified_count} agronomist-verified "
+            "samples available. No model was retrained and no metrics changed."
+        ),
     )
     await log.insert()
 
     return {
-        "status": "success",
-        "message": "Model retraining pipeline completed successfully.",
+        "status": "simulated",
+        "simulated": True,
+        "message": (
+            "Retraining is simulated in this deployment: no model was retrained and accuracy is unchanged. "
+            "Run the offline training pipeline (ml/training) to produce a new model."
+        ),
         "model_name": "xgboost_multicrop_v2",
-        "previous_accuracy": "78.45%",
-        "new_accuracy": f"{round(new_acc * 100, 2)}%",
-        "samples_trained_on": total_samples,
-        "verified_feedback_samples_ingested": verified_count,
+        "new_accuracy": None,
+        "verified_feedback_samples_available": verified_count,
         "retraining_log_id": str(log.id),
         "timestamp": now.isoformat(),
     }
@@ -583,6 +690,7 @@ async def get_model_history(
             "accuracy": l.accuracy,
             "auc_roc": l.auc_roc,
             "status": l.status,
+            "simulated": l.status == "simulated" or bool((l.metrics or {}).get("simulated")),
             "notes": l.notes,
             "created_at": l.created_at,
         }

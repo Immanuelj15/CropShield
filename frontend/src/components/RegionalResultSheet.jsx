@@ -4,12 +4,14 @@ import {
   ShieldAlert, AlertTriangle, CheckCircle2, ChevronDown, ChevronUp,
   Send, Sparkles, MapPin, X, Info, Layers, BellRing, Check, Loader2
 } from 'lucide-react'
-import axios from 'axios'
+import { apiFetch } from '../utils/http'
 
 export default function RegionalResultSheet({
   scanResult,
   loading,
   error,
+  errorTitle = 'Zone Scan Exceeded',
+  onRetry,
   userRole,
   polygonGeoJSON,
   onClear,
@@ -26,15 +28,12 @@ export default function RegionalResultSheet({
 
   const handleBroadcast = async (e) => {
     e?.preventDefault()
-    if (!polygonGeoJSON || !broadcastTitle || !broadcastMessage) return
+    if (!polygonGeoJSON || !broadcastTitle || !broadcastMessage || broadcasting) return
 
     setBroadcasting(true)
     setBroadcastStatus(null)
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('cropshield_token')
-      const headers = token ? { Authorization: `Bearer ${token}` } : {}
-
       const payload = {
         polygon: polygonGeoJSON,
         title: broadcastTitle,
@@ -43,10 +42,10 @@ export default function RegionalResultSheet({
         target_threat: scanResult?.dominant_threat?.pest_or_disease,
       }
 
-      const res = await axios.post('/api/v1/outbreak/scan-area/broadcast-advisory', payload, { headers })
+      const data = await apiFetch('/outbreak/scan-area/broadcast-advisory', { method: 'POST', json: payload })
       setBroadcastStatus({
         type: 'success',
-        message: res.data.message || 'Advisory successfully broadcasted to regional farm owners.',
+        message: data?.message || 'Advisory successfully broadcasted to regional farm owners.',
       })
       setTimeout(() => {
         setShowBroadcastModal(false)
@@ -55,7 +54,7 @@ export default function RegionalResultSheet({
     } catch (err) {
       setBroadcastStatus({
         type: 'error',
-        message: err.response?.data?.detail || 'Failed to dispatch regional advisory.',
+        message: err.message || 'Failed to dispatch regional advisory.',
       })
     } finally {
       setBroadcasting(false)
@@ -141,11 +140,21 @@ export default function RegionalResultSheet({
                   <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 flex items-start gap-3">
                     <AlertTriangle className="text-red-600 shrink-0 mt-0.5" size={20} />
                     <div className="space-y-1 text-xs">
-                      <p className="font-bold text-sm">Zone Scan Exceeded</p>
+                      <p className="font-bold text-sm">{errorTitle}</p>
                       <p className="leading-relaxed">{error}</p>
-                      <p className="text-stone-600 pt-1">
-                        Tip: Zoom in using the +/- controls and draw a compact boundary over specific farm clusters.
-                      </p>
+                      {onRetry ? (
+                        <button
+                          type="button"
+                          onClick={onRetry}
+                          className="mt-1 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold"
+                        >
+                          Retry scan
+                        </button>
+                      ) : (
+                        <p className="text-stone-600 pt-1">
+                          Tip: Zoom in using the +/- controls and draw a compact boundary over specific farm clusters.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}

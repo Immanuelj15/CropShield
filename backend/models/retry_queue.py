@@ -15,7 +15,7 @@ class RetryQueue(Document):
     district: str
     error_message: str
     retry_count: int = 0
-    status: str = "pending"  # "pending" | "resolved" | "abandoned"
+    status: str = "pending"  # "pending" | "processing" | "resolved" | "abandoned"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     last_attempt_at: Optional[datetime] = None
 
@@ -24,4 +24,11 @@ class RetryQueue(Document):
         indexes = [
             IndexModel([("status", ASCENDING), ("retry_count", ASCENDING)], name="retry_queue_status_idx"),
             IndexModel([("farm_id", ASCENDING)], name="retry_queue_farm_idx"),
+            # At most one pending item per farm (new failures upsert into it)
+            IndexModel(
+                [("farm_id", ASCENDING)],
+                unique=True,
+                name="retry_queue_one_pending_per_farm_idx",
+                partialFilterExpression={"status": "pending"},
+            ),
         ]

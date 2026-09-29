@@ -11,12 +11,18 @@ from backend.db.database import get_db
 from backend.models.schemas import DetectionRequest, DetectionResponse, DetectedPest
 from backend.models.db_models import PestDetection, DetectionStatus
 from backend.services import weather_service, soil_service, pest_service
+from backend.models.user import User as MongoUser
+from backend.utils.auth_utils import get_current_user
 
 router = APIRouter()
 
 
 @router.post("/detect", response_model=DetectionResponse, summary="Detect Pest Presence Today")
-async def detect_pests(request: DetectionRequest, db: Session = Depends(get_db)):
+async def detect_pests(
+    request: DetectionRequest,
+    db: Session = Depends(get_db),
+    current_user: MongoUser = Depends(get_current_user),
+):
     """
     Rule-based pest detection using today's live weather.
     Evaluates each pest's favorable climate thresholds against current conditions.
@@ -82,5 +88,9 @@ async def detect_pests(request: DetectionRequest, db: Session = Depends(get_db))
             action_required=overall in ("Suspected","Confirmed"),
             alert_message=msg,
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        import logging
+        logging.getLogger("cropshield.detect_api").exception("Pest detection failed")
+        raise HTTPException(status_code=500, detail="Pest detection failed.")

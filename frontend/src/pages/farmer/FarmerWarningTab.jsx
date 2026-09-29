@@ -1,4 +1,5 @@
-import { AlertTriangle, Activity, Thermometer, Droplets, Wind, HelpCircle, Send, WifiOff } from 'lucide-react'
+import { AlertTriangle, Activity, Thermometer, Droplets, Wind, HelpCircle, Send, WifiOff, CloudOff } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import clsx from 'clsx'
 import RiskGauge from '../../components/RiskGauge'
 import CounterfactualCard from '../../components/CounterfactualCard'
@@ -17,9 +18,27 @@ function getRiskBadge(level) {
 export default function FarmerWarningTab({
   warningData, loading, isOfflineCached, cachedTimestamp, farm, fetchTodayWarning,
   vegetationData, scanResult, supportQuery, setSupportQuery, supportSent, handleSendSupport,
+  supportSending = false,
 }) {
+  const { t } = useTranslation(['farmer'])
+  // Contract 8: weather came from the synthetic fallback, not NASA POWER
+  const isSyntheticWeather = !!warningData?.data_quality?.is_synthetic
+  // ML fallback: the pest model could not run, so the score is a documented rule index.
+  const isRuleFallback = !!warningData && (warningData.model_version === 'rules-fallback-v2' || warningData.is_rule_fallback === true)
+  const hasCalibration = !isRuleFallback && typeof warningData?.calibrated_confidence === 'number'
+  // Contract 7: never feed an unavailable-model scan confidence into the fused score
+  const reliableScanConfidence = scanResult && scanResult.model_available !== false && typeof scanResult.confidence === 'number'
+    ? scanResult.confidence
+    : undefined
+
   return (
     <div className="space-y-6">
+      {isSyntheticWeather && !loading && (
+        <div className="p-3 bg-sky-50 border border-sky-200 rounded-2xl flex items-center gap-2.5 text-xs text-sky-900 font-semibold" role="status">
+          <CloudOff size={16} className="text-sky-700 shrink-0" />
+          <span>{t('farmer:synthetic_weather_notice', 'Estimated weather (live data unavailable). Treat this risk as indicative only.')}</span>
+        </div>
+      )}
       {isOfflineCached && (
         <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 font-semibold">
           <div className="flex items-center gap-2.5">
@@ -52,20 +71,28 @@ export default function FarmerWarningTab({
                   <span className={`text-xs px-3 py-1 rounded-full font-extrabold border uppercase tracking-wider ${getRiskBadge(warningData.risk_level)}`}>
                     {warningData.risk_level} Risk
                   </span>
-                  <ConfidenceBadge
-                    calibratedConfidence={warningData.calibrated_confidence}
-                    confidenceBand={warningData.confidence_band}
-                    rawConfidence={warningData.raw_confidence}
-                  />
+                  {hasCalibration && (
+                    <ConfidenceBadge
+                      calibratedConfidence={warningData.calibrated_confidence}
+                      confidenceBand={warningData.confidence_band}
+                      rawConfidence={warningData.raw_confidence}
+                    />
+                  )}
                 </div>
+                {isRuleFallback && (
+                  <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1" role="status">
+                    <AlertTriangle size={12} className="shrink-0" />
+                    {t('farmer:rule_based_estimate', 'Rule-based estimate (model unavailable)')}
+                  </p>
+                )}
                 <p className="text-xs text-stone-500 mt-1">
-                  NASA POWER satellite observation: {warningData.data_date} · Model: {warningData.model_version}
+                  {isSyntheticWeather ? 'Estimated weather' : 'NASA POWER satellite observation'}: {warningData.data_date} · Model: {warningData.model_version}
                 </p>
               </div>
 
               <div className="text-right">
-                <span className="text-2xl font-black text-stone-900">{Math.round(warningData.risk_score * 100)}%</span>
-                <span className="text-[11px] text-stone-500 block">Risk Probability</span>
+                <span className="text-2xl font-black text-stone-900">{Math.round((Number(warningData.risk_score) || 0) * 100)}%</span>
+                <span className="text-[11px] text-stone-500 block">{isRuleFallback ? 'Rule-based risk index' : 'Risk Probability'}</span>
               </div>
             </div>
 
@@ -112,7 +139,7 @@ export default function FarmerWarningTab({
             <div className="pt-2">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold text-stone-700 uppercase tracking-wider">Explainable AI: Risk Feature Breakdown (SHAP)</h3>
-                <span className="text-[11px] text-stone-500">Tree-SHAP Attribution</span>
+                <span className="text-[11px] text-stone-500">{isRuleFallback ? 'Rule-based factors (no model SHAP)' : 'Tree-SHAP Attribution'}</span>
               </div>
 
               <div className="space-y-2.5">
@@ -122,7 +149,7 @@ export default function FarmerWarningTab({
                   return (
                     <div key={i} className="p-2.5 bg-stone-50 rounded-lg border border-stone-200/80">
                       <div className="flex items-center justify-between text-xs font-semibold mb-1">
-                        <span className="text-stone-800">{f.feature.replace(/_/g, ' ').toUpperCase()} ({f.value})</span>
+                        <span className="text-stone-800">{String(f.feature || '').replace(/_/g, ' ').toUpperCase()} ({f.value})</span>
                         <span className={isPos ? 'text-red-600' : 'text-green-700'}>
                           {isPos ? '+' : ''}{Math.round(f.shap_value * 100)}% Risk Impact
                         </span>
@@ -162,7 +189,7 @@ export default function FarmerWarningTab({
                 />
                 <button
                   type="submit"
-                  disabled={!supportQuery.trim()}
+                  disabled={!supportQuery.trim() || supportSending}
                   className="w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   <Send size={13} /> Submit Diagnostic Request
@@ -170,7 +197,7 @@ export default function FarmerWarningTab({
               </form>
               {supportSent && (
                 <p className="text-[11px] text-green-700 font-bold bg-green-50 p-2 rounded-lg text-center">
-                  ✓ Diagnostic request routed to Dr. V. Sundaram (Coimbatore Region).
+                  ✓ Diagnostic request sent to your regional agronomists.
                 </p>
               )}
             </div>
@@ -181,14 +208,14 @@ export default function FarmerWarningTab({
               fusedData={vegetationData?.fused_health_score || warningData?.fused_health_score}
               climateRiskScore={warningData?.risk_score}
               ndviValue={vegetationData?.ndvi_value}
-              imageConfidence={scanResult?.confidence}
+              imageConfidence={reliableScanConfidence}
             />
             <VegetationHealthCard vegetationData={vegetationData} />
           </div>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center text-stone-500">
-          No warning generated yet. Click "Refresh" above.
+          {farm ? 'No warning generated yet. Click "Refresh" above.' : 'Register your farm in Manage My Farm to get a daily pest warning.'}
         </div>
       )}
     </div>

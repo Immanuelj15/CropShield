@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Mic, Volume2, X, Send, Sparkles, Bot } from 'lucide-react'
-import axios from 'axios'
+import api from '../utils/api'
 
 export default function VoiceAssistantModal({ isOpen, onClose }) {
   const [query, setQuery] = useState('')
@@ -18,22 +18,23 @@ export default function VoiceAssistantModal({ isOpen, onClose }) {
 
   const handleSend = async (customQuery) => {
     const textToSend = customQuery || query
-    if (!textToSend.trim()) return
+    if (!textToSend.trim() || loading) return
 
-    const newMessages = [...messages, { sender: 'user', text: textToSend }]
-    setMessages(newMessages)
+    // Functional updates so concurrent sends/replies never overwrite each other (stale closure fix)
+    setMessages((prev) => [...prev, { sender: 'user', text: textToSend }])
     if (!customQuery) setQuery('')
     setLoading(true)
 
     try {
-      const res = await axios.post('/api/v1/chatbot/query', {
+      // Shared axios instance: sends the session Bearer token
+      const res = await api.post('/chatbot/query', {
         query: textToSend,
         language: language
       })
-      setMessages([...newMessages, { sender: 'bot', text: res.data.response_text, script: res.data.audio_script }])
+      setMessages((prev) => [...prev, { sender: 'bot', text: res.data.response_text, script: res.data.audio_script }])
     } catch (err) {
-      setMessages([
-        ...newMessages,
+      setMessages((prev) => [
+        ...prev,
         {
           sender: 'bot',
           text: language === 'ta' 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Sprout, Coins, Droplets, MapPin, Calendar, Sparkles,
   RefreshCw, AlertCircle, Info, Layers, FileSpreadsheet, Scale
@@ -8,7 +8,8 @@ import { useTranslation } from 'react-i18next'
 import CropRecommendationCard from '../components/CropRecommendationCard'
 import { formatINR } from '../components/ProfitRangeDisplay'
 
-const API_BASE = '/api/v1'
+import { apiFetch, isNetworkError } from '../utils/http'
+import { farmIdOf } from '../utils/farms'
 
 const BUDGET_PRESETS = [
   { label: '₹25,000', value: 25000 },
@@ -39,33 +40,33 @@ export default function CropRecommendationPage() {
   const [demoScenarios, setDemoScenarios] = useState([])
   const [activeScenarioId, setActiveScenarioId] = useState(null)
 
-  const token = sessionStorage.getItem('cropshield_token') || localStorage.getItem('cropshield_token')
-  const authHeaders = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
-  }
+  // P2-8: only the latest /generate response may update the screen
+  const requestIdRef = useRef(0)
 
-  // Fetch initial farm profile and demo scenarios
+  // Fetch initial farm profile and demo scenarios, then run exactly ONE /generate on mount
   useEffect(() => {
-    fetchFarmProfile()
+    const currentSeason = determineCurrentSeason()
     fetchDemoScenarios()
-    determineCurrentSeason()
-    executeRecommendation()
+    fetchFarmProfile().then((ranWithProfile) => {
+      if (!ranWithProfile) executeRecommendation({ season: currentSeason })
+    })
   }, [])
 
   const determineCurrentSeason = () => {
     const month = new Date().getMonth() + 1
-    if (month >= 6 && month <= 10) setSeason('Kharif')
-    else if (month === 11 || month === 12 || month <= 2) setSeason('Rabi')
-    else setSeason('Summer')
+    let value = 'Summer'
+    if (month >= 6 && month <= 10) value = 'Kharif'
+    else if (month === 11 || month === 12 || month <= 2) value = 'Rabi'
+    setSeason(value)
+    return value
   }
 
+  // Returns true when it already triggered a recommendation with the farm's context
   const fetchFarmProfile = async () => {
     try {
-      const res = await fetch(`${API_BASE}/farmer/profile`, { headers: authHeaders })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.farm) {
+      const data = await apiFetch('/farmer/profile')
+      {
+        if (data?.farm) {
           setFarm(data.farm)
           const farmDist = data.farm.district || district
           const farmSoil = data.farm.soil_type || soilType
@@ -88,26 +89,27 @@ export default function CropRecommendationPage() {
 
           // Re-run with profile context
           executeRecommendation({
-            farm_id: data.farm.id ? String(data.farm.id) : null,
+            farm_id: farmIdOf(data.farm) || null,
+            season: determineCurrentSeason(),
             district: farmDist,
             soil_type: farmSoil,
             water_availability: farmWater,
             land_area_acres: farmAcres,
             budget: scaledBudget,
           })
+          return true
         }
       }
     } catch (e) {
       console.debug('Farm profile auto-fill fallback:', e)
     }
+    return false
   }
 
   const fetchDemoScenarios = async () => {
     try {
-      const res = await fetch(`${API_BASE}/crop-recommendation/demo-scenarios?limit=8`)
-      if (res.ok) {
-        setDemoScenarios(await res.json())
-      }
+      const data = await apiFetch('/crop-recommendation/demo-scenarios?limit=8')
+      setDemoScenarios(Array.isArray(data) ? data : [])
     } catch (e) {
       console.debug('Demo scenarios error:', e)
     }
@@ -140,6 +142,8 @@ export default function CropRecommendationPage() {
   }
 
   const executeRecommendation = async (overrides = {}) => {
+    const requestId = ++requestIdRef.current
+    const isCurrent = () => requestId === requestIdRef.current
     setLoading(true)
     setError(null)
     try {
@@ -147,7 +151,7 @@ export default function CropRecommendationPage() {
       const rawArea = overrides.land_area_acres !== undefined ? Number(overrides.land_area_acres) : Number(landAreaAcres)
 
       const payload = {
-        farm_id: overrides.farm_id !== undefined ? overrides.farm_id : (farm?.id ? String(farm.id) : null),
+        farm_id: overrides.farm_id !== undefined ? overrides.farm_id : (farmIdOf(farm) || null),
         budget: isNaN(rawBudget) || rawBudget <= 0 ? 60000 : rawBudget,
         water_availability: overrides.water_availability || waterAvailability || 'Medium',
         season: overrides.season || season || 'Kharif',
@@ -156,26 +160,16 @@ export default function CropRecommendationPage() {
         land_area_acres: isNaN(rawArea) || rawArea <= 0 ? 2.5 : rawArea,
       }
 
-      const res = await fetch(`${API_BASE}/crop-recommendation/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        setResults(data)
-      } else {
-        const err = await res.json().catch(() => ({}))
-        const msg = Array.isArray(err.detail)
-          ? err.detail.map(d => `${d.loc?.slice(-1)[0] || 'Field'}: ${d.msg}`).join(', ')
-          : (typeof err.detail === 'string' ? err.detail : 'Failed to generate crop recommendations.')
-        setError(msg)
-      }
+      const data = await apiFetch('/crop-recommendation/generate', { method: 'POST', json: payload })
+      if (!isCurrent()) return
+      setResults(data)
     } catch (err) {
-      setError('Backend communication error. Please ensure AgriGuard server is running.')
+      if (!isCurrent()) return
+      setError(isNetworkError(err)
+        ? 'Backend communication error. Please ensure AgriGuard server is running.'
+        : (err.message || 'Failed to generate crop recommendations.'))
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }
 

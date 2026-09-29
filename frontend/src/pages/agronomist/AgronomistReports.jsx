@@ -1,36 +1,53 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { FileText } from 'lucide-react'
 import clsx from 'clsx'
 import StatCard from '../../components/ui/StatCard'
-
-const API_BASE = '/api/v1'
+import DemoDataBadge from '../../components/ui/DemoDataBadge'
+import { apiFetch, isAbortError } from '../../utils/http'
 
 export default function AgronomistReports() {
   const [report, setReport] = useState(null)
   const [reportRange, setReportRange] = useState('weekly')
   const [loading, setLoading] = useState(false)
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
-  }
+  const [error, setError] = useState(null)
+  // P2-8: switching range quickly must not let an older response overwrite the newer one
+  const reqRef = useRef({ id: 0, controller: null })
 
   const fetchRegionalReport = async (rangeVal) => {
+    reqRef.current.controller?.abort()
+    const controller = new AbortController()
+    const requestId = reqRef.current.id + 1
+    reqRef.current = { id: requestId, controller }
+    const isCurrent = () => reqRef.current.id === requestId
+
     setLoading(true)
+    setError(null)
+    setReport(null)
     try {
-      const res = await fetch(`${API_BASE}/reports/regional?range=${rangeVal}`, { headers: authHeaders })
-      if (res.ok) setReport(await res.json())
-    } catch (e) { console.error(e) }
-    finally { setLoading(false) }
+      const data = await apiFetch(`/reports/regional?range=${encodeURIComponent(rangeVal)}`, { signal: controller.signal })
+      if (isCurrent()) setReport(data)
+    } catch (e) {
+      if (isAbortError(e) || !isCurrent()) return
+      console.error(e)
+      setError(e.message || 'Could not load the report.')
+    } finally {
+      if (isCurrent()) setLoading(false)
+    }
   }
 
-  useEffect(() => { fetchRegionalReport('weekly') }, [])
+  useEffect(() => {
+    fetchRegionalReport('weekly')
+    return () => reqRef.current.controller?.abort()
+  }, [])
 
   return (
     <div className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
         <div>
-          <h2 className="text-xl font-bold text-stone-900">Regional Pest Activity Reports</h2>
+          <h2 className="text-xl font-bold text-stone-900 flex items-center gap-2">
+            Regional Pest Activity Reports
+            <DemoDataBadge show={!!report?.simulated} />
+          </h2>
           <p className="text-xs text-stone-500 mt-0.5">One-click comprehensive reporting for agricultural department briefings.</p>
         </div>
 
@@ -51,6 +68,7 @@ export default function AgronomistReports() {
       </div>
 
       {loading && <p className="text-xs text-stone-400 text-center py-6">Loading report…</p>}
+      {error && !loading && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{error}</p>}
 
       {report && !loading && (
         <div className="space-y-6">

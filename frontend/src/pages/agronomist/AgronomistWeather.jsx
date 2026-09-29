@@ -2,24 +2,41 @@ import { useState, useEffect } from 'react'
 import { CloudRain, Thermometer, Droplets, Wind } from 'lucide-react'
 import StatCard from '../../components/ui/StatCard'
 
-const API_BASE = '/api/v1'
+import { apiFetch } from '../../utils/http'
 
 export default function AgronomistWeather() {
   const [fieldWeather, setFieldWeather] = useState(null)
-  const token = sessionStorage.getItem('cropshield_token')
-  const authHeaders = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
-  }
+  const [farms, setFarms] = useState([])
+  const [farmId, setFarmId] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/weather/farm_demo`, { headers: authHeaders })
-        if (res.ok) setFieldWeather(await res.json())
-      } catch (e) { console.error(e) }
+        const list = await apiFetch('/farms')
+        const withLocation = (Array.isArray(list) ? list : []).filter(f => f.location?.coordinates?.length >= 2)
+        setFarms(withLocation)
+        if (withLocation.length > 0) setFarmId(withLocation[0].farm_id)
+        else setError('No registered farms with a GPS location yet.')
+      } catch (e) { setError(e.message || 'Could not load farms.') }
     })()
   }, [])
+
+  useEffect(() => {
+    if (!farmId) return
+    let cancelled = false
+    setFieldWeather(null)
+    setError('')
+    ;(async () => {
+      try {
+        const data = await apiFetch(`/weather/${encodeURIComponent(farmId)}`)
+        if (!cancelled) setFieldWeather(data)
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Could not load weather for this farm.')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [farmId])
 
   return (
     <div className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
@@ -31,10 +48,31 @@ export default function AgronomistWeather() {
             Real-time ambient temperature, humidity, rainfall, and VPD retrieved directly from NASA satellite reanalysis.
           </p>
         </div>
-        <span className="px-3 py-1 bg-green-50 text-green-800 border border-green-200 rounded-lg text-xs font-bold">
-          Daily Reanalysis Feed Active
-        </span>
+        {farms.length > 0 && (
+          <label className="flex items-center gap-2 text-xs font-semibold text-stone-700">
+            Farm
+            <select
+              id="agronomist-weather-farm"
+              value={farmId}
+              onChange={e => setFarmId(e.target.value)}
+              className="px-3 py-1.5 border border-stone-200 rounded-lg text-xs bg-white"
+            >
+              {farms.map(f => (
+                <option key={f.farm_id} value={f.farm_id}>{f.farm_name || f.farm_id}{f.district ? ` · ${f.district}` : ''}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
+
+      {error && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800">{error}</div>
+      )}
+      {fieldWeather?.data_quality?.is_synthetic && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+          Estimated weather: live NASA POWER data is unavailable for this farm right now.
+        </div>
+      )}
 
       {fieldWeather && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -46,9 +84,11 @@ export default function AgronomistWeather() {
         </div>
       )}
 
-      <div className="p-4 bg-sky-50 rounded-2xl border border-sky-200 text-xs text-sky-900 leading-relaxed">
-        <strong>Agro-Climatic Interpretation:</strong> {fieldWeather?.microclimate_status || "Elevated night humidity combined with moderate winds promotes microclimate dew retention, predisposing susceptible cotton squares to bollworm oviposition."}
-      </div>
+      {fieldWeather?.microclimate_status && (
+        <div className="p-4 bg-sky-50 rounded-2xl border border-sky-200 text-xs text-sky-900 leading-relaxed">
+          <strong>Agro-Climatic Interpretation:</strong> {fieldWeather.microclimate_status}
+        </div>
+      )}
     </div>
   )
 }

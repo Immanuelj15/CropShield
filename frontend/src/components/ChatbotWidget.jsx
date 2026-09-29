@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { MessageSquare, X, Send, Mic, MicOff, Trash2, Bot, Sparkles, AlertCircle } from 'lucide-react';
-import axios from 'axios';
+import api from '../utils/api';
 import LanguageToggle from './LanguageToggle';
 import ChatMessage from './ChatMessage';
 import { useToast } from './ui/Toast';
@@ -59,7 +59,7 @@ export default function ChatbotWidget({ userRole = 'farmer' }) {
   useEffect(() => {
     async function loadChips() {
       try {
-        const res = await axios.get(`/api/v1/chatbot/intents?lang=${language}`);
+        const res = await api.get('/chatbot/intents', { params: { lang: language } });
         if (res.data?.suggested_chips) {
           setSuggestedChips(res.data.suggested_chips);
         }
@@ -112,17 +112,11 @@ export default function ChatbotWidget({ userRole = 'farmer' }) {
     setLoading(true);
 
     try {
-      const token = localStorage.getItem('token');
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-      const res = await axios.post(
-        '/api/v1/chatbot/ask',
-        {
-          message: query,
-          language: language,
-        },
-        { headers }
-      );
+      // Shared axios instance attaches the session Bearer token (P2-3) so replies use the user's farm context
+      const res = await api.post('/chatbot/ask', {
+        message: query,
+        language: language,
+      });
 
       const botReply = {
         sender: 'bot',

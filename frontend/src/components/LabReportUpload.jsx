@@ -4,6 +4,7 @@ import {
   Upload, FileText, CheckCircle2, AlertTriangle, X, ShieldCheck,
   Building, Calendar, Beaker, ArrowRight
 } from 'lucide-react'
+import { apiFetch } from '../utils/http'
 
 export default function LabReportUpload({
   farmId,
@@ -23,8 +24,17 @@ export default function LabReportUpload({
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (submitting) return
     if (!file) {
       setErrorMsg('Please select a soil test report file (PDF, PNG, JPG).')
+      return
+    }
+    if (!farmId) {
+      setErrorMsg('Select or register your farm before uploading a lab report.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg('File exceeds the 10 MB limit.')
       return
     }
 
@@ -42,23 +52,15 @@ export default function LabReportUpload({
       formData.append('lab_name', labName)
       formData.append('test_date', testDate)
 
-      const targetId = farmId || 'demo_farm_default'
-      const res = await fetch(`/api/v1/soil-health/${targetId}/upload-lab-report`, {
+      const data = await apiFetch(`/soil-health/${encodeURIComponent(farmId)}/upload-lab-report`, {
         method: 'POST',
         body: formData,
       })
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.detail || 'Failed to upload and register lab soil report.')
-      }
-
-      const data = await res.json()
       if (onSuccess) {
-        onSuccess(data.report)
+        onSuccess(data?.report)
       }
     } catch (err) {
-      setErrorMsg(err.message)
+      setErrorMsg(err.message || 'Failed to upload and register lab soil report.')
     } finally {
       setSubmitting(false)
     }

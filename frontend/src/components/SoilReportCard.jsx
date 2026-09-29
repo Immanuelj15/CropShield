@@ -244,7 +244,7 @@ export default function SoilReportCard({
           </div>
           {report.lab_report_file_url && (
             <a
-              href={`http://localhost:8000${report.lab_report_file_url}`}
+              href={report.lab_report_file_url}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 font-bold text-emerald-800 hover:text-emerald-950 underline"

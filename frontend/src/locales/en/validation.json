@@ -3,5 +3,7 @@
   "invalid_email": "Please enter a valid email address",
   "invalid_phone": "Please enter a valid mobile number",
   "invalid_number": "Please enter a valid numeric value",
-  "password_min_length": "Password must be at least 6 characters"
+  "password_min_length": "Password must be at least 6 characters",
+  "network_error": "Network error — check your connection and try again.",
+  "field_required": "{{field}} is required"
 }

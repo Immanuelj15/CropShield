@@ -6,7 +6,7 @@ Deterministic rule-matching engine for verifiable, zero-cost agricultural adviso
 
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from beanie import PydanticObjectId
 
@@ -16,15 +16,15 @@ from backend.models.chatbot_intent import ChatbotIntent
 from backend.models.chatbot_conversation import ChatbotConversation
 from backend.models.schemas import ChatQueryRequest, ChatQueryResponse
 from backend.services import chatbot_service
-from backend.utils.auth_utils import require_roles, get_optional_current_user
+from backend.utils.auth_utils import require_roles, get_owned_farm, get_user_primary_farm
 
 router = APIRouter()
 
 
 class AskChatbotRequest(BaseModel):
-    message: str = Field(..., description="Farmer question in Tamil, Hindi, or English")
-    language: Optional[str] = Field(None, description="Language override: 'ta' | 'hi' | 'en' (auto-detected if omitted)")
-    farm_id: Optional[str] = Field(None, description="Optional farm ID for contextual predictions")
+    message: str = Field(..., max_length=2000, description="Farmer question in Tamil, Hindi, or English")
+    language: Optional[str] = Field(None, max_length=5, description="Language override: 'ta' | 'hi' | 'en' (auto-detected if omitted)")
+    farm_id: Optional[str] = Field(None, max_length=64, description="Optional farm ID for contextual predictions (must be yours)")
 
 
 class AskChatbotResponse(BaseModel):
@@ -62,17 +62,13 @@ async def ask_chatbot(
         lang=req.language
     )
 
-    # 2. Resolve Farm Context
+    # 2. Resolve Farm Context: an explicit farm_id must be owned (agronomists/admins: any farm)
     target_farm_id: Optional[PydanticObjectId] = None
     if req.farm_id:
-        try:
-            target_farm_id = PydanticObjectId(req.farm_id)
-        except Exception:
-            pass
-
-    if not target_farm_id and current_user:
-        # Check user's registered farm
-        user_farm = await MongoFarm.find_one({"owner_id": current_user.id})
+        farm = await get_owned_farm(req.farm_id, current_user, allow_staff_read=True)
+        target_farm_id = farm.id
+    else:
+        user_farm = await get_user_primary_farm(current_user)
         if user_farm:
             target_farm_id = user_farm.id
 
@@ -98,8 +94,10 @@ async def ask_chatbot(
             timestamp=datetime.utcnow()
         )
         await convo_log.insert()
-    except Exception as log_err:
-        pass  # Do not block response if logging fails
+    except Exception:
+        # Do not block response if logging fails
+        import logging
+        logging.getLogger("cropshield.chatbot_api").exception("Failed to log chatbot conversation")
 
     # 5. Suggested Follow-up Queries
     suggestions = await chatbot_service.get_suggested_queries(effective_lang)
@@ -119,7 +117,7 @@ async def ask_chatbot(
     summary="List Active Chatbot Intents & Starter Chips",
     description="Returns all registered intents and suggested starter questions for the UI."
 )
-async def list_chatbot_intents(lang: str = "en"):
+async def list_chatbot_intents(lang: str = Query("en", max_length=5)):
     clean_lang = lang if lang in ["ta", "hi", "en"] else "en"
     intents = await ChatbotIntent.find_all().to_list()
     suggestions = await chatbot_service.get_suggested_queries(clean_lang)
