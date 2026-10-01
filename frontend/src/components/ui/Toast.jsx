@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CheckCircle2, XCircle, Info, X } from 'lucide-react'
 import clsx from 'clsx'
@@ -30,12 +30,13 @@ export function ToastProvider({ children }) {
     return id
   }, [dismiss])
 
-  const toast = {
+  // Stable identity so consumers can safely list `toast` in effect/callback deps.
+  const toast = useMemo(() => ({
     show: showToast,
     success: (msg, opts) => showToast(msg, { ...opts, variant: 'success' }),
     error: (msg, opts) => showToast(msg, { ...opts, variant: 'error' }),
     info: (msg, opts) => showToast(msg, { ...opts, variant: 'info' }),
-  }
+  }), [showToast])
 
   return (
     <ToastContext.Provider value={toast}>
@@ -43,6 +44,8 @@ export function ToastProvider({ children }) {
       <div
         className="fixed bottom-4 right-4 left-4 sm:left-auto flex flex-col gap-2 items-stretch sm:items-end"
         style={{ zIndex: MODAL_Z_INDEX + 10 }}
+        role="status"
+        aria-live="polite"
       >
         <AnimatePresence>
           {toasts.map(({ id, message, variant }) => {
@@ -58,7 +61,7 @@ export function ToastProvider({ children }) {
               >
                 <Icon size={18} className="shrink-0" />
                 <p className="text-sm font-medium flex-1">{message}</p>
-                <button onClick={() => dismiss(id)} className="shrink-0 opacity-80 hover:opacity-100" aria-label="Dismiss">
+                <button type="button" onClick={() => dismiss(id)} className="shrink-0 rounded opacity-80 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white" aria-label="Dismiss">
                   <X size={16} />
                 </button>
               </motion.div>

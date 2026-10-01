@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sprout, CheckCircle2, AlertTriangle,
-  RotateCcw, ShieldCheck, Upload, Database, Sparkles
+  RotateCcw, ShieldCheck, Upload, Database, Sparkles, MapPin, Loader2
 } from 'lucide-react'
 
 import BoundaryDrawingStep from '../components/BoundaryDrawingStep'
 import SoilReportCard from '../components/SoilReportCard'
 import LabReportUpload from '../components/LabReportUpload'
+import EmptyState from '../components/ui/EmptyState'
 import { useToast } from '../components/ui/Toast'
 
 import { apiFetch, isAbortError } from '../utils/http'
@@ -29,6 +30,34 @@ const STEP_TITLES = [
   '4. Soil Health Report',
 ]
 
+// Water source → the Low/Medium/High tier the Crop Recommendation engine understands
+const WATER_SOURCES = [
+  { value: 'Canal Irrigation', label: 'Canal Irrigation (High availability)', tier: 'High' },
+  { value: 'Drip Irrigation System', label: 'Drip Irrigation System (High efficiency)', tier: 'High' },
+  { value: 'Borewell / Open Well', label: 'Borewell / Open Well (Moderate)', tier: 'Medium' },
+  { value: 'Rainfed / Dryland', label: 'Rainfed Only (Low / monsoon-dependent)', tier: 'Low' },
+]
+
+const SOIL_TYPES = [
+  { value: 'Alluvial Clay', label: 'Alluvial Clay (Cauvery Delta / River Basin)' },
+  { value: 'Black Cotton Soil', label: 'Black Cotton Soil (Vertisol / High Retention)' },
+  { value: 'Red Sandy Loam', label: 'Red Sandy Loam (Dryland / Good Drainage)' },
+  { value: 'Coastal Alluvial', label: 'Coastal Alluvial (Saline / Sandy)' },
+  { value: 'Lateritic Hill Soil', label: 'Lateritic Hill Soil (Acidic / Highlands)' },
+]
+
+const CONTEXT_INPUT = 'w-full text-sm bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold text-stone-900'
+const TAB_BTN = 'px-4 py-2 rounded-2xl text-xs font-semibold transition-all flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+
+function formatReportDate(value) {
+  if (!value) return '—'
+  // Backend datetimes are naive UTC ISO strings
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+const fmt = (v, suffix = '') => (v === undefined || v === null || v === '' ? '—' : `${v}${suffix}`)
+
 export default function SoilHealthAnalyzerPage() {
   const navigate = useNavigate()
 
@@ -42,13 +71,14 @@ export default function SoilHealthAnalyzerPage() {
   const [soilTypeDeclared, setSoilTypeDeclared] = useState('Alluvial Clay')
   const [district, setDistrict] = useState('Thoothukudi')
   const [waterSource, setWaterSource] = useState('Borewell / Open Well')
-  const [previousCrop, setPreviousCrop] = useState('None')
 
   // Analysis State & Reports
   const [analyzing, setAnalyzing] = useState(false)
   const [activeReport, setActiveReport] = useState(null)
   const [showLabUploadModal, setShowLabUploadModal] = useState(false)
   const [historyReports, setHistoryReports] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState(null)
   const [activeTab, setActiveTab] = useState('analyzer') // 'analyzer' | 'history'
   const toast = useToast()
 
@@ -93,18 +123,26 @@ export default function SoilHealthAnalyzerPage() {
     const controller = new AbortController()
     const requestId = historyReqRef.current.id + 1
     historyReqRef.current = { id: requestId, controller }
+    setHistoryLoading(true)
+    setHistoryError(null)
     try {
       const data = await apiFetch(`/soil-health/${encodeURIComponent(farmId)}/history`, { signal: controller.signal })
-      if (historyReqRef.current.id === requestId) setHistoryReports(data?.reports || [])
+      if (historyReqRef.current.id === requestId) setHistoryReports(Array.isArray(data?.reports) ? data.reports : [])
     } catch (e) {
       if (isAbortError(e)) return
       console.debug('Error fetching soil history:', e)
-      if (historyReqRef.current.id === requestId) setHistoryReports([])
+      if (historyReqRef.current.id === requestId) {
+        setHistoryReports([])
+        setHistoryError(e.message || 'Could not load soil report history.')
+      }
+    } finally {
+      if (historyReqRef.current.id === requestId) setHistoryLoading(false)
     }
   }
 
   useEffect(() => {
     setHistoryReports([])
+    setHistoryError(null)
     setActiveReport(null)
     if (selectedFarmId) {
       fetchSoilHistory(selectedFarmId)
@@ -161,8 +199,13 @@ export default function SoilHealthAnalyzerPage() {
   selectedFarmIdRef.current = selectedFarmId
 
   const handleLabReportSuccess = (newReport) => {
-    setActiveReport(newReport)
+    if (newReport) {
+      setActiveReport(newReport)
+      setCurrentStep(4)
+      setActiveTab('analyzer')
+    }
     setShowLabUploadModal(false)
+    toast.success('Lab report saved. It now overrides the preliminary estimate.')
     if (selectedFarmId) fetchSoilHistory(selectedFarmId)
   }
 
@@ -170,15 +213,16 @@ export default function SoilHealthAnalyzerPage() {
     navigate('/farmer/crop-recommendation', {
       state: {
         soil_type: activeReport?.soil_type_declared || soilTypeDeclared,
-        land_area_acres: activeReport?.area_acres || 2.5,
+        land_area_acres: activeReport?.area_acres || undefined,
         district: activeReport?.district || district,
-        farm_id: selectedFarmId,
+        water_availability: WATER_SOURCES.find((w) => w.value === waterSource)?.tier,
+        farm_id: activeReport?.farm_id || selectedFarmId,
       },
     })
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
       {/* Top Hero Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -186,37 +230,43 @@ export default function SoilHealthAnalyzerPage() {
             <Sprout size={14} className="text-brand-700" />
             <span>Farmer Onboarding & Pre-Season Foundation</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-stone-900 tracking-tight">
+          <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
             AI Preliminary Soil Health Analyzer
           </h1>
-          <p className="text-xs sm:text-sm text-stone-500 mt-1 max-w-2xl leading-relaxed">
+          <p className="text-sm text-stone-600 mt-1 max-w-2xl leading-relaxed">
             Trace your farm boundary to estimate topsoil reaction (pH), available nitrogen, and organic carbon
             with honest SoilGrids v2.0 uncertainty scoring. Feeds directly into your season crop recommendation.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-auto">
+        <div className="flex items-center gap-2 self-start md:self-auto" role="tablist" aria-label="Soil health views">
           <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'analyzer'}
             onClick={() => setActiveTab('analyzer')}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all ${
+            className={`${TAB_BTN} ${
               activeTab === 'analyzer'
-                ? 'bg-brand-700 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-stone-100 text-stone-600 hover:text-stone-900'
             }`}
           >
             Plot Analyzer
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'history'}
             onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`${TAB_BTN} ${
               activeTab === 'history'
-                ? 'bg-brand-700 text-white shadow-sm'
+                ? 'bg-brand-600 text-white shadow-sm'
                 : 'bg-stone-100 text-stone-600 hover:text-stone-900'
             }`}
           >
             <span>Assessment History</span>
             {historyReports.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-white/20">
+              <span className={`px-1.5 py-0.5 rounded-full text-xs ${activeTab === 'history' ? 'bg-white/20' : 'bg-stone-200 text-stone-700'}`}>
                 {historyReports.length}
               </span>
             )}
@@ -224,27 +274,56 @@ export default function SoilHealthAnalyzerPage() {
         </div>
       </div>
 
+      {/* No farm registered / farms failed to load */}
+      {farmsLoaded && farms.length === 0 && (
+        farmsError ? (
+          <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-sm flex flex-col sm:flex-row sm:items-center gap-3" role="alert">
+            <div className="flex items-start gap-2 flex-1">
+              <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+              <span>{farmsError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="btn-secondary text-xs px-4 py-2 self-start sm:self-auto"
+            >
+              Reload
+            </button>
+          </div>
+        ) : (
+          <EmptyState
+            icon={MapPin}
+            title="Register your farm first"
+            message="Soil analysis is saved against a registered farm. Add your farm (with its location) in Manage My Farm, then come back to draw its boundary."
+            actionLabel="Go to Manage My Farm"
+            onAction={() => navigate('/farmer/manage-farms')}
+          />
+        )
+      )}
+
       {/* Main Tab 1: Plot Analyzer Stepper Flow */}
       {activeTab === 'analyzer' && (
         <div className="space-y-6">
           {/* Farm Selector Pill Bar */}
-          <div className="bg-white rounded-3xl border border-stone-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black uppercase tracking-wider text-stone-700">Assign To Farm:</span>
+          <div className="card p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 min-w-0">
+              <label htmlFor="soil-farm-select" className="text-xs font-semibold text-stone-700 whitespace-nowrap">Assign to farm:</label>
               <select
+                id="soil-farm-select"
                 value={selectedFarmId}
+                disabled={farms.length === 0}
                 onChange={(e) => {
                   setSelectedFarmId(e.target.value)
                   const f = farms.find((item) => farmIdOf(item) === e.target.value)
                   applyFarm(f)
                   setCurrentStep(1)
                 }}
-                className="text-xs font-bold bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-brand-600 text-stone-900"
+                className="text-sm font-semibold bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-brand-500 text-stone-900 max-w-full disabled:opacity-60"
               >
                 {farms.length > 0 ? (
                   farms.map((f) => (
                     <option key={farmIdOf(f)} value={farmIdOf(f)}>
-                      {f.farm_name} ({f.district} • {f.crop_type || 'Unspecified'})
+                      {f.farm_name || 'My farm'} ({f.district || 'District not set'} • {f.crop_type || 'Unspecified'})
                     </option>
                   ))
                 ) : (
@@ -254,7 +333,7 @@ export default function SoilHealthAnalyzerPage() {
             </div>
 
             {/* Stepper Pill Indicators */}
-            <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-bold">
+            <div className="flex items-center gap-1.5 overflow-x-auto text-xs font-semibold pb-0.5">
               {STEP_TITLES.map((title, idx) => {
                 const stepNum = idx + 1
                 const isCurrent = currentStep === stepNum
@@ -263,9 +342,10 @@ export default function SoilHealthAnalyzerPage() {
                 return (
                   <div
                     key={title}
+                    aria-current={isCurrent ? 'step' : undefined}
                     className={`px-3 py-1 rounded-xl transition-all whitespace-nowrap flex items-center gap-1 ${
                       isCurrent
-                        ? 'bg-brand-700 text-white'
+                        ? 'bg-brand-600 text-white'
                         : isDone
                         ? 'bg-brand-50 text-brand-900 border border-brand-200'
                         : 'bg-stone-100 text-stone-600'
@@ -303,88 +383,79 @@ export default function SoilHealthAnalyzerPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3 }}
-              className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6 max-w-3xl mx-auto"
+              className="card p-5 sm:p-6 space-y-6 max-w-3xl mx-auto"
             >
               <div className="border-b border-stone-100 pb-4">
-                <span className="text-xs font-black uppercase tracking-wider text-brand-800 flex items-center gap-1.5">
-                  <CheckCircle2 size={15} /> Step 2: Confirm Boundary & Agricultural Context
+                <span className="text-xs font-semibold uppercase tracking-wider text-brand-800 flex items-center gap-1.5">
+                  <CheckCircle2 size={15} /> Step 2: Confirm Boundary &amp; Agricultural Context
                 </span>
-                <h3 className="text-lg font-black text-stone-900 mt-1">
-                  Field Soil & Water Availability Profile
+                <h3 className="text-lg font-semibold text-stone-800 mt-1">
+                  Field Soil &amp; Water Availability Profile
                 </h3>
                 <p className="text-xs text-stone-500 mt-0.5">
-                  Help refine the preliminary evaluation by declaring your local soil observations.
+                  The declared soil type and district are saved with the report. The water source is carried over to
+                  your crop recommendation.
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-stone-700 block mb-1.5">District / Agro-Zone</label>
+                  <label htmlFor="soil-district" className="text-xs font-semibold text-stone-700 block mb-1.5">District / Agro-zone</label>
                   <input
+                    id="soil-district"
                     type="text"
+                    maxLength={100}
                     value={district}
                     onChange={(e) => setDistrict(e.target.value)}
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
+                    className={CONTEXT_INPUT}
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-stone-700 block mb-1.5">Declared Soil Classification</label>
+                  <label htmlFor="soil-declared" className="text-xs font-semibold text-stone-700 block mb-1.5">Declared soil classification</label>
                   <select
+                    id="soil-declared"
                     value={soilTypeDeclared}
                     onChange={(e) => setSoilTypeDeclared(e.target.value)}
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
+                    className={CONTEXT_INPUT}
                   >
-                    <option value="Alluvial Clay">Alluvial Clay (Cauvery Delta / River Basin)</option>
-                    <option value="Black Cotton Soil">Black Cotton Soil (Vertisol / High Retention)</option>
-                    <option value="Red Sandy Loam">Red Sandy Loam (Dryland / Good Drainage)</option>
-                    <option value="Coastal Alluvial">Coastal Alluvial (Saline / Sandy)</option>
-                    <option value="Lateritic Hill Soil">Lateritic Hill Soil (Acidic / Highlands)</option>
+                    {!SOIL_TYPES.some((s) => s.value === soilTypeDeclared) && soilTypeDeclared && (
+                      <option value={soilTypeDeclared}>{soilTypeDeclared}</option>
+                    )}
+                    {SOIL_TYPES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-xs font-bold text-stone-700 block mb-1.5">Water Availability / Source</label>
+                <div className="sm:col-span-2">
+                  <label htmlFor="soil-water" className="text-xs font-semibold text-stone-700 block mb-1.5">Water availability / source</label>
                   <select
+                    id="soil-water"
                     value={waterSource}
                     onChange={(e) => setWaterSource(e.target.value)}
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
+                    className={CONTEXT_INPUT}
                   >
-                    <option value="Borewell / Open Well">Borewell / Open Well (Moderate)</option>
-                    <option value="Canal Irrigation">Canal Irrigation (High Availability)</option>
-                    <option value="Rainfed / Dryland">Rainfed Only (Low / Monsoon-Dependent)</option>
-                    <option value="Drip Irrigation System">Drip Irrigation System (High Efficiency)</option>
+                    {WATER_SOURCES.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
                   </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-stone-700 block mb-1.5">Previous Season Crop (Rotation)</label>
-                  <input
-                    type="text"
-                    value={previousCrop}
-                    onChange={(e) => setPreviousCrop(e.target.value)}
-                    placeholder="e.g. Cotton, Maize, Pulses"
-                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-600 font-bold"
-                  />
                 </div>
               </div>
 
               {/* Step Navigation Buttons */}
-              <div className="pt-4 border-t border-stone-100 flex items-center justify-between">
+              <div className="pt-4 border-t border-stone-100 flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={() => setCurrentStep(1)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-stone-600 hover:text-stone-900 transition-colors"
+                  className="btn-secondary px-4 py-2 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
                   Back to Boundary Map
                 </button>
                 <button
                   type="button"
                   onClick={handleRunAnalysis}
-                  className="px-6 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-black transition-all flex items-center gap-2 shadow-sm"
+                  disabled={analyzing || !selectedFarmId}
+                  className="btn-primary px-6 py-2.5 text-xs flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
-                  <Sparkles size={15} />
-                  <span>Run Satellite & SoilGrids Analysis</span>
+                  {analyzing ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                  <span>Run Satellite &amp; SoilGrids Analysis</span>
                 </button>
               </div>
             </motion.div>
@@ -396,7 +467,8 @@ export default function SoilHealthAnalyzerPage() {
               key="step3"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="bg-white rounded-3xl border border-stone-200 p-12 text-center shadow-sm max-w-lg mx-auto space-y-6"
+              className="card p-8 sm:p-12 text-center max-w-lg mx-auto space-y-6"
+              aria-busy="true"
             >
               <div className="relative w-20 h-20 mx-auto">
                 <motion.div
@@ -410,12 +482,12 @@ export default function SoilHealthAnalyzerPage() {
               </div>
 
               <div className="space-y-2">
-                <h3 className="text-base font-black text-stone-900">
-                  Evaluating Plot SoilGrids & Topography
+                <h3 className="text-lg font-semibold text-stone-800">
+                  Evaluating Plot SoilGrids &amp; Topography
                 </h3>
-                <p className="text-xs text-stone-500 max-w-xs mx-auto leading-relaxed">
-                  Querying ISRIC SoilGrids v2.0 prediction quantiles (Q0.05, mean, Q0.95),
-                  averaging boundary polygon, and sampling SRTM elevation data...
+                <p className="text-sm text-stone-600 max-w-xs mx-auto leading-relaxed">
+                  Querying ISRIC SoilGrids v2.0 prediction quantiles (Q0.05, mean, Q0.95) at your boundary's
+                  centre and sampling elevation data…
                 </p>
               </div>
             </motion.div>
@@ -430,11 +502,11 @@ export default function SoilHealthAnalyzerPage() {
               transition={{ duration: 0.3 }}
               className="space-y-6"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
                   type="button"
                   onClick={() => setCurrentStep(1)}
-                  className="px-4 py-2 rounded-2xl bg-white border border-stone-200 text-stone-600 hover:text-stone-900 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                  className="px-4 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:text-stone-900 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
                   <RotateCcw size={13} />
                   <span>Analyze Another Plot</span>
@@ -443,7 +515,8 @@ export default function SoilHealthAnalyzerPage() {
                 <button
                   type="button"
                   onClick={() => setShowLabUploadModal(true)}
-                  className="px-4 py-2 rounded-2xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-800 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                  disabled={!selectedFarmId}
+                  className="px-4 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-brand-800 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 >
                   <Upload size={13} />
                   <span>Upload Verified Lab Report</span>
@@ -463,23 +536,47 @@ export default function SoilHealthAnalyzerPage() {
       {/* Main Tab 2: Assessment History View */}
       {activeTab === 'history' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm">
-            <h3 className="text-base font-black text-stone-900 mb-1">
+          <div className="card p-5 sm:p-6">
+            <h3 className="text-lg font-semibold text-stone-800 mb-1">
               Soil Health Records for Selected Farm
             </h3>
-            <p className="text-xs text-stone-500 mb-4">
+            <p className="text-sm text-stone-600 mb-4">
               Chronological log of preliminary satellite estimates and verified laboratory reports.
             </p>
 
-            {historyReports.length === 0 ? (
-              <div className="text-center py-12 text-stone-400 text-xs">
-                No soil reports recorded for this farm yet. Run an analysis above or upload a lab test report.
+            {historyLoading ? (
+              <div className="space-y-2" aria-busy="true" aria-label="Loading soil report history">
+                {[0, 1, 2].map((i) => <div key={i} className="h-10 rounded-xl bg-stone-100 animate-pulse" />)}
               </div>
+            ) : historyError ? (
+              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-sm flex flex-col sm:flex-row sm:items-center gap-3" role="alert">
+                <div className="flex items-start gap-2 flex-1">
+                  <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                  <span>{historyError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchSoilHistory(selectedFarmId)}
+                  className="btn-secondary text-xs px-4 py-2 self-start sm:self-auto"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : historyReports.length === 0 ? (
+              <EmptyState
+                icon={Database}
+                title="No soil reports yet"
+                message={selectedFarmId
+                  ? 'No soil reports recorded for this farm yet. Run an analysis in Plot Analyzer or upload a lab test report.'
+                  : 'Select or register a farm to see its soil report history.'}
+                actionLabel={selectedFarmId ? 'Open Plot Analyzer' : undefined}
+                onAction={selectedFarmId ? () => { setActiveTab('analyzer'); setCurrentStep(1) } : undefined}
+              />
             ) : (
-              <div className="divide-y divide-stone-100 overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
+              <div className="overflow-x-auto -mx-1">
+                <table className="w-full min-w-[720px] text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-stone-50 text-stone-500 font-black uppercase text-[10px] tracking-wider border-b border-stone-200">
+                    <tr className="bg-stone-50 text-stone-600 font-semibold uppercase text-xs tracking-wider border-b border-stone-200">
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Area</th>
@@ -499,48 +596,49 @@ export default function SoilHealthAnalyzerPage() {
                         <tr key={item._id || item.id} className="hover:bg-stone-50/60 transition-colors">
                           <td className="px-4 py-3">
                             {isLab ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-brand-100 text-brand-800">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800 whitespace-nowrap">
                                 <ShieldCheck size={11} /> Lab Verified
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-900 border border-amber-200">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-200 whitespace-nowrap">
                                 <AlertTriangle size={11} className="text-amber-700" /> Estimated
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3 font-mono text-stone-600">
-                            {new Date(item.generated_at).toLocaleDateString()}
+                          <td className="px-4 py-3 font-mono text-stone-600 whitespace-nowrap">
+                            {formatReportDate(item.generated_at)}
                           </td>
-                          <td className="px-4 py-3 font-mono font-bold text-stone-800">
-                            {item.area_acres} ac
+                          <td className="px-4 py-3 font-mono font-semibold text-stone-800 whitespace-nowrap">
+                            {fmt(item.area_acres, ' ac')}
                           </td>
-                          <td className="px-4 py-3 font-mono font-bold text-stone-900">
+                          <td className="px-4 py-3 font-mono font-semibold text-stone-900 whitespace-nowrap">
                             {isLab
-                              ? item.lab_measured_values?.ph ?? props.ph?.mean
-                              : props.ph?.value_range
-                              ? `${props.ph.value_range[0]} - ${props.ph.value_range[1]}`
-                              : props.ph?.mean}
+                              ? fmt(item.lab_measured_values?.ph ?? props.ph?.mean)
+                              : Array.isArray(props.ph?.value_range)
+                              ? `${props.ph.value_range[0]} – ${props.ph.value_range[1]}`
+                              : fmt(props.ph?.mean)}
                           </td>
                           <td className="px-4 py-3 text-stone-700">
-                            {isLab ? `${item.lab_measured_values?.nitrogen_kg} kg/ac` : props.nitrogen?.level}
+                            {isLab ? fmt(item.lab_measured_values?.nitrogen_kg, ' kg/ac') : fmt(props.nitrogen?.level)}
                           </td>
                           <td className="px-4 py-3 text-stone-700">
-                            {isLab ? `${item.lab_measured_values?.phosphorus_kg} kg/ac` : 'Unmodeled'}
+                            {isLab ? fmt(item.lab_measured_values?.phosphorus_kg, ' kg/ac') : 'Not modelled'}
                           </td>
                           <td className="px-4 py-3 text-stone-700">
-                            {isLab ? `${item.lab_measured_values?.potassium_kg} kg/ac` : props.potassium?.level}
+                            {isLab ? fmt(item.lab_measured_values?.potassium_kg, ' kg/ac') : fmt(props.potassium?.level)}
                           </td>
-                          <td className="px-4 py-3 font-mono font-bold text-sky-800">
-                            {isLab ? '100%' : `${item.overall_confidence_pct}%`}
+                          <td className="px-4 py-3 font-mono font-semibold text-sky-800">
+                            {isLab ? 'Measured' : fmt(item.overall_confidence_pct != null ? Math.round(item.overall_confidence_pct) : null, '%')}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <button
+                              type="button"
                               onClick={() => {
                                 setActiveReport(item)
                                 setCurrentStep(4)
                                 setActiveTab('analyzer')
                               }}
-                              className="px-3 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold transition-colors"
+                              className="px-3 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                             >
                               View Report
                             </button>

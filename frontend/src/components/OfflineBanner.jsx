@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Wifi, WifiOff, RefreshCw, CheckCircle2, AlertTriangle, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   getPendingCount,
@@ -14,6 +15,7 @@ import { API_PREFIX } from '../utils/http';
 const HEALTH_URL = `${API_PREFIX}/health`;
 
 export default function OfflineBanner() {
+  const { t } = useTranslation('common');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [pendingCount, setPendingCount] = useState(0);
   const [failedItems, setFailedItems] = useState([]);
@@ -135,23 +137,28 @@ export default function OfflineBanner() {
   return (
     <aside
       aria-label="Offline and sync status"
+      role="status"
+      aria-live="polite"
       className={`w-full text-xs sm:text-sm font-medium z-50 shadow-sm ${
         !isOnline
           ? 'bg-amber-500/90 text-amber-950 border-b border-amber-600/30'
           : syncSuccessMsg
-          ? 'bg-emerald-600 text-white border-b border-emerald-700'
+          ? 'bg-brand-600 text-white border-b border-brand-700'
           : failedCount > 0 && pendingCount === 0
           ? 'bg-red-50 text-red-900 border-b border-red-200'
-          : 'bg-emerald-800 text-emerald-100 border-b border-emerald-700'
+          : 'bg-brand-800 text-brand-100 border-b border-brand-700'
       }`}
     >
-      <div className="px-4 py-2 flex items-center justify-between transition-all duration-300">
+      <div className="px-4 py-2 flex items-center justify-between gap-3 transition-all duration-300">
         <div className="flex items-center gap-2 max-w-3xl overflow-hidden flex-wrap">
           {!isOnline ? (
             <>
-              <WifiOff className="w-4 h-4 shrink-0 text-amber-950 animate-pulse" />
-              <span className="truncate">
-                <strong>Offline Mode:</strong> Showing cached data{lastSyncStr ? ` from ${lastSyncStr}` : ''} — reconnecting to field network...
+              <WifiOff className="w-4 h-4 shrink-0 text-amber-950 animate-pulse" aria-hidden="true" />
+              <span>
+                <strong>{t('offline_mode', 'Offline Mode')}:</strong>{' '}
+                {lastSyncStr
+                  ? t('showing_cached_data', { time: lastSyncStr, defaultValue: 'Showing cached data from {{time}} — reconnecting...' })
+                  : t('reconnecting', 'Showing cached data — reconnecting...')}
               </span>
             </>
           ) : syncSuccessMsg ? (
@@ -161,8 +168,8 @@ export default function OfflineBanner() {
             </>
           ) : pendingCount > 0 ? (
             <>
-              <Wifi className="w-4 h-4 shrink-0 text-emerald-300" />
-              <span>Connected online. Ready to sync pending items.</span>
+              <Wifi className="w-4 h-4 shrink-0 text-brand-300" />
+              <span>{t('online_connected', 'Connected online. Ready to sync pending items.')}</span>
             </>
           ) : (
             <>
@@ -172,16 +179,16 @@ export default function OfflineBanner() {
           )}
 
           {pendingCount > 0 && (
-            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-900/20 font-semibold text-[11px]">
-              <AlertTriangle className="w-3 h-3 inline" />
-              {pendingCount} offline {pendingCount === 1 ? 'item' : 'items'} queued
+            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-900/20 font-semibold text-xs">
+              <AlertTriangle className="w-3 h-3 inline" aria-hidden="true" />
+              {t('queued_items', { count: pendingCount, defaultValue: '{{count}} offline items queued' })}
             </span>
           )}
           {failedCount > 0 && (
             <button
               type="button"
               onClick={() => setShowFailed((v) => !v)}
-              className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600 text-white font-semibold text-[11px]"
+              className="ml-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600 text-white font-semibold text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
               aria-expanded={showFailed}
             >
               {failedCount} failed — review
@@ -193,12 +200,13 @@ export default function OfflineBanner() {
         <div className="flex items-center gap-2 shrink-0">
           {pendingCount > 0 && isOnline && (
             <button
+              type="button"
               onClick={handleSync}
               disabled={isSyncing}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-white text-emerald-900 hover:bg-emerald-50 text-xs font-semibold shadow-sm transition disabled:opacity-50"
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-white text-brand-900 hover:bg-brand-50 text-xs font-semibold shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync Now'}
+              {isSyncing ? t('syncing', 'Syncing...') : t('sync_now', 'Sync Now')}
             </button>
           )}
         </div>

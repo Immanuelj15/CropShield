@@ -1,7 +1,7 @@
 import React from 'react'
 import { CheckCircle2, AlertTriangle, HelpCircle, TrendingUp, Info } from 'lucide-react'
 import clsx from 'clsx'
-import { formatINR } from './ProfitRangeDisplay'
+import { formatRupee } from './ProfitRangeDisplay'
 
 /**
  * PredictionAccuracyBadge Component
@@ -17,7 +17,7 @@ export default function PredictionAccuracyBadge({
   if (!accuracy) {
     return (
       <div className={clsx("inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-stone-100 text-stone-600 border border-stone-200", className)}>
-        <HelpCircle size={14} className="text-stone-400" />
+        <HelpCircle size={14} className="text-stone-500" />
         <span>Pre-Season Baseline In Progress</span>
       </div>
     )
@@ -32,20 +32,20 @@ export default function PredictionAccuracyBadge({
       <span
         title={
           predictedRange
-            ? `Predicted: ₹${formatINR(predictedRange.min)} – ₹${formatINR(predictedRange.max)} | Actual: ₹${formatINR(actualProfit)} (${deviation} deviation)`
+            ? `Predicted: ${formatRupee(predictedRange.min)} – ${formatRupee(predictedRange.max)} | Actual: ${formatRupee(actualProfit)} (${deviation} deviation)`
             : `Accuracy: ${deviation} deviation`
         }
         className={clsx(
           "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border",
           isWithin
-            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+            ? "bg-green-100 text-green-800 border-green-300"
             : "bg-amber-100 text-amber-800 border-amber-300",
           className
         )}
       >
         {isWithin ? (
           <>
-            <CheckCircle2 size={12} className="text-emerald-700" />
+            <CheckCircle2 size={12} className="text-green-700" />
             <span>Within Predicted Band ({deviation} dev)</span>
           </>
         ) : (
@@ -63,7 +63,7 @@ export default function PredictionAccuracyBadge({
       className={clsx(
         "rounded-2xl border p-4 transition-all space-y-2",
         isWithin
-          ? "bg-emerald-50/80 border-emerald-200 text-emerald-950"
+          ? "bg-green-50/80 border-green-200 text-green-950"
           : "bg-amber-50/80 border-amber-200 text-amber-950",
         className
       )}
@@ -71,11 +71,11 @@ export default function PredictionAccuracyBadge({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {isWithin ? (
-            <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <div className="w-7 h-7 rounded-xl bg-green-600 text-white flex items-center justify-center shrink-0 shadow-sm">
               <CheckCircle2 size={16} />
             </div>
           ) : (
-            <div className="w-7 h-7 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+            <div className="w-7 h-7 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-sm">
               <AlertTriangle size={16} />
             </div>
           )}
@@ -86,7 +86,7 @@ export default function PredictionAccuracyBadge({
             <p className="text-[11px] opacity-75">
               {isWithin
                 ? "AI Pre-Season Profit Range accurately bounded this season's financial outcome."
-                : "Actual outcome deviated from pre-season range due to price fluctuations or input costs."}
+                : "Actual outcome fell outside the pre-season range (for example due to price swings or input costs)."}
             </p>
           </div>
         </div>
@@ -95,7 +95,7 @@ export default function PredictionAccuracyBadge({
           className={clsx(
             "text-xs font-mono font-black px-2.5 py-1 rounded-xl border shrink-0",
             isWithin
-              ? "bg-emerald-100 border-emerald-300 text-emerald-900"
+              ? "bg-green-100 border-green-300 text-green-900"
               : "bg-amber-100 border-amber-300 text-amber-900"
           )}
         >
@@ -108,15 +108,15 @@ export default function PredictionAccuracyBadge({
           <div className="flex items-center gap-1.5 text-stone-600">
             <span className="font-bold">Pre-Season Estimate:</span>
             <span className="font-mono font-semibold">
-              ₹{formatINR(predictedRange.min)} – ₹{formatINR(predictedRange.max)}
+              {formatRupee(predictedRange.min)} – {formatRupee(predictedRange.max)}
             </span>
           </div>
 
-          {actualProfit !== undefined && (
+          {actualProfit !== undefined && actualProfit !== null && (
             <div className="flex items-center gap-1.5">
               <span className="font-bold text-stone-600">Actual Realized Profit:</span>
-              <span className={clsx("font-mono font-extrabold", actualProfit >= 0 ? "text-emerald-700" : "text-red-700")}>
-                ₹{formatINR(actualProfit)}
+              <span className={clsx("font-mono font-extrabold", actualProfit >= 0 ? "text-green-700" : "text-red-700")}>
+                {formatRupee(actualProfit)}
               </span>
             </div>
           )}

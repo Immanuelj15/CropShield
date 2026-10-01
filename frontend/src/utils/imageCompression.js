@@ -33,7 +33,10 @@ export function compressImage(file, { maxDim = 1024, quality = 0.8 } = {}) {
             reject(new Error('Canvas compression failed'))
             return
           }
-          const compressedFile = new File([blob], file.name || 'leaf.jpg', {
+          // Output is always JPEG, so give it a matching extension (a ".png" name with JPEG bytes
+          // confuses extension-based checks and downloads).
+          const baseName = (file.name || 'leaf').replace(/\.[^./\\]+$/, '') || 'leaf'
+          const compressedFile = new File([blob], `${baseName}.jpg`, {
             type: 'image/jpeg',
             lastModified: Date.now(),
           })

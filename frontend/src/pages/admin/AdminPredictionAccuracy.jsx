@@ -1,131 +1,113 @@
 import { useState, useEffect, useCallback } from 'react'
-import { TrendingUp, RefreshCw, Sparkles, Sprout, MapPin } from 'lucide-react'
+import { TrendingUp, RefreshCw, Sprout, MapPin } from 'lucide-react'
 import clsx from 'clsx'
 import StatCard from '../../components/ui/StatCard'
-
+import Button from '../../components/ui/Button'
+import EmptyState from '../../components/ui/EmptyState'
+import { LoadingState, ErrorState } from '../../components'
 import { apiFetch } from '../../utils/http'
 
-export default function AdminPredictionAccuracy() {
-  const [predictionAccuracy, setPredictionAccuracy] = useState(null)
+const pctText = (v) => (Number.isFinite(Number(v)) && v !== null ? `${v}%` : '—')
 
-  const fetchPredictionAccuracy = useCallback(async () => {
+function BreakdownTable({ title, icon: Icon, firstCol, data }) {
+  const rows = data && typeof data === 'object' ? Object.entries(data) : []
+  return (
+    <div className="card p-5 space-y-4 min-w-0">
+      <h3 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
+        <Icon size={18} className="text-brand-600" /> {title}
+      </h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-stone-500">No validated seasons yet.</p>
+      ) : (
+        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="w-full min-w-[420px] text-left text-sm">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b border-stone-200 text-stone-500 font-bold uppercase text-xs">
+                <th scope="col" className="pb-2">{firstCol}</th>
+                <th scope="col" className="pb-2 text-center">Seasons</th>
+                <th scope="col" className="pb-2 text-center">Within range</th>
+                <th scope="col" className="pb-2 text-right">Accuracy</th>
+                <th scope="col" className="pb-2 text-right">Avg deviation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {rows.map(([key, d]) => (
+                <tr key={key} className="hover:bg-stone-50">
+                  <td className="py-2.5 font-semibold text-stone-900">{key}</td>
+                  <td className="py-2.5 text-center font-mono text-stone-600">{d?.total ?? '—'}</td>
+                  <td className="py-2.5 text-center font-mono text-green-700 font-bold">{d?.within_range ?? '—'}</td>
+                  <td className="py-2.5 text-right">
+                    <span className={clsx('px-2 py-0.5 rounded-full text-xs font-bold', Number(d?.accuracy_pct) >= 60 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800')}>
+                      {pctText(d?.accuracy_pct)}
+                    </span>
+                  </td>
+                  <td className="py-2.5 text-right font-mono text-stone-600">{pctText(d?.avg_deviation_pct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function AdminPredictionAccuracy() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
     try {
-      setPredictionAccuracy(await apiFetch('/admin/prediction-accuracy'))
-    } catch (e) { console.error(e) }
+      setData(await apiFetch('/admin/prediction-accuracy'))
+    } catch (e) {
+      setError(e.message || 'Could not load prediction accuracy.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  useEffect(() => { fetchPredictionAccuracy() }, [fetchPredictionAccuracy])
+  useEffect(() => { load() }, [load])
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-50 text-green-800 text-xs font-bold border border-green-200 mb-2">
-            <Sparkles size={13} className="text-green-600" />
-            <span>Pre-Season vs Actual Economic Validation</span>
-          </div>
-          <h2 className="text-xl font-black text-stone-900">Crop Profit Prediction Accuracy Engine</h2>
-          <p className="text-xs text-stone-500 mt-1 max-w-2xl leading-relaxed">
-            Aggregated accuracy computed from real farmer-logged expenses and harvest revenue.
-            A season is considered <strong>accurate</strong> when actual net profit falls within the AI pre-season predicted range [min, max].
+      <div className="card p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Pre-season vs actual</span>
+          <h2 className="text-xl font-bold text-stone-900 mt-1">Crop profit prediction accuracy</h2>
+          <p className="text-sm text-stone-600 mt-1 max-w-2xl">
+            Computed from farmer-logged expenses and harvest revenue. A season is <strong>accurate</strong> when the actual net
+            profit falls inside the predicted [min, max] range. Non-production servers also include seeded demo P&L data.
           </p>
         </div>
-
-        <button
-          onClick={fetchPredictionAccuracy}
-          className="px-4 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold flex items-center gap-2 transition-all self-start md:self-auto cursor-pointer"
-        >
-          <RefreshCw size={14} />
-          <span>Refresh Metrics</span>
-        </button>
+        <Button type="button" variant="secondary" icon={RefreshCw} loading={loading} onClick={load} className="self-start md:self-auto">
+          Refresh
+        </Button>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard accent="brand" label="Overall Accuracy Rate" value={`${predictionAccuracy?.accuracy_rate_pct ?? '—'}%`} trend="Within Predicted Range" />
-        <StatCard label="Average Deviation" value={`${predictionAccuracy?.average_deviation_pct ?? '—'}%`} trend="Mean absolute error %" />
-        <StatCard label="Total Validated Seasons" value={predictionAccuracy?.total_seasons ?? '—'} trend="Real farmer logs" />
-        <StatCard accent="violet" label="In-Range Outcomes" value={predictionAccuracy?.within_range_count ?? '—'} trend="Predicted accurately" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-stone-800 flex items-center gap-2">
-              <Sprout size={16} className="text-green-600" /> Accuracy by Crop Variety
-            </h3>
-            <span className="text-[11px] text-stone-400 font-medium">Model Calibration</span>
+      {loading && !data ? (
+        <div className="card p-5"><LoadingState message="Loading accuracy metrics…" /></div>
+      ) : error && !data ? (
+        <div className="card p-5"><ErrorState message={error} onRetry={load} /></div>
+      ) : !data || !data.total_seasons ? (
+        <EmptyState icon={TrendingUp} title="No validated seasons yet" message="Accuracy appears once farmers log both expenses and harvest revenue for a season." />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard accent="brand" label="Accuracy rate" value={pctText(data.accuracy_rate_pct)} trend="Within predicted range" />
+            <StatCard accent="amber" label="Average deviation" value={pctText(data.average_deviation_pct)} trend="Mean absolute error" />
+            <StatCard label="Validated seasons" value={data.total_seasons ?? '—'} trend="Farmer-logged seasons" />
+            <StatCard accent="sky" label="In-range outcomes" value={data.within_range_count ?? '—'} trend="Predicted accurately" />
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-stone-200 text-stone-400 font-bold uppercase text-[10px]">
-                  <th className="pb-2">Crop</th>
-                  <th className="pb-2 text-center">Seasons</th>
-                  <th className="pb-2 text-center">Within Range</th>
-                  <th className="pb-2 text-right">Accuracy %</th>
-                  <th className="pb-2 text-right">Avg Dev %</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 font-medium">
-                {predictionAccuracy?.crop_breakdown &&
-                  Object.entries(predictionAccuracy.crop_breakdown).map(([crop, data]) => (
-                    <tr key={crop} className="hover:bg-stone-50">
-                      <td className="py-2.5 font-bold text-stone-900">{crop}</td>
-                      <td className="py-2.5 text-center font-mono text-stone-600">{data.total}</td>
-                      <td className="py-2.5 text-center font-mono text-green-700 font-bold">{data.within_range}</td>
-                      <td className="py-2.5 text-right font-mono font-bold text-stone-900">
-                        <span className={clsx('px-2 py-0.5 rounded-full text-[11px]', data.accuracy_pct >= 60 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800')}>
-                          {data.accuracy_pct}%
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-right font-mono text-stone-600">{data.avg_deviation_pct}%</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <BreakdownTable title="Accuracy by crop" icon={Sprout} firstCol="Crop" data={data.crop_breakdown} />
+            <BreakdownTable title="Accuracy by district" icon={MapPin} firstCol="District" data={data.district_breakdown} />
           </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-stone-800 flex items-center gap-2">
-              <MapPin size={16} className="text-teal-600" /> Accuracy by District
-            </h3>
-            <span className="text-[11px] text-stone-400 font-medium">Regional Generalization</span>
-          </div>
-
-          <div className="overflow-x-auto max-h-96 overflow-y-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-stone-200 text-stone-400 font-bold uppercase text-[10px]">
-                  <th className="pb-2">District</th>
-                  <th className="pb-2 text-center">Seasons</th>
-                  <th className="pb-2 text-center">Within Range</th>
-                  <th className="pb-2 text-right">Accuracy %</th>
-                  <th className="pb-2 text-right">Avg Dev %</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 font-medium">
-                {predictionAccuracy?.district_breakdown &&
-                  Object.entries(predictionAccuracy.district_breakdown).map(([district, data]) => (
-                    <tr key={district} className="hover:bg-stone-50">
-                      <td className="py-2.5 font-bold text-stone-900">{district}</td>
-                      <td className="py-2.5 text-center font-mono text-stone-600">{data.total}</td>
-                      <td className="py-2.5 text-center font-mono text-green-700 font-bold">{data.within_range}</td>
-                      <td className="py-2.5 text-right font-mono font-bold text-stone-900">
-                        <span className={clsx('px-2 py-0.5 rounded-full text-[11px]', data.accuracy_pct >= 60 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800')}>
-                          {data.accuracy_pct}%
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-right font-mono text-stone-600">{data.avg_deviation_pct}%</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }

@@ -7,9 +7,9 @@ export default function ConfidenceIndicator({
   showLabel = true,
   className = '',
 }) {
-  const pct = Math.max(0, Math.min(100, Math.round(confidencePct || 0)))
+  const pct = Math.max(0, Math.min(100, Math.round(Number(confidencePct) || 0)))
 
-  // Neutral blue-to-slate grading (avoiding red/green pest-alert colors)
+  // Neutral blue-to-stone grading (avoiding red/green pest-alert colors)
   // Low confidence is just uncertainty, not bad news/danger!
   let strokeColor = '#0284c7' // sky-600 (High)
   let trackColor = '#e0f2fe' // sky-100
@@ -17,10 +17,10 @@ export default function ConfidenceIndicator({
   let textColor = 'text-sky-800'
 
   if (pct < 55) {
-    strokeColor = '#64748b' // slate-500
-    trackColor = '#f1f5f9' // slate-100
+    strokeColor = '#78716c' // stone-500
+    trackColor = '#f5f5f4' // stone-100
     labelText = 'High Uncertainty'
-    textColor = 'text-slate-600'
+    textColor = 'text-stone-600'
   } else if (pct < 75) {
     strokeColor = '#0ea5e9' // sky-500
     trackColor = '#f0f9ff' // sky-50
@@ -67,14 +67,14 @@ export default function ConfidenceIndicator({
             fill="transparent"
           />
         </svg>
-        <span className={`absolute font-black font-mono ${size === 'sm' ? 'text-[10px]' : size === 'lg' ? 'text-sm' : 'text-xs'} ${textColor}`}>
+        <span className={`absolute font-black font-mono ${size === 'sm' ? 'text-xs' : size === 'lg' ? 'text-sm' : 'text-xs'} ${textColor}`}>
           {pct}%
         </span>
       </div>
 
       {showLabel && (
         <div className="flex flex-col">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Model Certainty</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-stone-600">Model Certainty</span>
           <span className={`text-xs font-black ${textColor}`}>{labelText}</span>
         </div>
       )}

@@ -5,15 +5,17 @@ import clsx from 'clsx'
 // (values not computed from real data).
 export default function DemoDataBadge({ show = true, className = '', title }) {
   if (!show) return null
+  const tip = title || 'These values are simulated, not computed from real field data.'
   return (
     <span
       className={clsx(
-        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300',
+        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap',
         className
       )}
-      title={title || 'These values are simulated, not computed from real field data.'}
+      title={tip}
+      aria-label={`Demo data: ${tip}`}
     >
-      <FlaskConical size={11} /> Demo data
+      <FlaskConical size={12} aria-hidden="true" /> Demo data
     </span>
   )
 }

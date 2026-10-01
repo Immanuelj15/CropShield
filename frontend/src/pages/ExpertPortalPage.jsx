@@ -1,105 +1,199 @@
-import { useState } from 'react'
-import { FileCheck, CheckCircle2, ThumbsUp } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
+import { FileCheck, ThumbsUp, Leaf, ArrowRight, RefreshCw, Compass } from 'lucide-react'
+import clsx from 'clsx'
 import EmptyState from '../components/ui/EmptyState'
+import Badge from '../components/ui/Badge'
+import DemoDataBadge from '../components/ui/DemoDataBadge'
+import { LoadingState, ErrorState } from '../components'
+import { apiFetch } from '../utils/http'
 
-// NOTE(backend): This page renders a hardcoded local array, not a live fetch — there is no
-// /api/v1 endpoint today for expert-review queues or verified-advisory history. Flagged for a
-// product/backend decision rather than wired to a real or fabricated endpoint (see redesign report).
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+
+const fmtDate = (v) => {
+  if (!v) return '—'
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString()
+}
+const pct = (v) => (Number.isFinite(Number(v)) ? `${Math.round(Number(v) * 100)}%` : '—')
+
+// AI Review Desk: a read-only overview built from real agronomist endpoints.
+//  - Pending AI warnings:  GET /detect/pending (verification happens in the Threat Queue)
+//  - Recent leaf scans:    GET /disease/recent (staff see platform-wide scans)
+//  - Answered requests:    GET /advisories/farmer-requests?status=resolved
+const TABS = [
+  { key: 'pending', label: 'Pending AI warnings', icon: FileCheck },
+  { key: 'scans', label: 'Recent leaf scans', icon: Leaf },
+  { key: 'answered', label: 'Answered requests', icon: ThumbsUp },
+]
+
 export default function ExpertPortalPage() {
-  const [activeTab, setActiveTab] = useState('scans')
+  const [activeTab, setActiveTab] = useState('pending')
+  const [pending, setPending] = useState(null)
+  const [scans, setScans] = useState(null)
+  const [answered, setAnswered] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  const pendingScans = [
-    { id: 101, farmer: "Kannan M.", location: "Kovilpatti", crop: "Cotton", flag_reason: "High whitefly vector count", date: "2026-07-24", status: "Pending Review" },
-    { id: 102, farmer: "Murugan S.", location: "Thanjavur", crop: "Rice", flag_reason: "Severe bacterial leaf streak", date: "2026-07-25", status: "Pending Review" }
-  ]
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    const [p, s, a] = await Promise.allSettled([
+      apiFetch('/detect/pending?limit=50'),
+      apiFetch('/disease/recent?limit=25'),
+      apiFetch('/advisories/farmer-requests?status=resolved&limit=50'),
+    ])
+    setPending(p.status === 'fulfilled' ? p.value : null)
+    setScans(s.status === 'fulfilled' && Array.isArray(s.value) ? s.value : null)
+    setAnswered(a.status === 'fulfilled' && Array.isArray(a.value) ? a.value : null)
+    const firstError = [p, s, a].find((r) => r.status === 'rejected')
+    if (firstError) setError(firstError.reason?.message || 'Some data could not be loaded.')
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const pendingItems = Array.isArray(pending?.items) ? pending.items : []
+  const counts = {
+    pending: pending ? (pending.simulated ? 0 : pendingItems.length) : null,
+    scans: scans ? scans.length : null,
+    answered: answered ? answered.length : null,
+  }
+
+  const renderBody = () => {
+    if (loading) return <LoadingState message="Loading review desk…" />
+    if (activeTab === 'pending') {
+      if (!pending) return <ErrorState message={error || 'Could not load pending warnings.'} onRetry={load} />
+      if (pendingItems.length === 0) {
+        return <EmptyState icon={FileCheck} title="Nothing to review" message="There are no unverified AI warnings right now." />
+      }
+      return (
+        <div className="space-y-3">
+          {pending.simulated && (
+            <p className="flex flex-wrap items-center gap-2 text-xs text-amber-900">
+              <DemoDataBadge /> No real unverified warnings exist, so example cases are shown. They cannot be verified.
+            </p>
+          )}
+          {pendingItems.map((item) => (
+            <div key={item.log_id} className="p-4 rounded-2xl border border-stone-200 bg-white space-y-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h4 className="font-bold text-stone-900 text-sm break-words">{item.detected_pest}</h4>
+                  <p className="text-xs text-stone-500">{item.farm_name} ({item.district}) · {item.crop_type} · {item.date}</p>
+                </div>
+                <Badge status={item.ai_risk_level}>{item.ai_risk_level} risk</Badge>
+              </div>
+              <p className="text-sm text-stone-700 bg-stone-50 rounded-xl p-3">
+                <span className="font-semibold text-stone-900">AI evidence: </span>{item.evidence_snippet}
+              </p>
+              <p className="text-xs text-stone-500">Risk score {pct(item.ai_risk_score)} · Pest confidence {pct(item.ai_confidence)}</p>
+            </div>
+          ))}
+          <Link
+            to="/agronomist/dashboard"
+            className={clsx('inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold shadow-sm', FOCUS)}
+          >
+            Verify in Threat Queue <ArrowRight size={16} />
+          </Link>
+        </div>
+      )
+    }
+    if (activeTab === 'scans') {
+      if (!scans) return <ErrorState message={error || 'Could not load leaf scans.'} onRetry={load} />
+      if (scans.length === 0) {
+        return <EmptyState icon={Leaf} title="No leaf scans yet" message="Scans are stored only when the disease model produces a real diagnosis." />
+      }
+      return (
+        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {scans.map((s) => (
+            <li key={s.id} className="p-3 rounded-2xl border border-stone-200 bg-white flex gap-3 min-w-0">
+              {s.image_url ? (
+                <img src={s.image_url} alt={`Leaf scan: ${s.predicted_class || 'unknown'}`} className="w-16 h-16 rounded-lg object-cover border border-stone-200 shrink-0" loading="lazy" />
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-stone-100 flex items-center justify-center shrink-0"><Leaf size={20} className="text-stone-500" /></div>
+              )}
+              <div className="min-w-0">
+                <p className="font-semibold text-sm text-stone-900 break-words">{s.predicted_class || 'Unclassified'}</p>
+                <p className="text-xs text-stone-500">Confidence {pct(s.confidence)} · {fmtDate(s.created_at)}</p>
+                {s.model_name && <p className="text-xs text-stone-500 truncate">Model: {s.model_name}</p>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+    if (!answered) return <ErrorState message={error || 'Could not load answered requests.'} onRetry={load} />
+    if (answered.length === 0) {
+      return <EmptyState icon={ThumbsUp} title="No answered requests" message="Advisories sent to farmers will appear here." />
+    }
+    return (
+      <ul className="space-y-3">
+        {answered.map((r) => (
+          <li key={r.id} className="p-4 rounded-2xl border border-stone-200 bg-white space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold text-sm text-stone-900">{r.farmer_name || 'Farmer'} · {r.crop_type || 'General'}</span>
+              <span className="text-xs text-stone-500">{fmtDate(r.responded_at)} · {r.agronomist_name || 'Agronomist'}</span>
+            </div>
+            <p className="text-sm text-stone-600 break-words"><span className="font-semibold text-stone-800">Question: </span>{r.question}</p>
+            <p className="text-sm text-stone-800 bg-brand-50 border border-brand-100 rounded-xl p-3 whitespace-pre-line break-words">{r.response_text}</p>
+          </li>
+        ))}
+      </ul>
+    )
+  }
 
   return (
-    <div className="space-y-8 animate-fadeIn">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-stone-900 to-brand-900 rounded-3xl p-8 text-white shadow-xl">
-        <span className="px-3 py-1 bg-brand-500/30 text-brand-300 text-xs font-semibold rounded-full border border-brand-400/30">
-          Role-Based Access Control (RBAC) · Expert Validation Portal
+    <div className="space-y-6 animate-fade-in">
+      <div className="bg-gradient-to-r from-sky-800 to-sky-700 rounded-2xl p-6 sm:p-8 text-white shadow-sm">
+        <span className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 text-white text-xs font-semibold rounded-full border border-white/25">
+          <Compass size={14} /> Expert review
         </span>
-        <h1 className="text-3xl font-bold tracking-tight mt-2">Agriculture Expert & Admin Dashboard</h1>
-        <p className="mt-2 text-stone-300 text-sm max-w-2xl">
-          Review automated AI diagnosis, confirm field pathogen scan reports, and approve custom extension advisories.
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-2">AI Review Desk</h1>
+        <p className="mt-2 text-sky-100 text-sm max-w-2xl">
+          Overview of AI warnings awaiting verification, recent leaf-scan diagnoses and advisories already sent to farmers.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Navigation / Metrics */}
-        <div className="card p-6 space-y-4 lg:col-span-1">
-          <h3 className="font-bold text-stone-900 text-sm uppercase tracking-wider">Expert Management</h3>
-          <div className="space-y-1">
+        <nav className="card p-4 sm:p-5 space-y-3 lg:col-span-1 h-fit" aria-label="Review desk sections">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-stone-800">Sections</h2>
             <button
-              onClick={() => setActiveTab('scans')}
-              className={`w-full text-left px-4 py-2.5 rounded-xl font-semibold text-xs transition-colors flex items-center justify-between ${
-                activeTab === 'scans' ? 'bg-brand-50 text-brand-700' : 'text-stone-600 hover:bg-stone-100'
-              }`}
+              type="button"
+              onClick={load}
+              disabled={loading}
+              aria-label="Refresh review desk"
+              className={clsx('p-2 rounded-lg hover:bg-stone-100 text-stone-500 disabled:opacity-50', FOCUS)}
             >
-              <span>Pending Reviews</span>
-              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px]">2</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('verified')}
-              className={`w-full text-left px-4 py-2.5 rounded-xl font-semibold text-xs transition-colors flex items-center justify-between ${
-                activeTab === 'verified' ? 'bg-brand-50 text-brand-700' : 'text-stone-600 hover:bg-stone-100'
-              }`}
-            >
-              <span>Verified Advisories</span>
-              <span className="px-2 py-0.5 bg-brand-100 text-brand-800 rounded-full text-[10px]">48</span>
+              <RefreshCw size={16} className={clsx(loading && 'animate-spin')} />
             </button>
           </div>
-        </div>
-
-        {/* Content Table */}
-        <div className="lg:col-span-3 card p-6 space-y-6">
-          {activeTab === 'verified' ? (
-            <>
-              <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                <ThumbsUp className="text-brand-600" size={20} /> Verified Advisories
-              </h3>
-              <EmptyState
-                icon={ThumbsUp}
-                title="Coming Soon"
-                message="Verified advisory history is not yet wired to a backend endpoint. This section is a placeholder pending that integration."
-              />
-            </>
-          ) : (
-          <>
-          <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-            <FileCheck className="text-brand-600" size={20} /> Pathology Diagnostic Reviews
-          </h3>
-
-          <div className="space-y-4">
-            {pendingScans.map((scan) => (
-              <div key={scan.id} className="p-5 rounded-2xl border border-stone-200 bg-white space-y-3 shadow-sm hover:border-brand-300 transition-all">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-bold text-stone-900 text-sm">{scan.farmer} — {scan.location}</h4>
-                    <p className="text-xs text-stone-500">Target Crop: {scan.crop} · Date: {scan.date}</p>
-                  </div>
-                  <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full">
-                    {scan.status}
-                  </span>
-                </div>
-
-                <div className="p-3 bg-stone-50 rounded-xl text-xs text-stone-700">
-                  <span className="font-bold text-stone-900">AI Detection Trigger: </span>
-                  {scan.flag_reason}
-                </div>
-
-                <div className="flex gap-2 justify-end pt-2">
-                  <button className="px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold hover:bg-brand-700 flex items-center gap-1">
-                    <CheckCircle2 size={14} /> Validate & Approve Advisory
-                  </button>
-                </div>
-              </div>
+          <div className="flex lg:flex-col gap-1 overflow-x-auto no-scrollbar">
+            {TABS.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key)}
+                aria-pressed={activeTab === key}
+                className={clsx(
+                  'shrink-0 lg:w-full text-left px-3 py-2.5 rounded-xl font-semibold text-sm transition-colors flex items-center justify-between gap-2',
+                  FOCUS,
+                  activeTab === key ? 'bg-sky-50 text-sky-800' : 'text-stone-600 hover:bg-stone-100'
+                )}
+              >
+                <span className="flex items-center gap-2 whitespace-nowrap"><Icon size={16} /> {label}</span>
+                {counts[key] !== null && (
+                  <span className="px-2 py-0.5 bg-stone-100 text-stone-700 rounded-full text-xs">{counts[key]}</span>
+                )}
+              </button>
             ))}
           </div>
-          </>
-          )}
-        </div>
+        </nav>
+
+        <section className="lg:col-span-3 card p-5 sm:p-6 space-y-4 min-w-0">
+          <h2 className="text-lg font-semibold text-stone-800">{TABS.find((t) => t.key === activeTab)?.label}</h2>
+          {renderBody()}
+        </section>
       </div>
     </div>
   )

@@ -5,13 +5,14 @@ import clsx from 'clsx'
 
 export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size = 260 }) {
   const shouldReduceMotion = useReducedMotion()
-  const scorePercent = Math.round(Math.min(1, Math.max(0, riskScore)) * 100)
+  const numericScore = Number(riskScore)
+  const scorePercent = Number.isFinite(numericScore) ? Math.round(Math.min(1, Math.max(0, numericScore)) * 100) : 0
 
   // Risk configurations based on traffic-light specification
   const configs = {
     Low: {
       color: '#16a34a',
-      bgClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      bgClass: 'bg-green-50 text-green-800 border-green-200',
       label: 'Low Risk',
       Icon: ShieldCheck,
       description: 'Microclimate unfavorable for rapid pest multiplication.',
@@ -89,7 +90,7 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
   return (
     <div className="flex flex-col items-center justify-center p-4">
       {/* SVG Arc Gauge */}
-      <div className="relative flex items-center justify-center" style={{ width: size, height: size * 0.65 }}>
+      <div className="relative flex items-center justify-center" style={{ width: "100%", maxWidth: size, aspectRatio: "220 / 140" }}>
         <svg
           viewBox="0 0 220 140"
           className="w-full h-full overflow-visible"
@@ -115,7 +116,7 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
           <path
             d="M 20 110 A 90 90 0 0 1 200 110"
             fill="none"
-            stroke="#e5e7eb"
+            stroke="#e7e5e4"
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
@@ -143,13 +144,13 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
             {/* Aerodynamic tapered pointer extending upwards to the gauge track */}
             <path
               d={`M ${center - 3.5} 110 L ${center - 1} 24 A 1 1 0 0 1 ${center + 1} 24 L ${center + 3.5} 110 Z`}
-              fill="#111827"
+              fill="#1c1917"
               filter="url(#needleShadow)"
             />
             {/* Counterbalance tail extending below the pivot for perfect visual balance */}
             <path
               d={`M ${center - 3.5} 110 L ${center - 2} 122 A 2 2 0 0 0 ${center + 2} 122 L ${center + 3.5} 110 Z`}
-              fill="#1f2937"
+              fill="#292524"
             />
             {/* Center color spine */}
             <line
@@ -169,12 +170,12 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
           {/* Center Pivot Hub ("The Hole") - Firmly clamping over the needle at (center, 110) */}
           <g filter="url(#hubGlow)">
             {/* Outer dark bezel */}
-            <circle cx={center} cy={110} r="8.5" fill="#111827" stroke="#374151" strokeWidth="1.5" />
+            <circle cx={center} cy={110} r="8.5" fill="#1c1917" stroke="#44403c" strokeWidth="1.5" />
             {/* Color-coded accent ring */}
             <circle cx={center} cy={110} r="5.5" fill={currentCfg.color} opacity="0.4" />
             {/* Center metallic eyelet hole */}
             <circle cx={center} cy={110} r="3" fill="#ffffff" />
-            <circle cx={center} cy={110} r="1.5" fill="#111827" />
+            <circle cx={center} cy={110} r="1.5" fill="#1c1917" />
           </g>
 
           {/* Scale Labels */}
@@ -197,7 +198,7 @@ export default function RiskGauge({ riskScore = 0.45, riskLevel = 'Medium', size
           </span>
           <span
             className={clsx(
-              'px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border flex items-center gap-1.5 shadow-xs',
+              'px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border flex items-center gap-1.5 shadow-sm',
               currentCfg.bgClass
             )}
           >

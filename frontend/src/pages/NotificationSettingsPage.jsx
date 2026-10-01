@@ -24,9 +24,32 @@ import {
   sendTestNotification,
   getNotificationLogs
 } from '../utils/api';
-import { getPendingCount, flushOfflineQueue, getPendingActions } from '../utils/offlineQueue';
+import { getPendingCount, flushOfflineQueue, getPendingActions, describeAction } from '../utils/offlineQueue';
 import Toggle from '../components/ui/Toggle';
 import { useToast } from '../components/ui/Toast';
+import { ErrorState } from '../components';
+
+// Backend timestamps are naive UTC ISO strings (datetime.utcnow().isoformat()) — parse them as UTC.
+function parseUtc(value) {
+  if (!value) return null;
+  const s = String(value);
+  const d = new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(s) ? s : `${s}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+const humanize = (s) => String(s || '').replace(/_/g, ' ');
+
+const PHONE_RE = /^\+?\d{8,15}$/;
+
+const LOG_STATUS_CLASS = {
+  sent: 'bg-green-100 text-green-800',
+  delivered: 'bg-green-100 text-green-800',
+  delivered_from_queue: 'bg-green-100 text-green-800',
+  queued: 'bg-amber-100 text-amber-800',
+  delivering: 'bg-amber-100 text-amber-800',
+};
+
+const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2';
 
 // P2-11: navigator.serviceWorker.ready never resolves when no SW is registered (e.g. dev mode
 // or an install failure). Race it against a timeout so the UI shows a clear message instead of hanging.
@@ -56,7 +79,11 @@ function urlBase64ToUint8Array(base64String) {
 
 export default function NotificationSettingsPage() {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  // null = unknown, false = server has no VAPID keys (push disabled server-side)
+  const [serverPushEnabled, setServerPushEnabled] = useState(null);
   const [testing, setTesting] = useState(false);
   const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
 
@@ -91,6 +118,10 @@ export default function NotificationSettingsPage() {
     loadPreferences();
     loadLogs();
     refreshOfflineStatus();
+    getVapidPublicKey()
+      .then((res) => setServerPushEnabled(Boolean(res?.public_key) && res?.push_enabled !== false))
+      .catch(() => setServerPushEnabled(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const refreshOfflineStatus = async () => {
@@ -107,15 +138,22 @@ export default function NotificationSettingsPage() {
   const loadPreferences = async () => {
     try {
       setLoading(true);
+      setLoadError('');
       const res = await getNotificationPreferences();
       setPushEnabled(Boolean(res.has_push_subscription));
       setSmsEnabled(res.sms_enabled ?? true);
       setWhatsappEnabled(res.whatsapp_enabled ?? false);
-      if (res.phone_number) setPhoneNumber(res.phone_number);
+      setPhoneNumber(res.phone_number || '');
       if (res.preferred_language) setLanguage(res.preferred_language);
-      if (res.quiet_hours) setQuietHours(res.quiet_hours);
+      if (res.quiet_hours) {
+        setQuietHours({
+          start: res.quiet_hours.start || '21:00',
+          end: res.quiet_hours.end || '06:00',
+        });
+      }
     } catch (err) {
-      console.warn('Could not load preferences from backend:', err);
+      // Don't silently show defaults: saving them would overwrite the real preferences.
+      setLoadError(err?.message || 'Could not load your notification preferences.');
     } finally {
       setLoading(false);
     }
@@ -124,35 +162,56 @@ export default function NotificationSettingsPage() {
   const loadLogs = async () => {
     try {
       const logs = await getNotificationLogs(10);
-      setDeliveryLogs(logs || []);
+      setDeliveryLogs(Array.isArray(logs) ? logs : []);
     } catch (e) {
       // offline or silent
     }
   };
 
   const handleTogglePush = async () => {
+    if (pushBusy) return;
     if (!pushSupported) {
       toast.error('Web Push is not supported by your current browser or device.');
       return;
     }
 
     if (pushEnabled) {
-      // Unsubscribe flow
+      // Unsubscribe flow: always clear the server-side subscription, even if the SW is not active.
+      setPushBusy(true);
       try {
-        const reg = await serviceWorkerReadyWithTimeout();
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) await sub.unsubscribe();
+        try {
+          const reg = await serviceWorkerReadyWithTimeout();
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) await sub.unsubscribe();
+        } catch (swErr) {
+          console.warn('Could not remove browser push subscription:', swErr);
+        }
         await unsubscribePush();
         setPushEnabled(false);
         setStatusMessage({ type: 'success', text: 'Push notifications disabled.' });
       } catch (err) {
         setStatusMessage({ type: 'error', text: 'Error disabling push: ' + err.message });
+      } finally {
+        setPushBusy(false);
       }
       return;
     }
 
     // Subscribe flow
+    setPushBusy(true);
     try {
+      // Check the server first so we never ask for browser permission when push cannot work.
+      const { public_key, push_enabled } = await getVapidPublicKey();
+      if (!public_key || push_enabled === false) {
+        setServerPushEnabled(false);
+        setStatusMessage({
+          type: 'error',
+          text: 'Web Push is not configured on the server yet (no VAPID key). SMS / WhatsApp alerts still work.',
+        });
+        return;
+      }
+      setServerPushEnabled(true);
+
       setStatusMessage({ type: 'info', text: 'Requesting notification permission...' });
       const perm = await Notification.requestPermission();
       setPermissionState(perm);
@@ -165,14 +224,6 @@ export default function NotificationSettingsPage() {
         return;
       }
 
-      const { public_key, push_enabled } = await getVapidPublicKey();
-      if (!public_key || push_enabled === false) {
-        setStatusMessage({
-          type: 'error',
-          text: 'Web Push is not configured on the server yet (no VAPID key). SMS / WhatsApp alerts still work.',
-        });
-        return;
-      }
       const reg = await serviceWorkerReadyWithTimeout();
 
       const sub = await reg.pushManager.subscribe({
@@ -192,26 +243,51 @@ export default function NotificationSettingsPage() {
         type: 'error',
         text: 'Push subscription registration failed: ' + err.message,
       });
+    } finally {
+      setPushBusy(false);
     }
   };
 
   const handleSavePreferences = async (e) => {
     e?.preventDefault();
+    const cleanedPhone = phoneNumber.replace(/[\s\-()]/g, '');
+    if (cleanedPhone && !PHONE_RE.test(cleanedPhone)) {
+      setStatusMessage({
+        type: 'error',
+        text: 'Enter a valid mobile number with country code, e.g. +91 followed by 10 digits.',
+      });
+      return;
+    }
+    if (!quietHours.start || !quietHours.end) {
+      setStatusMessage({ type: 'error', text: 'Set both a start and an end time for quiet hours.' });
+      return;
+    }
+    if ((smsEnabled || whatsappEnabled) && !cleanedPhone) {
+      setStatusMessage({
+        type: 'info',
+        text: 'Add a mobile number so SMS / WhatsApp alerts can reach you. Saving other preferences…',
+      });
+    } else {
+      setStatusMessage({ type: '', text: '' });
+    }
     setSaving(true);
-    setStatusMessage({ type: '', text: '' });
     try {
       await updateNotificationPreferences({
         sms_enabled: smsEnabled,
         whatsapp_enabled: whatsappEnabled,
-        phone_number: phoneNumber || null,
+        // Send '' (not null) so clearing the field actually removes the saved number;
+        // the backend ignores null.
+        phone_number: cleanedPhone,
         preferred_language: language,
         quiet_hours: quietHours,
       });
-      setStatusMessage({
-        type: 'success',
-        text: 'Delivery preferences updated successfully!',
-      });
-      setTimeout(() => setStatusMessage({ type: '', text: '' }), 4000);
+      setPhoneNumber(cleanedPhone);
+      const successText = 'Delivery preferences updated successfully!';
+      setStatusMessage({ type: 'success', text: successText });
+      setTimeout(
+        () => setStatusMessage((prev) => (prev.text === successText ? { type: '', text: '' } : prev)),
+        4000
+      );
     } catch (err) {
       setStatusMessage({
         type: 'error',
@@ -227,10 +303,32 @@ export default function NotificationSettingsPage() {
     setStatusMessage({ type: 'info', text: 'Sending test notification through configured channels...' });
     try {
       const res = await sendTestNotification({});
-      setStatusMessage({
-        type: 'success',
-        text: 'Test notification dispatched! Check your notifications / SMS logs.',
-      });
+      // The router always answers "dispatched"; the real outcome is in details.status
+      // (sent | delivered | queued | failed | error).
+      const outcome = res?.details?.status;
+      if (outcome === 'sent' || outcome === 'delivered') {
+        setStatusMessage({
+          type: 'success',
+          text: 'Test notification delivered. Check your device and the delivery log below.',
+        });
+      } else if (outcome === 'queued') {
+        setStatusMessage({
+          type: 'info',
+          text: 'You are inside your quiet hours, so the test was queued and will be delivered after they end.',
+        });
+      } else if (outcome === 'failed' && res?.details?.reason === 'no_channels') {
+        setStatusMessage({
+          type: 'error',
+          text: 'No delivery channel is active. Enable Web Push, or save a mobile number with SMS / WhatsApp turned on, then try again.',
+        });
+      } else if (outcome === 'failed' || outcome === 'error') {
+        setStatusMessage({
+          type: 'error',
+          text: 'Test notification could not be delivered. See the delivery log below for details.',
+        });
+      } else {
+        setStatusMessage({ type: 'success', text: 'Test notification dispatched.' });
+      }
       loadLogs();
     } catch (err) {
       setStatusMessage({
@@ -247,6 +345,7 @@ export default function NotificationSettingsPage() {
     try {
       const res = await flushOfflineQueue({ force: true });
       await refreshOfflineStatus();
+      if (res?.error) throw res.error;
       const parts = [`${res.processed} item(s) synchronized to server`];
       if (res.retrying) parts.push(`${res.retrying} will retry later`);
       if (res.failed) parts.push(`${res.failed} rejected by the server (see the banner at the top to review)`);
@@ -273,20 +372,31 @@ export default function NotificationSettingsPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <ErrorState
+          message={`Could not load your notification preferences. ${loadError}`}
+          onRetry={loadPreferences}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-12">
+    <div className="max-w-4xl mx-auto space-y-6 pb-12">
       {/* Header */}
       <div className="border-b border-stone-200 pb-5">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-brand-100 text-brand-800 rounded-xl">
+          <div className="p-2.5 bg-brand-100 text-brand-800 rounded-xl shrink-0">
             <Radio className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold text-stone-900 tracking-tight">
-              Multi-Channel Alert Delivery & Offline PWA
+              Notification Settings
             </h1>
-            <p className="text-sm text-stone-500 mt-0.5">
-              Guaranteed delivery infrastructure: Web Push, SMS, and WhatsApp fallback for rural connectivity.
+            <p className="text-sm text-stone-600 mt-0.5">
+              Choose how AgriGuard AI alerts reach you: Web Push, SMS and WhatsApp, plus your offline sync queue.
             </p>
           </div>
         </div>
@@ -295,18 +405,21 @@ export default function NotificationSettingsPage() {
       {/* Status banner */}
       {statusMessage.text && (
         <div
-          className={`p-4 rounded-xl text-sm flex items-center gap-3 ${
+          role={statusMessage.type === 'error' ? 'alert' : 'status'}
+          className={`p-4 rounded-xl text-sm flex items-start gap-3 ${
             statusMessage.type === 'error'
-              ? 'bg-rose-50 text-rose-800 border border-rose-200'
+              ? 'bg-red-50 text-red-800 border border-red-200'
               : statusMessage.type === 'success'
-              ? 'bg-brand-50 text-brand-800 border border-brand-200'
-              : 'bg-blue-50 text-blue-800 border border-blue-200'
+              ? 'bg-green-50 text-green-800 border border-green-200'
+              : 'bg-sky-50 text-sky-800 border border-sky-200'
           }`}
         >
           {statusMessage.type === 'error' ? (
-            <AlertTriangle className="w-5 h-5 shrink-0 text-rose-600" />
+            <AlertTriangle className="w-5 h-5 shrink-0 text-red-600" />
+          ) : statusMessage.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 shrink-0 text-green-600" />
           ) : (
-            <CheckCircle2 className="w-5 h-5 shrink-0 text-brand-600" />
+            <Bell className="w-5 h-5 shrink-0 text-sky-600" />
           )}
           <span>{statusMessage.text}</span>
         </div>
@@ -323,99 +436,130 @@ export default function NotificationSettingsPage() {
 
           <div className="space-y-4">
             {/* Channel 1: Web Push */}
-            <div className="flex items-start justify-between p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition">
-              <div className="flex items-start gap-3 max-w-xl">
+            <div className="flex items-start justify-between gap-3 p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition">
+              <div className="flex items-start gap-3 max-w-xl min-w-0">
                 <div className="p-2 bg-brand-100 text-brand-700 rounded-lg shrink-0 mt-0.5">
                   <Bell className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-stone-900">Web Push (Installed PWA)</span>
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-brand-100 text-brand-800">
-                      Zero SMS Cost
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-stone-900">Web Push (Installed App)</span>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-100 text-brand-800">
+                      No SMS Cost
                     </span>
                   </div>
                   <p className="text-xs text-stone-500 mt-1">
                     Instant alerts on your phone or tablet even when the browser or app is closed.
-                    Recommended for farmers with regular internet access.
+                    Recommended if you have regular internet access.
                   </p>
+                  {!pushSupported && (
+                    <p className="mt-2 text-xs font-medium text-amber-700">
+                      This browser does not support Web Push. Use SMS or WhatsApp instead.
+                    </p>
+                  )}
+                  {pushSupported && serverPushEnabled === false && !pushEnabled && (
+                    <p className="mt-2 text-xs font-medium text-amber-700">
+                      Web Push is not enabled on the server yet. SMS and WhatsApp alerts still work.
+                    </p>
+                  )}
                   {pushSupported && (
                     <div className="mt-2 text-xs font-medium text-stone-600">
-                      Browser Status:{' '}
+                      Browser status:{' '}
                       <span
-                        className={`capitalize font-semibold ${
-                          pushEnabled ? 'text-brand-600' : 'text-stone-500'
+                        className={`font-semibold ${
+                          pushEnabled ? 'text-green-700' : permissionState === 'denied' ? 'text-red-700' : 'text-stone-600'
                         }`}
                       >
-                        {pushEnabled ? 'Subscribed & Active' : permissionState}
+                        {pushEnabled
+                          ? 'Subscribed and active'
+                          : permissionState === 'granted'
+                          ? 'Permission granted (not subscribed)'
+                          : permissionState === 'denied'
+                          ? 'Blocked in browser settings'
+                          : 'Not enabled'}
                       </span>
                     </div>
                   )}
                 </div>
               </div>
-              <Toggle checked={pushEnabled} onChange={handleTogglePush} />
+              <div className="shrink-0">
+                <Toggle
+                  aria-label="Web Push notifications"
+                  checked={pushEnabled}
+                  onChange={handleTogglePush}
+                  disabled={pushBusy || !pushSupported || (serverPushEnabled === false && !pushEnabled)}
+                />
+              </div>
             </div>
 
             {/* Channel 2: Universal SMS */}
-            <div className="flex items-start justify-between p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition">
-              <div className="flex items-start gap-3 max-w-xl">
-                <div className="p-2 bg-blue-100 text-blue-700 rounded-lg shrink-0 mt-0.5">
+            <div className="flex items-start justify-between gap-3 p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition">
+              <div className="flex items-start gap-3 max-w-xl min-w-0">
+                <div className="p-2 bg-sky-100 text-sky-700 rounded-lg shrink-0 mt-0.5">
                   <Smartphone className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-stone-900">Universal SMS Fallback</span>
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-stone-900">SMS Alerts</span>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">
                       Works on Any Mobile
                     </span>
                   </div>
                   <p className="text-xs text-stone-500 mt-1">
-                    Delivered via cellular GSM network. Critical for rural areas in Tamil Nadu where 4G/5G data drops.
-                    Automatically triggers if Web Push is absent.
+                    Delivered over the regular mobile network, so alerts arrive even where 4G/5G data drops.
+                    Used whenever Web Push is unavailable. Needs a saved mobile number.
                   </p>
                 </div>
               </div>
-              <Toggle checked={smsEnabled} onChange={setSmsEnabled} />
+              <div className="shrink-0">
+                <Toggle aria-label="SMS alerts" checked={smsEnabled} onChange={setSmsEnabled} />
+              </div>
             </div>
 
             {/* Channel 3: WhatsApp Alert */}
-            <div className="flex items-start justify-between p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition">
-              <div className="flex items-start gap-3 max-w-xl">
-                <div className="p-2 bg-green-100 text-green-700 rounded-lg shrink-0 mt-0.5">
+            <div className="flex items-start justify-between gap-3 p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition">
+              <div className="flex items-start gap-3 max-w-xl min-w-0">
+                <div className="p-2 bg-brand-100 text-brand-700 rounded-lg shrink-0 mt-0.5">
                   <MessageSquare className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-stone-900">WhatsApp Advisory</span>
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-800">
-                      Rich Formatting & Links
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-stone-900">WhatsApp Alerts</span>
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-brand-100 text-brand-800">
+                      Detailed Advice
                     </span>
                   </div>
                   <p className="text-xs text-stone-500 mt-1">
-                    Direct WhatsApp notifications with formatted treatment prescriptions and direct links to the voice assistant.
+                    WhatsApp messages with the alert and treatment advice. Needs a saved mobile number.
                   </p>
                 </div>
               </div>
-              <Toggle checked={whatsappEnabled} onChange={setWhatsappEnabled} />
+              <div className="shrink-0">
+                <Toggle aria-label="WhatsApp alerts" checked={whatsappEnabled} onChange={setWhatsappEnabled} />
+              </div>
             </div>
           </div>
 
           {/* Registered Mobile Number */}
           <div className="pt-2 border-t border-stone-100">
-            <label className="block text-sm font-medium text-stone-700 mb-1">
-              Registered Mobile Number (for SMS & WhatsApp)
+            <label htmlFor="notif-phone" className="label">
+              Mobile Number (for SMS & WhatsApp)
             </label>
             <div className="relative max-w-md">
               <input
-                type="text"
+                id="notif-phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                maxLength={20}
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="+919876543210"
-                className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:bg-white transition"
+                placeholder="+91 9xxxxxxxxx"
+                className="input-field"
               />
             </div>
-            <p className="text-xs text-stone-400 mt-1">
-              Include country code (e.g. +91 for India).
+            <p className="text-xs text-stone-500 mt-1">
+              Include the country code (e.g. +91 for India). Leave empty to remove your number.
             </p>
           </div>
         </div>
@@ -429,14 +573,16 @@ export default function NotificationSettingsPage() {
               Alert Language (மொழி / भाषा)
             </h2>
             <p className="text-xs text-stone-500">
-              Alerts and prescriptions are automatically translated into your preferred regional dialect.
+              SMS, WhatsApp and push alerts are sent in the language you choose here.
             </p>
 
-            <div className="space-y-2.5">
+            <div className="space-y-2.5" role="radiogroup" aria-label="Alert language">
               {[
-                { id: 'ta', label: 'தமிழ் (Tamil)', desc: 'உள்ளூர் மொழி விழிப்பூட்டல்கள்' },
-                { id: 'en', label: 'English', desc: 'Standard Agronomic English' },
-                { id: 'hi', label: 'हिंदी (Hindi)', desc: 'क्षेत्रीय हिंदी चेतावनी' },
+                { id: 'ta', label: 'தமிழ் (Tamil)', desc: 'தமிழில் எச்சரிக்கைகள்' },
+                { id: 'en', label: 'English', desc: 'Alerts in English' },
+                { id: 'hi', label: 'हिंदी (Hindi)', desc: 'हिंदी में चेतावनी' },
+                { id: 'te', label: 'తెలుగు (Telugu)', desc: 'తెలుగులో హెచ్చరికలు' },
+                { id: 'ml', label: 'മലയാളം (Malayalam)', desc: 'മലയാളത്തിൽ മുന്നറിയിപ്പുകൾ' },
               ].map((item) => (
                 <label
                   key={item.id}
@@ -448,7 +594,7 @@ export default function NotificationSettingsPage() {
                 >
                   <div>
                     <div className="text-sm">{item.label}</div>
-                    <div className="text-xs text-stone-400 font-normal">{item.desc}</div>
+                    <div className="text-xs text-stone-500 font-normal">{item.desc}</div>
                   </div>
                   <input
                     type="radio"
@@ -466,20 +612,22 @@ export default function NotificationSettingsPage() {
           {/* Quiet Hours Picker */}
           <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
             <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
-              <Moon className="w-5 h-5 text-indigo-600" />
+              <Moon className="w-5 h-5 text-brand-600" />
               Quiet Hours (Do Not Disturb)
             </h2>
             <p className="text-xs text-stone-500">
-              Non-urgent notifications will be queued and delivered in the morning.
+              Non-urgent notifications are held during these hours (India time) and delivered when they end.
             </p>
 
             <div className="grid grid-cols-2 gap-3 pt-1">
               <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1">
+                <label htmlFor="quiet-start" className="block text-xs font-medium text-stone-600 mb-1">
                   Start (Night)
                 </label>
                 <div className="relative">
                   <input
+                    id="quiet-start"
+                    required
                     type="time"
                     value={quietHours.start}
                     onChange={(e) =>
@@ -490,11 +638,13 @@ export default function NotificationSettingsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-stone-600 mb-1">
+                <label htmlFor="quiet-end" className="block text-xs font-medium text-stone-600 mb-1">
                   End (Morning)
                 </label>
                 <div className="relative">
                   <input
+                    id="quiet-end"
+                    required
                     type="time"
                     value={quietHours.end}
                     onChange={(e) =>
@@ -509,7 +659,7 @@ export default function NotificationSettingsPage() {
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/60 text-xs text-amber-900 flex items-start gap-2">
               <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
               <span>
-                <strong>Urgent Override:</strong> Severe <em>High Risk</em> pest alerts and regional outbreaks bypass quiet hours to protect your yield.
+                <strong>Urgent override:</strong> <em>High Risk</em> pest alerts bypass quiet hours to protect your yield.
               </span>
             </div>
           </div>
@@ -520,38 +670,39 @@ export default function NotificationSettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white font-medium text-sm shadow-sm transition disabled:opacity-50"
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-sm shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed ${FOCUS_RING}`}
           >
-            <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : 'Save Delivery Preferences'}
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? 'Saving...' : 'Save Preferences'}
           </button>
 
           <button
             type="button"
             onClick={handleSendTest}
             disabled={testing}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-900 text-white font-medium text-sm shadow-sm transition disabled:opacity-50"
+            title="Uses your saved preferences — save any changes first"
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed ${FOCUS_RING}`}
           >
-            <Send className="w-4 h-4" />
-            {testing ? 'Dispatching...' : 'Send Test Notification'}
+            {testing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {testing ? 'Sending...' : 'Send Test Notification'}
           </button>
         </div>
       </form>
 
       {/* Offline Action Queue Diagnostic Card */}
       <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Database className="w-5 h-5 text-brand-600" />
             <h2 className="text-lg font-semibold text-stone-800">
-              Offline Action Queue (IndexedDB Storage)
+              Offline Sync Queue
             </h2>
           </div>
           <span
             className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
               pendingCount > 0
                 ? 'bg-amber-100 text-amber-900'
-                : 'bg-brand-100 text-brand-900'
+                : 'bg-green-100 text-green-800'
             }`}
           >
             {pendingCount} item{pendingCount === 1 ? '' : 's'} queued
@@ -559,29 +710,30 @@ export default function NotificationSettingsPage() {
         </div>
 
         <p className="text-xs text-stone-500">
-          When you upload leaf images or record treatment interventions in zero-connectivity field zones, submissions are compressed client-side and saved into IndexedDB. They automatically flush via Background Sync once network connection returns.
+          Leaf photos, treatment logs, expenses and revenue recorded without a connection are saved on this device
+          and sent automatically once you are back online.
         </p>
 
         {pendingItems.length > 0 ? (
           <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl overflow-hidden bg-stone-50/50">
             {pendingItems.map((item) => (
-              <div key={item.id} className="p-3 text-xs flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-3.5 h-3.5 text-stone-400" />
-                  <span className="font-semibold text-stone-700 capitalize">
-                    {item.type.replace('_', ' ')}
+              <div key={item.id} className="p-3 text-xs flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Clock className="w-3.5 h-3.5 text-stone-500" />
+                  <span className="font-semibold text-stone-700">
+                    {describeAction(item)}
                   </span>
-                  <span className="text-stone-400">
-                    Queued at {new Date(item.queued_at).toLocaleTimeString()}
+                  <span className="text-stone-500">
+                    Queued {item.queued_at ? new Date(item.queued_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
                   </span>
                 </div>
-                <span className="text-amber-700 font-medium">Pending Auto-Sync</span>
+                <span className="text-amber-700 font-medium">Waiting to sync</span>
               </div>
             ))}
           </div>
         ) : (
           <div className="p-4 rounded-xl bg-stone-50 border border-stone-100 text-xs text-stone-500 text-center">
-            All offline actions are synchronized with the server database.
+            Everything recorded offline has been sent to the server.
           </div>
         )}
 
@@ -590,60 +742,78 @@ export default function NotificationSettingsPage() {
             type="button"
             onClick={handleFlushQueue}
             disabled={syncingQueue || pendingCount === 0}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition disabled:opacity-40"
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${FOCUS_RING}`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${syncingQueue ? 'animate-spin' : ''}`} />
-            {syncingQueue ? 'Synchronizing Queue...' : 'Force Sync Offline Queue Now'}
+            {syncingQueue ? 'Syncing...' : 'Sync Now'}
           </button>
         </div>
       </div>
 
       {/* Delivery Audit Logs */}
-      {deliveryLogs.length > 0 && (
-        <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
+      <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
             <Clock className="w-5 h-5 text-stone-500" />
-            Recent Notification Audit Logs
+            Recent Deliveries
           </h2>
-          <p className="text-xs text-stone-500">
-            Auditable trail of alerts delivered to your devices and fallback carriers.
-          </p>
-
-          <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl overflow-hidden">
-            {deliveryLogs.map((log) => (
-              <div key={log.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-stone-800 uppercase text-[10px] px-2 py-0.5 bg-stone-100 rounded">
-                      {log.channel}
-                    </span>
-                    <span className="font-medium text-stone-600">
-                      {log.event_type.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <p className="text-stone-700">{log.message}</p>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 sm:text-right">
-                  <span
-                    className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                      log.status === 'sent'
-                        ? 'bg-brand-100 text-brand-800'
-                        : log.status === 'queued'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-rose-100 text-rose-800'
-                    }`}
-                  >
-                    {log.status}
-                  </span>
-                  <span className="text-stone-400 text-[11px]">
-                    {new Date(log.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={loadLogs}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-stone-600 hover:bg-stone-100 transition ${FOCUS_RING}`}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
         </div>
-      )}
+        <p className="text-xs text-stone-500">
+          The last 10 alerts sent to you, with the channel used and whether delivery succeeded.
+        </p>
+
+        {deliveryLogs.length === 0 ? (
+          <div className="p-4 rounded-xl bg-stone-50 border border-stone-100 text-xs text-stone-500 text-center">
+            No notifications have been sent to you yet. Use "Send Test Notification" to check your setup.
+          </div>
+        ) : (
+          <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl overflow-hidden">
+            {deliveryLogs.map((log, idx) => {
+              const sentAt = parseUtc(log.sent_at);
+              return (
+                <div key={log.id || idx} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-stone-800 uppercase text-xs px-2 py-0.5 bg-stone-100 rounded">
+                        {log.channel || '—'}
+                      </span>
+                      <span className="font-medium text-stone-600 capitalize">
+                        {humanize(log.event_type)}
+                      </span>
+                    </div>
+                    <p className="text-stone-700 break-words">{log.message}</p>
+                    {log.error && log.status !== 'queued' && (
+                      <p className="text-red-700 break-words">{log.error}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 sm:text-right">
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-semibold capitalize ${
+                        LOG_STATUS_CLASS[log.status] || 'bg-red-100 text-red-800'
+                      }`}
+                    >
+                      {humanize(log.status)}
+                    </span>
+                    {sentAt && (
+                      <span className="text-stone-500 text-xs">
+                        {sentAt.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

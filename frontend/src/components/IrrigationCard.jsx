@@ -1,14 +1,30 @@
-import React, { useState } from 'react'
+import React, { useState, useId } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Droplets, CloudRain, Sun, Calendar, Info, ChevronDown, ChevronUp, AlertCircle, CheckCircle } from 'lucide-react'
+import { Droplets, Calendar, Info, ChevronDown, ChevronUp, AlertCircle, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 
-export default function IrrigationCard({ data, loading = false }) {
+const num = (v, fallback = 0) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+// "YYYY-MM-DD" → local calendar date (avoids the UTC-midnight off-by-one)
+function formatCalendarDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''))
+  if (!m) return null
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    .toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+export default function IrrigationCard({ data, loading = false, error = null, onRetry }) {
   const [expanded, setExpanded] = useState(false)
+  const uid = useId().replace(/:/g, '')
+  const clipId = `dropletClip-${uid}`
+  const gradId = `waterGrad-${uid}`
 
   if (loading) {
     return (
-      <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm animate-pulse space-y-4">
+      <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm animate-pulse space-y-4" aria-busy="true">
         <div className="h-6 w-48 bg-stone-200 rounded-lg" />
         <div className="h-28 bg-stone-100 rounded-2xl" />
         <div className="h-8 bg-stone-100 rounded-lg" />
@@ -18,76 +34,90 @@ export default function IrrigationCard({ data, loading = false }) {
 
   if (!data) {
     return (
-      <div className="bg-white rounded-3xl border border-dashed border-stone-300 p-6 text-center text-stone-500 text-xs">
-        <Droplets size={24} className="mx-auto text-sky-400 mb-2" />
-        <p className="font-semibold text-stone-700">Irrigation Advisory Not Available</p>
-        <p className="text-[11px] text-stone-400 mt-1">Generate a farm activity plan to activate irrigation telemetry.</p>
+      <div className="bg-white rounded-3xl border border-dashed border-stone-300 p-6 text-center text-stone-600 text-sm">
+        {error ? (
+          <AlertCircle size={24} className="mx-auto text-red-500 mb-2" />
+        ) : (
+          <Droplets size={24} className="mx-auto text-sky-500 mb-2" />
+        )}
+        <p className="font-semibold text-stone-800">Irrigation Advice Not Available</p>
+        <p className="text-xs text-stone-500 mt-1">
+          {error || 'Select a farm to see this week’s irrigation recommendation.'}
+        </p>
+        {error && onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          >
+            <RefreshCw size={12} /> Try Again
+          </button>
+        )}
       </div>
     )
   }
 
-  const mm = data.recommended_irrigation_mm || 0
-  const liters = data.recommended_irrigation_liters_per_acre || 0
-  const totalLiters = data.total_farm_liters || 0
+  const mm = num(data.recommended_irrigation_mm)
+  const liters = num(data.recommended_irrigation_liters_per_acre)
+  const totalLiters = num(data.total_farm_liters)
   const urgency = data.urgency || 'Low'
-  const stage = data.current_growth_stage || 'Vegetative'
-  const kc = data.crop_coefficient_kc || 0.8
-  const effRain = data.effective_rainfall_mm || 0
-  const totalRain = data.recent_7d_rainfall_mm || 0
+  const stage = data.current_growth_stage || '—'
+  const kc = data.crop_coefficient_kc
+  const effRain = num(data.effective_rainfall_mm)
+  const totalRain = num(data.recent_7d_rainfall_mm)
+  const nextDate = formatCalendarDate(data.next_irrigation_date)
 
-  // Calculate droplet percentage height (0 - 50mm scale)
+  // Droplet fill height (0–45 mm scale, min 12% so the gauge never looks empty/broken)
   const fillPct = Math.min(100, Math.max(12, Math.round((mm / 45.0) * 100)))
 
   return (
-    <div className="bg-white rounded-3xl border border-stone-200/90 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+    <div className="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
       {/* Header */}
       <div>
         <div className="flex items-center justify-between gap-2 pb-3 border-b border-stone-100">
-          <div className="flex items-center gap-2">
-            <span className="p-2 bg-sky-100 text-sky-700 rounded-2xl">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="p-2 bg-sky-100 text-sky-700 rounded-2xl shrink-0">
               <Droplets size={18} />
             </span>
-            <div>
-              <h3 className="text-xs font-black uppercase tracking-wider text-stone-900">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-stone-900">
                 Smart Irrigation
               </h3>
-              <p className="text-[10px] text-stone-400 font-semibold">
-                FAO-56 Water Requirement
+              <p className="text-xs text-stone-500 font-medium">
+                FAO-56 water requirement{data.crop_type ? ` · ${data.crop_type}` : ''}
               </p>
             </div>
           </div>
           <span
             className={clsx(
-              'px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider',
+              'px-2.5 py-0.5 rounded-full text-xs font-bold shrink-0 border',
               urgency === 'High'
-                ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                ? 'bg-red-100 text-red-800 border-red-200'
                 : urgency === 'Moderate'
-                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                ? 'bg-amber-100 text-amber-800 border-amber-200'
+                : 'bg-green-100 text-green-800 border-green-200'
             )}
           >
-            {urgency} Need
+            {urgency} need
           </span>
         </div>
 
         {/* Droplet Graphic & Key Metrics */}
-        <div className="grid grid-cols-12 gap-4 items-center my-4">
+        <div className="grid grid-cols-12 gap-3 sm:gap-4 items-center my-4">
           {/* Animated Water Droplet Gauge */}
-          <div className="col-span-5 flex flex-col items-center justify-center">
-            <div className="relative w-20 h-24 flex items-center justify-center">
-              {/* Outer SVG Droplet Outline */}
-              <svg viewBox="0 0 100 120" className="w-full h-full drop-shadow-sm">
+          <div className="col-span-12 min-[400px]:col-span-5 flex flex-col items-center justify-center">
+            <div className="relative w-20 h-24 flex items-center justify-center" role="img" aria-label={`${mm} millimetres of irrigation needed this week`}>
+              <svg viewBox="0 0 100 120" className="w-full h-full drop-shadow-sm" aria-hidden="true">
                 <defs>
-                  <clipPath id="dropletClip">
+                  <clipPath id={clipId}>
                     <path d="M50 0 C50 0 5 60 5 85 A45 45 0 0 0 95 85 C95 60 50 0 50 0 Z" />
                   </clipPath>
-                  <linearGradient id="waterGrad" x1="0" y1="1" x2="0" y2="0">
+                  <linearGradient id={gradId} x1="0" y1="1" x2="0" y2="0">
                     <stop offset="0%" stopColor="#0284c7" />
                     <stop offset="100%" stopColor="#38bdf8" />
                   </linearGradient>
                 </defs>
 
-                {/* Droplet Background Frame */}
                 <path
                   d="M50 0 C50 0 5 60 5 85 A45 45 0 0 0 95 85 C95 60 50 0 50 0 Z"
                   fill="#f0f9ff"
@@ -95,12 +125,11 @@ export default function IrrigationCard({ data, loading = false }) {
                   strokeWidth="3"
                 />
 
-                {/* Animated Rising Water Level */}
-                <g clipPath="url(#dropletClip)">
+                <g clipPath={`url(#${clipId})`}>
                   <motion.rect
                     x="0"
                     width="100"
-                    fill="url(#waterGrad)"
+                    fill={`url(#${gradId})`}
                     initial={{ y: 120, height: 0 }}
                     animate={{
                       y: 120 - (120 * fillPct) / 100,
@@ -108,7 +137,6 @@ export default function IrrigationCard({ data, loading = false }) {
                     }}
                     transition={{ duration: 0.9, ease: 'easeOut' }}
                   />
-                  {/* Subtle water ripple wave line */}
                   <motion.path
                     d="M0 5 Q 25 0, 50 5 T 100 5 V 20 H 0 Z"
                     fill="#e0f2fe"
@@ -126,48 +154,47 @@ export default function IrrigationCard({ data, loading = false }) {
                 </g>
               </svg>
 
-              {/* Water Depth overlay text */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pt-5 pointer-events-none">
-                <span className="text-lg font-black text-stone-900 font-mono leading-none drop-shadow-sm">
-                  {mm}
+                <span className="text-lg font-bold text-stone-900 font-mono leading-none drop-shadow-sm">
+                  {mm.toLocaleString('en-IN', { maximumFractionDigits: 1 })}
                 </span>
-                <span className="text-[10px] font-bold text-stone-600">mm</span>
+                <span className="text-xs font-bold text-stone-700">mm</span>
               </div>
             </div>
-            <span className="text-[10px] font-semibold text-stone-400 mt-1 text-center">
-              Weekly Net
+            <span className="text-xs font-semibold text-stone-500 mt-1 text-center">
+              Net this week
             </span>
           </div>
 
           {/* Numerical Breakdown */}
-          <div className="col-span-7 space-y-2">
+          <div className="col-span-12 min-[400px]:col-span-7 space-y-2">
             <div className="bg-sky-50/70 border border-sky-100 rounded-2xl p-2.5">
-              <span className="text-[10px] font-bold text-sky-800 uppercase tracking-tight block">
-                Target Volume
+              <span className="text-xs font-bold text-sky-800 uppercase tracking-tight block">
+                Water to Apply
               </span>
-              <span className="text-base font-black text-sky-950 font-mono">
+              <span className="text-base font-bold text-sky-950 font-mono">
                 {liters.toLocaleString('en-IN')}{' '}
                 <span className="text-xs font-semibold text-sky-700">L/acre</span>
               </span>
-              {data.farm_area_acres && (
-                <span className="text-[10px] text-sky-600 block mt-0.5">
-                  Total Plot: {totalLiters.toLocaleString('en-IN')} L ({data.farm_area_acres} ac)
+              {data.farm_area_acres != null && (
+                <span className="text-xs text-sky-700 block mt-0.5">
+                  Whole field: {totalLiters.toLocaleString('en-IN')} L ({num(data.farm_area_acres).toLocaleString('en-IN')} ac)
                 </span>
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-              <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-2">
-                <span className="text-[9px] text-stone-400 font-bold uppercase block">Stage (Kc)</span>
-                <span className="font-bold text-stone-800 truncate block">
+            <div className="grid grid-cols-2 gap-1.5 text-xs">
+              <div className="bg-stone-50 border border-stone-200 rounded-xl p-2 min-w-0">
+                <span className="text-xs text-stone-500 font-bold uppercase block">Stage (Kc)</span>
+                <span className="font-bold text-stone-800 truncate block" title={stage}>
                   {stage}{' '}
-                  <span className="font-mono text-sky-700 text-[10px]">({kc})</span>
+                  {kc != null && <span className="font-mono text-sky-700">({kc})</span>}
                 </span>
               </div>
-              <div className="bg-stone-50 border border-stone-200/80 rounded-xl p-2">
-                <span className="text-[9px] text-stone-400 font-bold uppercase block">Rain Offset</span>
-                <span className="font-bold text-emerald-700 truncate block">
-                  -{effRain}mm
+              <div className="bg-stone-50 border border-stone-200 rounded-xl p-2 min-w-0">
+                <span className="text-xs text-stone-500 font-bold uppercase block">Rain Offset</span>
+                <span className="font-bold text-sky-800 truncate block">
+                  −{effRain.toLocaleString('en-IN', { maximumFractionDigits: 1 })} mm
                 </span>
               </div>
             </div>
@@ -175,30 +202,34 @@ export default function IrrigationCard({ data, loading = false }) {
         </div>
 
         {/* Next Scheduled Date */}
-        <div className="flex items-center justify-between text-xs bg-stone-50 rounded-2xl p-3 border border-stone-200/80">
+        <div className="flex items-center justify-between gap-2 text-xs bg-stone-50 rounded-2xl p-3 border border-stone-200">
           <div className="flex items-center gap-2">
-            <Calendar size={14} className="text-stone-400" />
-            <span className="text-[11px] font-medium text-stone-600">Next Action:</span>
+            <Calendar size={14} className="text-stone-500" />
+            <span className="text-xs font-medium text-stone-600">Next irrigation:</span>
           </div>
-          <span className="font-bold text-stone-900 font-mono text-xs">
-            {data.next_irrigation_date ? new Date(data.next_irrigation_date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : 'As needed'}
+          <span className="font-bold text-stone-900 text-xs">
+            {nextDate || 'As needed'}
           </span>
         </div>
 
-        <p className="text-[11px] text-stone-500 mt-2.5 italic">
-          {data.status_note}
-        </p>
+        {data.status_note && (
+          <p className="text-xs text-stone-600 mt-2.5">
+            {data.status_note}
+          </p>
+        )}
       </div>
 
       {/* Expandable Agronomic Explanation */}
       <div className="mt-3 pt-2 border-t border-stone-100">
         <button
+          type="button"
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-between text-[11px] font-bold text-sky-700 hover:text-sky-800 transition-colors"
+          aria-expanded={expanded}
+          className="w-full flex items-center justify-between text-xs font-bold text-sky-700 hover:text-sky-800 transition-colors rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <span className="flex items-center gap-1.5">
             <Info size={12} />
-            <span>FAO-56 Calculation Formula</span>
+            <span>How this is calculated</span>
           </span>
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
@@ -210,17 +241,19 @@ export default function IrrigationCard({ data, loading = false }) {
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.25 }}
-              className="overflow-hidden mt-2 text-[10px] text-stone-600 space-y-2 bg-stone-50 p-3 rounded-2xl border border-stone-200"
+              className="overflow-hidden mt-2 text-xs text-stone-600 space-y-2 bg-stone-50 p-3 rounded-2xl border border-stone-200"
             >
-              <div className="space-y-1 font-mono text-[9.5px]">
-                <p>1. ET₀ (Hargreaves): {data.reference_et0_mm_per_day} mm/day</p>
-                <p>2. Crop Need: {data.daily_crop_water_need_mm} mm/day × 7 = {data.weekly_crop_water_need_mm} mm</p>
-                <p>3. USDA Effective Rain: {effRain} mm (from {totalRain}mm raw)</p>
-                <p className="font-bold text-sky-900">4. Net Weekly Need = max(0, {data.weekly_crop_water_need_mm} - {effRain}) = {mm} mm</p>
+              <div className="space-y-1 font-mono text-xs break-words">
+                <p>1. ET₀ (Hargreaves): {data.reference_et0_mm_per_day ?? '—'} mm/day</p>
+                <p>2. Crop need: {data.daily_crop_water_need_mm ?? '—'} mm/day × 7 = {data.weekly_crop_water_need_mm ?? '—'} mm</p>
+                <p>3. Effective rain (USDA SCS): {effRain} mm (from {totalRain} mm measured)</p>
+                <p className="font-bold text-sky-900">4. Net weekly need = max(0, {data.weekly_crop_water_need_mm ?? '—'} − {effRain}) = {mm} mm</p>
               </div>
-              <p className="text-[9px] text-emerald-800 font-semibold italic border-t border-stone-200 pt-1">
-                Citation: {data.source_note}
-              </p>
+              {data.source_note && (
+                <p className="text-xs text-stone-600 italic border-t border-stone-200 pt-1">
+                  Source: {data.source_note}
+                </p>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

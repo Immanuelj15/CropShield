@@ -49,14 +49,16 @@ export class ErrorBoundary extends React.Component {
           </p>
           <div className="flex items-center justify-center gap-3 pt-1">
             <button
+              type="button"
               onClick={this.handleRetry}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-sm transition"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
             >
               <RefreshCw size={14} /> Try again
             </button>
             <button
+              type="button"
               onClick={this.handleGoHome}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-100 text-stone-700 text-xs font-bold hover:bg-stone-200 transition"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-100 text-stone-700 text-xs font-bold hover:bg-stone-200 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
             >
               <Home size={14} /> Back to Dashboard
             </button>
@@ -80,14 +82,16 @@ export class ErrorBoundary extends React.Component {
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
+                type="button"
                 onClick={this.handleReload}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-sm transition"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
               >
                 <RefreshCw size={14} /> Reload App
               </button>
               <button
+                type="button"
                 onClick={this.handleGoHome}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-100 text-stone-700 text-xs font-bold hover:bg-stone-200 transition"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-100 text-stone-700 text-xs font-bold hover:bg-stone-200 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
               >
                 <Home size={14} /> Back to Dashboard
               </button>
