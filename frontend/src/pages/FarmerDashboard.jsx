@@ -29,6 +29,8 @@ export default function FarmerDashboard() {
   const [farmError, setFarmError] = useState(null)
   const [warningData, setWarningData] = useState(null)
   const [vegetationData, setVegetationData] = useState(null)
+  const [vegetationError, setVegetationError] = useState(null)
+  const [warningError, setWarningError] = useState(null)
   const [loading, setLoading] = useState(false)
 
   const [treatments, setTreatments] = useState([])
@@ -73,6 +75,8 @@ export default function FarmerDashboard() {
   const [supportQuery, setSupportQuery] = useState('')
   const [supportSent, setSupportSent] = useState(false)
   const [supportSending, setSupportSending] = useState(false)
+  const [supportRequests, setSupportRequests] = useState([])
+  const [supportRequestsError, setSupportRequestsError] = useState(null)
 
   // Object URL for the leaf preview: revoke the previous one on change and on unmount (P3-9)
   const previewUrlRef = useRef(null)
@@ -137,17 +141,28 @@ export default function FarmerDashboard() {
   }
 
   const fetchVegetationData = async (farmId) => {
+    setVegetationError(null)
     try {
       setVegetationData(await apiFetch(`/vegetation/${encodeURIComponent(farmId)}`))
     } catch (err) {
       console.warn('Vegetation fetch failed:', err)
       setVegetationData(null)
+      setVegetationError(isNetworkError(err) ? 'network connection unavailable.' : (err.message || 'request failed.'))
     }
+  }
+
+  // Refresh button: re-run today's prediction and the satellite reading together
+  const refreshAll = () => {
+    if (!farm || loading) return
+    fetchTodayWarning(farm)
+    const farmId = farmIdOf(farm)
+    if (farmId) fetchVegetationData(farmId)
   }
 
   const fetchTodayWarning = async (farmObj) => {
     if (!farmObj) return
     setLoading(true)
+    setWarningError(null)
     try {
       const data = await apiFetch('/predict-today', {
         method: 'POST',
@@ -163,7 +178,8 @@ export default function FarmerDashboard() {
       setWarningData(data)
       setIsOfflineCached(false)
       try {
-        const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        // Store a full timestamp so a cached warning from an earlier day is labelled with its date
+        const nowStr = new Date().toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
         const cacheKey = userScopedKey(LAST_WARNING_CACHE)
         if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify({ data, time: nowStr }))
         setCachedTimestamp(nowStr)
@@ -174,8 +190,11 @@ export default function FarmerDashboard() {
       if (isNetworkError(err)) {
         console.warn('Prediction request failed; operating in offline-cached tolerance mode:', err)
         setIsOfflineCached(true)
+        setWarningError('Network error — could not reach the server for today\'s warning.')
       } else {
-        toast.error(err.message || 'Could not load today\'s warning.')
+        const msg = err.message || 'Could not load today\'s warning.'
+        setWarningError(msg)
+        toast.error(msg)
       }
     } finally {
       setLoading(false)
@@ -239,9 +258,14 @@ export default function FarmerDashboard() {
   }
 
   const fetchSupportRequests = async () => {
+    setSupportRequestsError(null)
     try {
-      await apiFetch('/support/requests/me')
-    } catch (e) { console.error(e) }
+      const data = await apiFetch('/support/requests/me')
+      setSupportRequests(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error(e)
+      setSupportRequestsError(isNetworkError(e) ? 'Network error while loading your questions.' : (e.message || 'Could not load your questions.'))
+    }
   }
 
   const resetTreatmentForm = () => setNewTreatment({
@@ -378,12 +402,18 @@ export default function FarmerDashboard() {
 
   const handleSendSupport = async (e) => {
     e.preventDefault()
-    if (!supportQuery.trim() || supportSending) return
+    const text = supportQuery.trim()
+    if (!text || supportSending) return
+    // Backend requires 5–4000 characters (SupportRequestCreate)
+    if (text.length < 5) {
+      toast.error('Please describe the problem in a few more words (at least 5 characters).')
+      return
+    }
     setSupportSending(true)
     try {
       await apiFetch('/support/requests', {
         method: 'POST',
-        json: { query_text: supportQuery, crop_type: farm?.crop_type || 'General' },
+        json: { query_text: text, crop_type: farm?.crop_type || 'General' },
       })
       setSupportSent(true)
       setSupportQuery('')
@@ -407,8 +437,8 @@ export default function FarmerDashboard() {
   ]
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-24 lg:pb-12">
-      <div className="bg-gradient-to-r from-brand-900 via-teal-900 to-stone-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden border border-brand-800/40">
+    <div className="space-y-6 animate-fade-in pb-24 lg:pb-12">
+      <div className="bg-gradient-to-r from-brand-900 via-brand-800 to-stone-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden border border-brand-800/40">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand-500/20 text-brand-300 text-xs font-semibold rounded-full border border-brand-400/30 mb-2">
@@ -418,8 +448,23 @@ export default function FarmerDashboard() {
               {farm ? farm.farm_name : farmMissing ? t('farmer:no_farm_title', 'No farm registered yet') : '…'}
             </h1>
             <p className="text-stone-300 text-xs sm:text-sm mt-1">
-              {farm ? `${farm.district} · ${farm.climate_zone} Agro-Zone · ${farm.crop_type} (${farm.area_hectares} Ha)` : farmError ? farmError : ''}
+              {farm
+                ? [
+                    farm.district,
+                    farm.climate_zone ? `${farm.climate_zone} Agro-Zone` : null,
+                    farm.crop_type ? `${farm.crop_type}${farm.area_hectares ? ` (${farm.area_hectares} ha)` : ''}` : null,
+                  ].filter(Boolean).join(' · ')
+                : farmError ? farmError : ''}
             </p>
+            {farmError && !farm && (
+              <button
+                type="button"
+                onClick={fetchFarmData}
+                className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+              >
+                {t('common:retry', 'Try Again')}
+              </button>
+            )}
             {farmMissing && (
               <NavLink
                 to="/farmer/manage-farms"
@@ -431,39 +476,56 @@ export default function FarmerDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="px-4 py-2 bg-white/10 backdrop-blur rounded-2xl border border-white/10 text-right">
-              <span className="text-[11px] text-stone-300 block uppercase font-bold tracking-wider">NASA Satellite Link</span>
-              <span className="text-xs font-semibold text-brand-300 flex items-center gap-1.5 justify-end">
-                <span className="w-2 h-2 rounded-full bg-brand-400 animate-pulse"></span> Active 2026 Feed
-              </span>
+            {/* Honest weather-data status, driven by the last prediction's data_quality */}
+            <div className="px-4 py-2 bg-white/10 backdrop-blur rounded-2xl border border-white/10 text-right" role="status">
+              <span className="text-xs text-stone-300 block uppercase font-bold tracking-wider">Weather Data</span>
+              {!warningData ? (
+                <span className="text-xs font-semibold text-stone-300 flex items-center gap-1.5 justify-end">
+                  <span className="w-2 h-2 rounded-full bg-stone-400" aria-hidden="true"></span> {loading ? 'Loading…' : 'Not loaded'}
+                </span>
+              ) : warningData?.data_quality?.is_synthetic ? (
+                <span className="text-xs font-semibold text-amber-300 flex items-center gap-1.5 justify-end">
+                  <span className="w-2 h-2 rounded-full bg-amber-400" aria-hidden="true"></span> Estimated (NASA unavailable)
+                </span>
+              ) : (
+                <span className="text-xs font-semibold text-brand-300 flex items-center gap-1.5 justify-end">
+                  <span className="w-2 h-2 rounded-full bg-brand-400" aria-hidden="true"></span>
+                  NASA POWER{warningData?.data_date ? ` · ${warningData.data_date}` : ''}
+                </span>
+              )}
             </div>
             <NavLink
               to="/farmer/notifications"
-              className="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/10"
+              className="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
             >
-              <Bell size={14} /> {t('common:nav_alert_channels') || 'Alert Channels'}
+              <Bell size={14} aria-hidden="true" /> {t('common:nav_alert_channels', 'Alert Channels')}
             </NavLink>
             <button
-              onClick={() => farm && fetchTodayWarning(farm)}
+              type="button"
+              onClick={refreshAll}
               disabled={!farm || loading}
-              className="disabled:opacity-50 px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
+              aria-busy={loading}
+              className="disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold shadow-md transition-all flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
             >
-              <Activity size={14} /> {t('common:refresh')}
+              <Activity size={14} className={loading ? 'animate-spin' : ''} aria-hidden="true" /> {t('common:refresh', 'Refresh')}
             </button>
           </div>
         </div>
 
-        <TabBar tabs={tabs} activeId={activeTab} onSelect={setActiveTab} activeCls="bg-white text-brand-950" className="mt-6" />
+        <TabBar tabs={tabs} activeId={activeTab} onSelect={setActiveTab} activeCls="bg-white text-brand-900" className="mt-6" ariaLabel={t('farmer:portal_title', 'Farmer dashboard sections')} />
       </div>
 
       {activeTab === 'warning' && (
         <FarmerWarningTab
           warningData={warningData} loading={loading} isOfflineCached={isOfflineCached}
-          cachedTimestamp={cachedTimestamp} farm={farm} fetchTodayWarning={fetchTodayWarning}
-          vegetationData={vegetationData} scanResult={scanResult}
+          cachedTimestamp={cachedTimestamp} farm={farm} farmMissing={farmMissing} fetchTodayWarning={refreshAll}
+          warningError={warningError}
+          vegetationData={vegetationData} vegetationError={vegetationError} scanResult={scanResult}
           supportQuery={supportQuery} setSupportQuery={setSupportQuery}
           supportSent={supportSent} handleSendSupport={handleSendSupport}
           supportSending={supportSending}
+          supportRequests={supportRequests} supportRequestsError={supportRequestsError}
+          onRetrySupportRequests={fetchSupportRequests}
         />
       )}
 
@@ -481,7 +543,7 @@ export default function FarmerDashboard() {
           showTreatmentModal={showTreatmentModal} setShowTreatmentModal={setShowTreatmentModal}
           newTreatment={newTreatment} setNewTreatment={setNewTreatment}
           treatmentSuccess={treatmentSuccess} handleSaveTreatment={handleSaveTreatment}
-          treatmentSaving={treatmentSaving}
+          treatmentSaving={treatmentSaving} canLogTreatment={!farmMissing}
         />
       )}
 

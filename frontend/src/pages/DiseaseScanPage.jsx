@@ -131,22 +131,22 @@ export default function DiseaseScanPage() {
   }
 
   return (
-    <div className="space-y-8 animate-fadeIn max-w-6xl mx-auto pb-12">
+    <div className="space-y-8 animate-fade-in max-w-6xl mx-auto pb-12">
       {/* Header Banner */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-brand-900 via-brand-800 to-teal-900 rounded-3xl p-8 text-white shadow-xl">
+      <div className="relative overflow-hidden bg-gradient-to-r from-brand-900 via-brand-800 to-stone-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg">
         <div className="relative z-10 space-y-3">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="px-3 py-1 bg-brand-400/20 text-brand-200 text-xs font-semibold rounded-full border border-brand-400/30 flex items-center gap-1.5">
-              <Sparkles size={12} className="text-brand-300" /> PyTorch ResNet18 · PlantVillage Transfer Learning
+              <Sparkles size={12} className="text-brand-300" /> AI Leaf Diagnosis · PlantVillage-trained model
             </span>
-            <span className="px-3 py-1 bg-teal-400/20 text-teal-200 text-xs font-medium rounded-full border border-teal-400/30">
+            <span className="px-3 py-1 bg-white/10 text-brand-100 text-xs font-medium rounded-full border border-white/20">
               Rural 2G/3G Optimized
             </span>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Leaf Disease Vision Scanner</h1>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Leaf Disease Vision Scanner</h1>
           <p className="text-brand-100/90 max-w-2xl text-sm leading-relaxed">
-            Upload or capture a leaf photo. AgriGuard's deep transfer-learning model classifies foliar pathogens,
-            estimates severity, and delivers verified TNAU organic & chemical agronomic advisories.
+            Upload or capture a leaf photo. AgriGuard AI's transfer-learning model classifies common leaf diseases,
+            estimates severity and shows organic & chemical treatment advice when a reliable diagnosis is possible.
           </p>
         </div>
       </div>
@@ -161,6 +161,7 @@ export default function DiseaseScanPage() {
               </h2>
               {imagePreview && (
                 <button
+                  type="button"
                   onClick={resetScan}
                   className="text-xs font-medium text-stone-500 hover:text-stone-800 flex items-center gap-1"
                 >
@@ -171,8 +172,9 @@ export default function DiseaseScanPage() {
 
             {/* Target Crop Selection */}
             <div>
-              <label className="label text-xs">Target Crop Species</label>
+              <label htmlFor="scan-crop" className="label text-xs">Target Crop Species</label>
               <select
+                id="scan-crop"
                 value={selectedCrop}
                 onChange={(e) => setSelectedCrop(e.target.value)}
                 className="input-field text-sm font-medium"
@@ -181,15 +183,18 @@ export default function DiseaseScanPage() {
                 <option value="Tomato">Tomato (தக்காளி)</option>
                 <option value="Potato">Potato (உருளைக்கிழங்கு)</option>
                 <option value="Rice">Rice / Paddy (நெல்)</option>
-                <option value="Corn">Corn / Maize (மக்காச்சோளம்)</option>
-                <option value="Sugarcane">Sugarcane (கரும்பு)</option>
+                <option value="Corn (maize)">Corn / Maize (மக்காச்சோளம்)</option>
               </select>
             </div>
 
             {/* Upload Drag & Drop Area */}
             <div
+              role="button"
+              tabIndex={0}
+              aria-label="Choose a leaf photo"
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInputRef.current?.click() } }}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                 imagePreview
                   ? 'border-brand-400 bg-brand-50/20'
                   : 'border-stone-300 hover:border-brand-500 bg-stone-50/50'
@@ -212,7 +217,7 @@ export default function DiseaseScanPage() {
                       alt="Leaf Preview"
                       className="object-contain max-h-56 mx-auto rounded-lg"
                     />
-                    <div className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-[10px] font-mono">
+                    <div className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-sm text-white px-2 py-0.5 rounded text-xs font-mono">
                       {compressionInfo?.dimensions || 'Processed'}
                     </div>
                   </div>
@@ -262,7 +267,7 @@ export default function DiseaseScanPage() {
             {loading && (
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs text-stone-600 font-medium">
-                  <span>Uploading & running PyTorch ResNet18...</span>
+                  <span>Uploading & analysing photo...</span>
                   <span>{uploadProgress}%</span>
                 </div>
                 <div className="w-full bg-stone-200 rounded-full h-2 overflow-hidden">
@@ -276,6 +281,7 @@ export default function DiseaseScanPage() {
 
             {/* Scan Action Button */}
             <button
+              type="button"
               onClick={runScan}
               disabled={loading || (!imageFile && !imagePreview)}
               className="w-full btn-primary py-3.5 flex items-center justify-center gap-2 shadow-lg shadow-brand-700/20 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -286,7 +292,7 @@ export default function DiseaseScanPage() {
                 </span>
               ) : (
                 <span className="flex items-center gap-2 text-sm font-semibold">
-                  <Leaf size={17} /> Run PyTorch Diagnosis
+                  <Leaf size={17} /> Run Leaf Diagnosis
                 </span>
               )}
             </button>
@@ -325,31 +331,35 @@ export default function DiseaseScanPage() {
                 {/* Result Header */}
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-stone-100 pb-5">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="px-2.5 py-0.5 bg-brand-100 text-brand-800 text-xs font-bold rounded-full uppercase tracking-wider">
                         {result.crop || selectedCrop} Diagnosis
                       </span>
-                      <span
-                        className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
-                          result.severity_level === 'High'
-                            ? 'bg-red-100 text-red-800'
-                            : result.severity_level === 'Medium'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-brand-100 text-brand-800'
-                        }`}
-                      >
-                        {result.severity_level} Threat
-                      </span>
+                      {result.severity_level && (
+                        <span
+                          className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
+                            result.severity_level === 'High'
+                              ? 'bg-red-100 text-red-800'
+                              : result.severity_level === 'Medium'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {result.severity_level} Severity
+                        </span>
+                      )}
                     </div>
                     <h3 className="text-2xl font-black text-stone-900 tracking-tight">
-                      {result.disease_name || result.predicted_class || 'Unknown'}
+                      {result.disease_name || String(result.predicted_class || 'Unknown').replace(/___/g, ' · ').replace(/_/g, ' ')}
                     </h3>
                     {result.is_heuristic && (
-                      <p className="text-[11px] font-semibold text-amber-700">Heuristic estimate — confirm with an agronomist.</p>
+                      <p className="text-xs font-semibold text-amber-700">Heuristic estimate — confirm with an agronomist.</p>
                     )}
-                    <p className="text-xs text-stone-500 font-mono italic">
-                      Pathogen: {result.pathogen}
-                    </p>
+                    {result.pathogen && (
+                      <p className="text-xs text-stone-500 font-mono italic">
+                        Pathogen: {result.pathogen}
+                      </p>
+                    )}
                   </div>
 
                   {/* Animated Confidence Gauge */}
@@ -360,7 +370,7 @@ export default function DiseaseScanPage() {
                       {Math.round(result.confidence * 100)}%
                     </p>
                     {result.model_name && (
-                      <span className="text-[11px] text-stone-400 font-mono">{result.model_name}</span>
+                      <span className="text-[11px] text-stone-500 font-mono">{result.model_name}</span>
                     )}
                   </div>
                   )}
@@ -421,11 +431,11 @@ export default function DiseaseScanPage() {
 
                   {/* Chemical Recommendation */}
                   {result.chemical_treatment && (
-                  <div className="p-5 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-2">
-                    <h4 className="font-bold text-blue-950 text-sm flex items-center gap-2">
-                      <Droplets size={16} className="text-blue-700" /> Targeted Chemical Treatment
+                  <div className="p-5 rounded-2xl bg-sky-50/70 border border-sky-200/80 space-y-2">
+                    <h4 className="font-bold text-sky-950 text-sm flex items-center gap-2">
+                      <Droplets size={16} className="text-sky-700" /> Targeted Chemical Treatment
                     </h4>
-                    <p className="text-xs text-blue-900 leading-relaxed">
+                    <p className="text-xs text-sky-900 leading-relaxed">
                       {result.chemical_treatment}
                     </p>
                   </div>
@@ -448,16 +458,16 @@ export default function DiseaseScanPage() {
                 key="placeholder-card"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="card p-12 text-center text-stone-400 space-y-4 border-dashed border-2 flex flex-col items-center justify-center min-h-[380px]"
+                className="card p-12 text-center text-stone-500 space-y-4 border-dashed border-2 flex flex-col items-center justify-center min-h-[380px]"
               >
-                <div className="w-16 h-16 rounded-3xl bg-stone-100 flex items-center justify-center text-stone-400">
+                <div className="w-16 h-16 rounded-3xl bg-stone-100 flex items-center justify-center text-stone-500">
                   <Leaf size={32} className="animate-pulse text-brand-600/70" />
                 </div>
                 <div className="space-y-1 max-w-sm">
                   <p className="text-stone-700 font-semibold text-base">Awaiting Leaf Photo</p>
-                  <p className="text-xs text-stone-400 leading-relaxed">
-                    Select your crop and upload a leaf image on the left. The PyTorch transfer-learning classifier
-                    will evaluate symptom patterns and render instantaneous treatment advisories.
+                  <p className="text-xs text-stone-500 leading-relaxed">
+                    Select your crop and upload a leaf image on the left. The leaf-disease classifier
+                    checks symptom patterns and shows treatment advice when the diagnosis is reliable.
                   </p>
                 </div>
               </motion.div>

@@ -38,8 +38,9 @@ class SoilHealthReport(Document):
     )
 
     # Topographical data
-    elevation_m: float = Field(default=0.0, description="Mean plot elevation above sea level in meters (SRTM)")
-    terrain_slope_pct: float = Field(default=0.0, description="Estimated terrain slope percentage (SRTM)")
+    # None = not measured (e.g. a lab report with no prior preliminary estimate for the farm)
+    elevation_m: Optional[float] = Field(default=None, description="Mean plot elevation above sea level in meters (SRTM or regional approximation)")
+    terrain_slope_pct: Optional[float] = Field(default=None, description="Estimated terrain slope percentage (SRTM or regional approximation)")
 
     data_sources: List[str] = Field(
         default_factory=lambda: ["SoilGrids v2.0", "NASA POWER", "SRTM (via Google Earth Engine)"],

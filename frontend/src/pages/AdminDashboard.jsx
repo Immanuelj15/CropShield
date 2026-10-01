@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
+import clsx from 'clsx'
 import AdminAnalytics, { analyticsMeta } from './admin/AdminAnalytics'
 import AdminPredictionAccuracy, { predictionAccuracyMeta } from './admin/AdminPredictionAccuracy'
 import AdminPests, { pestsMeta } from './admin/AdminPests'
@@ -29,33 +30,35 @@ export default function AdminDashboard() {
   const ActiveComponent = SECTIONS.find((s) => s.key === activeSection)?.Component || AdminAnalytics
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-12">
-      <div className="bg-gradient-to-r from-violet-950 via-stone-900 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-lg relative overflow-hidden border border-violet-900/40">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-violet-500/20 text-violet-300 text-xs font-semibold rounded-full border border-violet-400/30 mb-2">
-              <ShieldAlert size={14} /> Platform Administration & Data Governance
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">AgriGuard System Admin Center</h1>
-            <p className="text-stone-300 text-xs sm:text-sm mt-1">
-              Pure-software infrastructure · GPS Farm Mapping · Role RBAC · NASA POWER Monitor · Model Management
-            </p>
-          </div>
+    <div className="space-y-6 animate-fade-in pb-12">
+      {/* Hero uses the admin role accent (violet-700) */}
+      <div className="bg-gradient-to-r from-violet-800 to-violet-700 rounded-2xl p-6 sm:p-8 text-white shadow-sm">
+        <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/15 text-white text-xs font-semibold rounded-full border border-white/25 mb-2">
+          <ShieldAlert size={14} /> Platform administration & data governance
         </div>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">AgriGuard AI Admin Center</h1>
+        <p className="text-violet-100 text-sm mt-1">
+          Users & roles · Farm registry · Knowledge base · Alert thresholds · NASA POWER monitor · Model management
+        </p>
       </div>
 
       {/* Section switcher (the App shell already renders the route Sidebar, so no second sidebar here) */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1" role="tablist" aria-label="Admin sections">
         {SECTIONS.map(({ key, meta }) => {
           const Icon = meta.icon
           const isActive = activeSection === key
           return (
             <button
               key={key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
               onClick={() => setActiveSection(key)}
-              className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap shrink-0 ${
-                isActive ? 'bg-violet-600 text-white shadow-sm' : 'bg-white text-stone-600 border border-stone-200'
-              }`}
+              className={clsx(
+                'px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap shrink-0 border',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
+                isActive ? 'bg-violet-700 text-white border-violet-700 shadow-sm' : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+              )}
             >
               <Icon size={14} />
               <span>{meta.label}</span>

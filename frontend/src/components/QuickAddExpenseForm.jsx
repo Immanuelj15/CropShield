@@ -9,16 +9,25 @@ import { apiFetch, isNetworkError } from '../utils/http'
 
 const MAX_AMOUNT = 1e9
 
+// Local calendar date (YYYY-MM-DD). toISOString() is UTC, which is "yesterday" in IST before 05:30.
+export function localISODate(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 const CATEGORIES = [
-  { id: 'seeds', label: 'Seeds', icon: '🌱', color: 'hover:border-amber-400 peer-checked:bg-amber-500 peer-checked:text-white' },
-  { id: 'fertilizer', label: 'Fertilizer', icon: '🌾', color: 'hover:border-brand-400 peer-checked:bg-brand-600 peer-checked:text-white' },
-  { id: 'labor', label: 'Labor', icon: '👷', color: 'hover:border-blue-400 peer-checked:bg-blue-600 peer-checked:text-white' },
-  { id: 'irrigation', label: 'Irrigation', icon: '💧', color: 'hover:border-cyan-400 peer-checked:bg-cyan-600 peer-checked:text-white' },
-  { id: 'pesticides', label: 'Pesticides', icon: '🧪', color: 'hover:border-purple-400 peer-checked:bg-purple-600 peer-checked:text-white' },
-  { id: 'other', label: 'Other', icon: '📦', color: 'hover:border-stone-400 peer-checked:bg-stone-700 peer-checked:text-white' },
+  { id: 'seeds', label: 'Seeds', icon: '🌱' },
+  { id: 'fertilizer', label: 'Fertilizer', icon: '🌾' },
+  { id: 'labor', label: 'Labor', icon: '👷' },
+  { id: 'irrigation', label: 'Irrigation', icon: '💧' },
+  { id: 'pesticides', label: 'Pesticides', icon: '🧪' },
+  { id: 'other', label: 'Other', icon: '📦' },
 ]
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000, 10000]
+
+const SMALL_LABEL = 'block text-xs font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1'
+const FOCUS_RING = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
 
 export default function QuickAddExpenseForm({
   farmId,
@@ -30,7 +39,7 @@ export default function QuickAddExpenseForm({
 }) {
   const [category, setCategory] = useState('fertilizer')
   const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(() => localISODate())
   const [notes, setNotes] = useState('')
   const [receiptUrl, setReceiptUrl] = useState('') // only ever a server URL (/uploads/receipts/...)
   const [receiptFile, setReceiptFile] = useState(null) // selected file, kept so a failed upload can be retried
@@ -96,6 +105,10 @@ export default function QuickAddExpenseForm({
       setError('The receipt was not uploaded. Retry the upload or remove the receipt to save without it.')
       return
     }
+    if (!date) {
+      setError('Please choose the expense date.')
+      return
+    }
 
     setSubmitting(true)
     setError(null)
@@ -141,21 +154,24 @@ export default function QuickAddExpenseForm({
   }
 
   return (
-    <div className="bg-white rounded-3xl p-6 sm:p-7 space-y-5 max-w-lg w-full">
+    <div className="bg-white rounded-3xl p-5 sm:p-7 space-y-5 max-w-lg w-full">
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-        <div>
-          <span className="text-[11px] font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">
-            10-Second Field Entry
+      <div className="flex items-center justify-between gap-3 pb-3 border-b border-stone-100">
+        <div className="min-w-0">
+          <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md">
+            {season}
           </span>
-          <h3 className="text-xl font-black text-stone-900 mt-1">
+          <h3 id="expense-form-title" className="text-xl font-bold text-stone-900 mt-1">
             Log Farm Expense
           </h3>
         </div>
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 flex items-center justify-center transition"
+            disabled={submitting}
+            aria-label="Close"
+            className={`w-8 h-8 shrink-0 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition disabled:opacity-50 ${FOCUS_RING}`}
           >
             <X size={18} />
           </button>
@@ -165,12 +181,12 @@ export default function QuickAddExpenseForm({
       {queuedOffline && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs font-semibold flex items-center gap-2">
           <CheckCircle2 size={16} className="text-amber-600 shrink-0" />
-          <span>Saved to offline queue! Will auto-sync when connection restores.</span>
+          <span>You are offline. The expense is saved on this device and will sync automatically when you reconnect.</span>
         </div>
       )}
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-semibold flex items-center gap-2">
+        <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-semibold flex items-center gap-2">
           <AlertCircle size={16} className="shrink-0" />
           <span>{error}</span>
         </div>
@@ -179,15 +195,15 @@ export default function QuickAddExpenseForm({
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Category Picker (Big 6 Icon Buttons) */}
         <div>
-          <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-2">
+          <span id="expense-category-label" className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-2">
             Expense Category
-          </label>
-          <div className="grid grid-cols-3 gap-2">
+          </span>
+          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby="expense-category-label">
             {CATEGORIES.map((cat) => (
               <label
                 key={cat.id}
                 className={clsx(
-                  "p-2.5 rounded-2xl border text-center cursor-pointer transition-all flex flex-col items-center gap-1",
+                  "p-2.5 rounded-2xl border text-center cursor-pointer transition-all flex flex-col items-center gap-1 focus-within:ring-2 focus-within:ring-brand-500",
                   category === cat.id
                     ? "bg-brand-600 text-white border-brand-600 shadow-sm font-bold scale-[1.02]"
                     : "bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200 font-semibold"
@@ -201,7 +217,7 @@ export default function QuickAddExpenseForm({
                   onChange={() => setCategory(cat.id)}
                   className="sr-only"
                 />
-                <span className="text-xl leading-none">{cat.icon}</span>
+                <span className="text-xl leading-none" aria-hidden="true">{cat.icon}</span>
                 <span className="text-xs">{cat.label}</span>
               </label>
             ))}
@@ -210,23 +226,26 @@ export default function QuickAddExpenseForm({
 
         {/* Amount Input with Quick Presets */}
         <div>
-          <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
+          <label htmlFor="expense-amount" className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
             Amount Paid (₹)
           </label>
           <div className="relative">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 font-bold text-lg font-mono">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-500 font-bold text-lg font-mono" aria-hidden="true">
               ₹
             </span>
             <input
+              id="expense-amount"
               type="number"
-              min="1"
+              inputMode="decimal"
+              min="0.01"
+              max={MAX_AMOUNT}
               step="any"
               placeholder="e.g. 3500"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               required
               autoFocus
-              className="w-full pl-9 pr-4 py-3 rounded-2xl border border-stone-200 text-xl font-black text-stone-900 font-mono outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+              className="w-full pl-9 pr-4 py-3 rounded-2xl border border-stone-300 text-xl font-bold text-stone-900 font-mono outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             />
           </div>
 
@@ -237,16 +256,17 @@ export default function QuickAddExpenseForm({
                 key={amt}
                 type="button"
                 onClick={() => setAmount(String((Number(amount) || 0) + amt))}
-                className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-brand-50 text-stone-600 hover:text-brand-800 text-[11px] font-mono font-bold transition border border-stone-200 shrink-0"
+                aria-label={`Add ₹${amt.toLocaleString('en-IN')}`}
+                className={`px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-brand-50 text-stone-700 hover:text-brand-800 text-xs font-mono font-bold transition border border-stone-200 shrink-0 ${FOCUS_RING}`}
               >
-                +{amt}
+                +{amt.toLocaleString('en-IN')}
               </button>
             ))}
             {amount && (
               <button
                 type="button"
                 onClick={() => setAmount('')}
-                className="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 text-[11px] font-bold hover:bg-rose-100 transition shrink-0"
+                className={`px-2 py-1 rounded-lg bg-red-50 text-red-700 text-xs font-bold hover:bg-red-100 transition shrink-0 ${FOCUS_RING}`}
               >
                 Clear
               </button>
@@ -257,31 +277,33 @@ export default function QuickAddExpenseForm({
         {/* Date & Receipt Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
           <div>
-            <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+            <label htmlFor="expense-date" className={SMALL_LABEL}>
               <Calendar size={13} className="text-brand-600" /> Date
             </label>
             <input
+              id="expense-date"
               type="date"
+              max={localISODate()}
               value={date}
               onChange={(e) => setDate(e.target.value)}
               required
-              className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full p-2.5 rounded-xl border border-stone-300 font-semibold text-stone-900 outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1">
-              <Camera size={13} className="text-blue-600" /> Receipt Photo (Optional)
-            </label>
-            <label className="w-full p-2 rounded-xl border border-dashed border-stone-300 hover:border-brand-500 bg-stone-50 hover:bg-brand-50/40 text-stone-600 flex items-center justify-center gap-2 cursor-pointer transition">
-              <Upload size={14} className="text-stone-400" />
+            <span className={SMALL_LABEL}>
+              <Camera size={13} className="text-brand-600" /> Receipt Photo (Optional)
+            </span>
+            <label className="w-full p-2 rounded-xl border border-dashed border-stone-300 hover:border-brand-500 bg-stone-50 hover:bg-brand-50/40 text-stone-600 flex items-center justify-center gap-2 cursor-pointer transition focus-within:ring-2 focus-within:ring-brand-500">
+              <Upload size={14} className="text-stone-500" />
               <span className="font-semibold truncate max-w-[140px]">
-                {uploadingReceipt ? 'Uploading...' : receiptUrl ? 'Receipt Attached ✓' : receiptFile ? 'Choose another' : 'Snap / Upload'}
+                {uploadingReceipt ? 'Uploading...' : receiptUrl ? 'Receipt attached ✓' : receiptFile ? 'Choose another' : 'Take photo / Upload'}
               </span>
               <input
                 type="file"
-                accept="image/*,.pdf"
-                capture="environment"
+                aria-label="Receipt photo or PDF (max 10 MB)"
+                accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
                 onChange={handleReceiptUpload}
                 disabled={uploadingReceipt || submitting || done}
                 className="sr-only"
@@ -289,20 +311,20 @@ export default function QuickAddExpenseForm({
             </label>
             {receiptError && (
               <div className="mt-1.5 space-y-1">
-                <p className="text-[11px] text-red-600 font-semibold">{receiptError}</p>
-                <div className="flex gap-2">
+                <p className="text-xs text-red-700 font-semibold">{receiptError}</p>
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => uploadReceipt(receiptFile)}
                     disabled={uploadingReceipt || !receiptFile}
-                    className="px-2 py-1 rounded-lg border border-stone-300 text-[11px] font-bold hover:bg-stone-50 disabled:opacity-50"
+                    className={`px-2 py-1 rounded-lg border border-stone-300 text-xs font-bold hover:bg-stone-50 disabled:opacity-50 ${FOCUS_RING}`}
                   >
                     Retry upload
                   </button>
                   <button
                     type="button"
                     onClick={clearReceipt}
-                    className="px-2 py-1 rounded-lg border border-red-200 text-red-600 text-[11px] font-bold hover:bg-red-50"
+                    className={`px-2 py-1 rounded-lg border border-red-200 text-red-700 text-xs font-bold hover:bg-red-50 ${FOCUS_RING}`}
                   >
                     Remove receipt
                   </button>
@@ -310,7 +332,7 @@ export default function QuickAddExpenseForm({
               </div>
             )}
             {receiptUrl && !receiptError && (
-              <button type="button" onClick={clearReceipt} className="mt-1 text-[11px] text-stone-500 underline">
+              <button type="button" onClick={clearReceipt} className={`mt-1 text-xs text-stone-600 underline rounded ${FOCUS_RING}`}>
                 Remove receipt
               </button>
             )}
@@ -319,15 +341,17 @@ export default function QuickAddExpenseForm({
 
         {/* Optional Notes */}
         <div>
-          <label className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1 flex items-center gap-1">
-            <FileText size={13} className="text-stone-400" /> Notes / Supplier Name (Optional)
+          <label htmlFor="expense-notes" className={SMALL_LABEL}>
+            <FileText size={13} className="text-stone-500" /> Notes / Supplier Name (Optional)
           </label>
           <input
+            id="expense-notes"
             type="text"
+            maxLength={2000}
             placeholder="e.g. Bought 2 bags at Kovilpatti Agro Center"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full p-2.5 rounded-xl border border-stone-200 font-semibold text-stone-900 text-xs outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full p-2.5 rounded-xl border border-stone-300 font-semibold text-stone-900 text-sm outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
@@ -335,13 +359,16 @@ export default function QuickAddExpenseForm({
         <button
           type="submit"
           disabled={submitting || done || uploadingReceipt}
-          className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-brand-600 to-teal-600 hover:from-brand-700 hover:to-teal-700 text-white font-extrabold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          className="w-full py-3.5 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2"
         >
           {submitting ? (
-            <span>Saving Expense...</span>
+            <>
+              <span className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
+              <span>Saving Expense...</span>
+            </>
           ) : (
             <>
-              <Coins size={16} /> Save Expense (₹{amount ? Number(amount).toLocaleString('en-IN') : '0'})
+              <Coins size={16} /> Save Expense (₹{amount && Number.isFinite(Number(amount)) ? Number(amount).toLocaleString('en-IN') : '0'})
             </>
           )}
         </button>

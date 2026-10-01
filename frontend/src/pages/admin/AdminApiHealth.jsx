@@ -1,27 +1,58 @@
-import { useState, useEffect } from 'react'
-import { Activity, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react'
-
+import { useState, useEffect, useCallback } from 'react'
+import { Activity, RefreshCw, CheckCircle2, AlertTriangle, Info } from 'lucide-react'
+import clsx from 'clsx'
+import Button from '../../components/ui/Button'
+import { LoadingState, ErrorState } from '../../components'
 import { apiFetch } from '../../utils/http'
+
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+
+const fmtDateTime = (v) => {
+  if (!v) return '—'
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+}
+
+// status from backend: "operational" | "degraded" | "unreachable" (= ping failed, latency_ms null)
+function statusStyle(status) {
+  const s = String(status || '').toLowerCase()
+  if (s === 'operational') return { cls: 'bg-green-100 text-green-800', dot: 'bg-green-600', label: 'Operational' }
+  if (s === 'unreachable' || s.includes('cached')) return { cls: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500', label: 'Unreachable' }
+  if (s === 'degraded') return { cls: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500', label: 'Degraded' }
+  return { cls: 'bg-stone-100 text-stone-700', dot: 'bg-stone-500', label: status || 'Unknown' }
+}
+
+function Tile({ label, value, sub, valueCls = 'text-stone-900' }) {
+  return (
+    <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 min-w-0">
+      <span className="text-xs text-stone-500 block">{label}</span>
+      <span className={clsx('text-xl font-bold block mt-0.5 break-words', valueCls)}>{value}</span>
+      {sub && <span className="text-xs text-stone-500 block mt-1">{sub}</span>}
+    </div>
+  )
+}
 
 export default function AdminApiHealth() {
   const [apiStatus, setApiStatus] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [runningIngestion, setRunningIngestion] = useState(false)
   const [ingestionMsg, setIngestionMsg] = useState(null)
   const [showFailures, setShowFailures] = useState(false)
-
   const [loadError, setLoadError] = useState(null)
 
-  const fetchApiStatus = async () => {
+  const fetchApiStatus = useCallback(async () => {
+    setLoading(true)
     setLoadError(null)
     try {
       setApiStatus(await apiFetch('/admin/api-status'))
     } catch (e) {
-      console.error(e)
       setLoadError(e.message || 'Could not load API status.')
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { fetchApiStatus() }, [])
+  useEffect(() => { fetchApiStatus() }, [fetchApiStatus])
 
   const handleRunIngestionNow = async () => {
     if (runningIngestion) return
@@ -29,153 +60,141 @@ export default function AdminApiHealth() {
     setIngestionMsg(null)
     try {
       const data = await apiFetch('/admin/jobs/run-ingestion-now', { method: 'POST' })
-      setIngestionMsg({ type: 'success', text: data?.message || 'Ingestion started.' })
+      setIngestionMsg({ type: 'success', text: data?.message || 'Ingestion completed.' })
       fetchApiStatus()
     } catch (err) {
       if (err.status === 409) {
         // Backend job lock: another ingestion run (scheduled, retry sweep or another admin) is active
-        setIngestionMsg({ type: 'info', text: 'An ingestion run is already in progress. Please wait for it to finish and check the job log.' })
+        setIngestionMsg({ type: 'info', text: 'An ingestion run is already in progress. Wait for it to finish, then refresh the job log.' })
       } else {
-        setIngestionMsg({ type: 'error', text: err.message || 'Ingestion failed' })
+        setIngestionMsg({ type: 'error', text: err.message || 'Ingestion failed.' })
       }
     } finally {
       setRunningIngestion(false)
     }
   }
 
-  if (loadError && !apiStatus) return <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl text-center p-6">{loadError}</p>
-  if (!apiStatus) return <p className="text-sm text-stone-400 text-center py-12">Loading API status…</p>
+  if (loading && !apiStatus) return <div className="card p-5"><LoadingState message="Checking NASA POWER status…" /></div>
+  if (loadError && !apiStatus) return <div className="card p-5"><ErrorState message={loadError} onRetry={fetchApiStatus} /></div>
+  if (!apiStatus) return null
+
+  const st = statusStyle(apiStatus.status)
+  const pingFailed = apiStatus.latency_ms == null || /unreachable|cached/.test(String(apiStatus.status || '').toLowerCase())
+  const job = apiStatus.last_job_run
+  const failures = Array.isArray(job?.failures) ? job.failures : []
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
-          <div>
-            <span className="text-[11px] font-bold text-violet-700 uppercase tracking-wider">External Climate Service Health</span>
-            <h2 className="text-xl font-bold text-stone-900 mt-1">{apiStatus.external_service}</h2>
-            <p className="text-xs text-stone-500 mt-0.5">Monitors external REST API connectivity (pure software, no physical sensor hardware).</p>
+      <div className="card p-5 sm:p-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-stone-100">
+          <div className="min-w-0">
+            <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">External climate service</span>
+            <h2 className="text-xl font-bold text-stone-900 mt-1">{apiStatus.external_service || 'NASA POWER'}</h2>
+            <p className="text-sm text-stone-600 mt-0.5">Live connectivity check to {apiStatus.service_url || 'the NASA POWER REST API'}.</p>
           </div>
-          <span className="px-3.5 py-1.5 bg-green-100 text-green-800 rounded-full text-xs font-extrabold flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-green-600"></span> {apiStatus.status.toUpperCase()}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-            <span className="text-xs text-stone-500 block">Ping Latency</span>
-            <span className="text-2xl font-black text-stone-900">{apiStatus.latency_ms} ms</span>
-            <span className="text-[11px] text-stone-400 block mt-1">Live HTTP Ping</span>
-          </div>
-          <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-            <span className="text-xs text-stone-500 block">Uptime SLA</span>
-            <span className="text-2xl font-black text-green-700">{apiStatus.uptime_percentage}</span>
-            <span className="text-[11px] text-stone-400 block mt-1">Last 90 Days</span>
-          </div>
-          <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-            <span className="text-xs text-stone-500 block">Resolution</span>
-            <span className="text-sm font-bold text-stone-900 mt-2 block">{apiStatus.spatial_resolution}</span>
-          </div>
-          <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-            <span className="text-xs text-stone-500 block">Temporal Window</span>
-            <span className="text-sm font-bold text-stone-900 mt-2 block">{apiStatus.temporal_coverage}</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={clsx('px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5', st.cls)}>
+              <span className={clsx('w-2 h-2 rounded-full', st.dot)} /> {st.label}
+            </span>
+            <button type="button" onClick={fetchApiStatus} disabled={loading} aria-label="Re-check API status"
+              className={clsx('p-2 rounded-lg hover:bg-stone-100 text-stone-500 disabled:opacity-50', FOCUS)}>
+              <RefreshCw size={16} className={clsx(loading && 'animate-spin')} />
+            </button>
           </div>
         </div>
 
-        <div className="p-4 bg-stone-100 rounded-2xl border border-stone-200 text-xs text-stone-700">
-          <strong>Architecture Note:</strong> {apiStatus.monitoring_mode}. Replaces legacy hardware sensor polling with cloud-native satellite climate reanalysis.
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Tile
+            label="Ping latency"
+            value={pingFailed ? '—' : `${apiStatus.latency_ms ?? '—'} ms`}
+            sub={pingFailed ? 'Live ping failed' : 'Live HTTP ping'}
+          />
+          <Tile
+            label="Retry queue"
+            value={apiStatus.pending_retries_count ?? 0}
+            sub="Farms waiting for an hourly retry"
+            valueCls={apiStatus.pending_retries_count > 0 ? 'text-amber-700' : 'text-stone-900'}
+          />
+          <Tile label="Resolution" value={<span className="text-sm">{apiStatus.spatial_resolution || '—'}</span>} />
+          <Tile label="Temporal coverage" value={<span className="text-sm">{apiStatus.temporal_coverage || '—'}</span>} />
         </div>
+
+        <p className="text-xs text-stone-500">Checked {fmtDateTime(apiStatus.last_sync_timestamp)}.</p>
       </div>
 
-      <div className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
+      <div className="card p-5 sm:p-6 space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
-          <div>
-            <span className="text-[11px] font-bold text-green-700 uppercase tracking-wider">Automated Daily Climate Ingestion (All 38 Districts)</span>
-            <h3 className="text-xl font-bold text-stone-900 mt-1">APScheduler 5:00 AM IST Overnight Batch Pipeline</h3>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Pre-computes risk vectors and weather snapshots so morning warnings are instant for Tamil Nadu farmers.
+          <div className="min-w-0">
+            <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Daily climate ingestion</span>
+            <h3 className="text-lg font-semibold text-stone-800 mt-1">Overnight batch pipeline (05:00 IST)</h3>
+            <p className="text-sm text-stone-600 mt-0.5">
+              Pre-computes weather snapshots and risk for every registered farm so morning warnings load instantly.
             </p>
           </div>
-
-          <button
-            onClick={handleRunIngestionNow}
-            disabled={runningIngestion}
-            className="btn-primary py-2.5 px-4 text-xs flex items-center gap-2 shadow-md disabled:opacity-50"
-          >
-            <RefreshCw size={14} className={runningIngestion ? 'animate-spin' : ''} />
-            {runningIngestion ? 'Running Ingestion...' : 'Run Ingestion Now'}
-          </button>
+          <Button type="button" icon={RefreshCw} loading={runningIngestion} onClick={handleRunIngestionNow} className={clsx('shrink-0', FOCUS)}>
+            {runningIngestion ? 'Running ingestion…' : 'Run ingestion now'}
+          </Button>
         </div>
 
         {ingestionMsg && (
-          <div className={`p-3.5 rounded-2xl text-xs flex items-center gap-2 ${
-            ingestionMsg.type === 'success' ? 'bg-green-50 text-green-900 border border-green-200' : ingestionMsg.type === 'info' ? 'bg-amber-50 text-amber-900 border border-amber-200' : 'bg-red-50 text-red-900 border border-red-200'
-          }`}>
-            {ingestionMsg.type === 'success' ? <CheckCircle2 size={16} className="text-green-600" /> : <AlertTriangle size={16} className={ingestionMsg.type === 'info' ? 'text-amber-600' : 'text-red-600'} />}
+          <div role="status" className={clsx('p-3.5 rounded-2xl text-sm flex items-start gap-2 border',
+            ingestionMsg.type === 'success' ? 'bg-green-50 text-green-900 border-green-200'
+              : ingestionMsg.type === 'info' ? 'bg-sky-50 text-sky-900 border-sky-200'
+                : 'bg-red-50 text-red-900 border-red-200')}>
+            {ingestionMsg.type === 'success' ? <CheckCircle2 size={16} className="text-green-600 shrink-0 mt-0.5" />
+              : ingestionMsg.type === 'info' ? <Info size={16} className="text-sky-600 shrink-0 mt-0.5" />
+                : <AlertTriangle size={16} className="text-red-600 shrink-0 mt-0.5" />}
             <span>{ingestionMsg.text}</span>
           </div>
         )}
 
-        {apiStatus.last_job_run ? (
+        {job ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-                <span className="text-xs text-stone-500 block">Last Run Status</span>
-                <span className={`text-xl font-black block mt-0.5 uppercase ${apiStatus.last_job_run.status === 'success' ? 'text-green-700' : 'text-amber-700'}`}>
-                  {apiStatus.last_job_run.status}
-                </span>
-                <span className="text-[10px] text-stone-400">{apiStatus.last_job_run.is_manual ? 'Manual Trigger' : 'Scheduled 5:00 AM'}</span>
-              </div>
-
-              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-                <span className="text-xs text-stone-500 block">Farms Processed</span>
-                <span className="text-xl font-black text-stone-900 block mt-0.5">
-                  {apiStatus.last_job_run.success_count} / {apiStatus.last_job_run.farms_processed}
-                </span>
-                <span className="text-[10px] text-green-600 font-bold">Successfully Scored</span>
-              </div>
-
-              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-                <span className="text-xs text-stone-500 block">Pipeline Duration</span>
-                <span className="text-xl font-black text-stone-900 block mt-0.5">{apiStatus.last_job_run.duration_seconds}s</span>
-                <span className="text-[10px] text-stone-400">Execution Time</span>
-              </div>
-
-              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200">
-                <span className="text-xs text-stone-500 block">Failed / Retries</span>
-                <span className={`text-xl font-black block mt-0.5 ${apiStatus.last_job_run.failed_count > 0 ? 'text-red-600' : 'text-stone-700'}`}>
-                  {apiStatus.last_job_run.failed_count} Failed
-                </span>
-                <span className="text-[10px] text-stone-400">{apiStatus.pending_retries_count || 0} In Retry Queue</span>
-              </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Tile
+                label="Last run status"
+                value={<span className="uppercase">{job.status || '—'}</span>}
+                valueCls={job.status === 'success' ? 'text-green-700' : 'text-amber-700'}
+                sub={job.is_manual ? 'Manual trigger' : 'Scheduled run'}
+              />
+              <Tile label="Farms scored" value={`${job.success_count ?? 0} / ${job.farms_processed ?? 0}`} sub="Succeeded / processed" />
+              <Tile label="Duration" value={job.duration_seconds !== null && job.duration_seconds !== undefined ? `${job.duration_seconds}s` : '—'} sub="Execution time" />
+              <Tile
+                label="Failed"
+                value={job.failed_count ?? 0}
+                valueCls={job.failed_count > 0 ? 'text-red-600' : 'text-stone-900'}
+                sub={`${apiStatus.pending_retries_count || 0} in retry queue`}
+              />
             </div>
 
-            <div className="text-xs text-stone-500 flex items-center justify-between px-1">
-              <span>Last executed: <strong>{new Date(apiStatus.last_job_run.run_at).toLocaleString()}</strong></span>
-              {apiStatus.last_job_run.failed_count > 0 && (
-                <button onClick={() => setShowFailures(!showFailures)} className="text-xs text-red-600 hover:text-red-800 font-semibold underline">
-                  {showFailures ? 'Hide Failed Farm Details' : `Show ${apiStatus.last_job_run.failed_count} Failed Items`}
+            <div className="text-sm text-stone-600 flex flex-wrap items-center justify-between gap-2">
+              <span>Last executed: <strong>{fmtDateTime(job.run_at)}</strong></span>
+              {job.failed_count > 0 && failures.length > 0 && (
+                <button type="button" onClick={() => setShowFailures(!showFailures)} aria-expanded={showFailures}
+                  className={clsx('text-sm text-red-700 hover:text-red-800 font-semibold underline rounded', FOCUS)}>
+                  {showFailures ? 'Hide failed farms' : `Show ${job.failed_count} failed farms`}
                 </button>
               )}
             </div>
 
-            {showFailures && apiStatus.last_job_run.failures?.length > 0 && (
-              <div className="p-4 bg-red-50/70 border border-red-200 rounded-2xl space-y-2 text-xs">
-                <h5 className="font-bold text-red-900">Failed Ingestion Items (Queued for Hourly Retry):</h5>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {apiStatus.last_job_run.failures.map((f, idx) => (
-                    <div key={idx} className="p-2 bg-white rounded-lg border border-red-100 flex justify-between items-center text-[11px]">
-                      <span className="font-semibold text-stone-800">{f.farm_name || f.farm_id} ({f.district})</span>
-                      <span className="text-red-700 font-mono truncate max-w-xs">{f.error}</span>
-                    </div>
+            {showFailures && failures.length > 0 && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-2xl space-y-2 text-sm">
+                <h5 className="font-semibold text-red-900">Failed farms (queued for hourly retry)</h5>
+                <ul className="space-y-1 max-h-48 overflow-y-auto">
+                  {failures.map((f, idx) => (
+                    <li key={`${f.farm_id || idx}`} className="p-2 bg-white rounded-lg border border-red-100 flex flex-col sm:flex-row sm:justify-between gap-1 text-xs">
+                      <span className="font-semibold text-stone-800">{f.farm_name || f.farm_id}{f.district ? ` (${f.district})` : ''}</span>
+                      <span className="text-red-700 font-mono break-all sm:text-right">{f.error}</span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
           </div>
         ) : (
-          <div className="p-5 bg-stone-50 border border-dashed border-stone-300 rounded-2xl text-center text-xs text-stone-500 space-y-1">
-            <p className="font-semibold text-stone-700">No Ingestion Run Recorded Yet</p>
-            <p>Click "Run Ingestion Now" to initialize risk evaluation across all 38 districts.</p>
+          <div className="p-5 bg-stone-50 border border-dashed border-stone-300 rounded-2xl text-center text-sm text-stone-600 space-y-1">
+            <p className="font-semibold text-stone-800">No ingestion run recorded yet</p>
+            <p>Use “Run ingestion now” to score every registered farm.</p>
           </div>
         )}
       </div>

@@ -32,7 +32,7 @@ export default function LanguageSelector({ variant = 'dropdown', className = '' 
 
       // If user is authenticated, sync to profile in backend
       if (getToken()) {
-        updateUserLanguage(code).catch((e) => console.log('Language sync silent error:', e));
+        updateUserLanguage(code).catch(() => { /* best effort: UI language already changed locally */ });
       }
     } catch (err) {
       console.error('Failed to change language:', err);
@@ -52,10 +52,12 @@ export default function LanguageSelector({ variant = 'dropdown', className = '' 
               key={lang.code}
               type="button"
               onClick={() => handleSelectLanguage(lang.code)}
+              aria-pressed={isSelected}
+              lang={lang.code}
               className={clsx(
-                'px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200',
+                'px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
                 isSelected
-                  ? 'bg-emerald-700 text-white shadow-xs font-bold scale-[1.02]'
+                  ? 'bg-brand-600 text-white shadow-sm font-bold'
                   : 'text-stone-600 hover:text-stone-900 hover:bg-white/80'
               )}
             >
@@ -73,11 +75,12 @@ export default function LanguageSelector({ variant = 'dropdown', className = '' 
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-[13px] font-semibold bg-stone-100/80 hover:bg-stone-200/70 border border-stone-300/70 text-stone-800 transition shadow-2xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        aria-label="Select Language"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-800 transition shadow-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        aria-label={`Select language (current: ${currentLang.label})`}
+        aria-haspopup="true"
         aria-expanded={isOpen}
       >
-        <Globe size={15} className="text-emerald-700 shrink-0" />
+        <Globe size={15} className="text-brand-700 shrink-0" />
         <span className="font-bold">{currentLang.native}</span>
         <ChevronDown size={13} className={clsx('text-stone-500 transition-transform duration-200', isOpen && 'rotate-180')} />
       </button>
@@ -90,8 +93,8 @@ export default function LanguageSelector({ variant = 'dropdown', className = '' 
             onClick={() => setIsOpen(false)}
           />
           {/* Menu */}
-          <div className="absolute right-0 mt-2 w-52 rounded-2xl bg-white shadow-xl border border-stone-200 py-1.5 z-50 animate-fadeIn">
-            <div className="px-3 py-1.5 border-b border-stone-100 text-[11px] font-bold text-stone-400 uppercase tracking-wider">
+          <div className="absolute right-0 mt-2 w-52 rounded-2xl bg-white shadow-xl border border-stone-200 py-1.5 z-50 animate-fade-in">
+            <div className="px-3 py-1.5 border-b border-stone-100 text-xs font-bold text-stone-500 uppercase tracking-wider">
               Select Language / மொழி
             </div>
             {LANGUAGES.map((lang) => {
@@ -101,16 +104,18 @@ export default function LanguageSelector({ variant = 'dropdown', className = '' 
                   key={lang.code}
                   type="button"
                   onClick={() => handleSelectLanguage(lang.code)}
+                  aria-current={isSelected ? "true" : undefined}
+                  lang={lang.code}
                   className={clsx(
-                    'w-full text-left px-3.5 py-2.5 flex items-center justify-between text-xs sm:text-sm transition-colors hover:bg-emerald-50/70 cursor-pointer',
-                    isSelected ? 'font-bold text-emerald-900 bg-emerald-50/50' : 'text-stone-700'
+                    'w-full text-left px-3.5 py-2.5 flex items-center justify-between text-xs sm:text-sm transition-colors hover:bg-brand-50 cursor-pointer focus:outline-none focus-visible:bg-brand-50',
+                    isSelected ? 'font-bold text-brand-900 bg-brand-50/50' : 'text-stone-700'
                   )}
                 >
                   <div className="flex flex-col">
                     <span className="text-sm font-semibold">{lang.native}</span>
-                    <span className="text-[10px] text-stone-400 font-normal">{lang.label} · {lang.sub}</span>
+                    <span className="text-xs text-stone-500 font-normal">{lang.label} · {lang.sub}</span>
                   </div>
-                  {isSelected && <Check size={15} className="text-emerald-700 shrink-0" />}
+                  {isSelected && <Check size={15} className="text-brand-700 shrink-0" />}
                 </button>
               );
             })}

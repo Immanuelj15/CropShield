@@ -49,6 +49,8 @@ def get_outbreak_heatmap():
     return {
         "status": "success",
         "region": "Tamil Nadu, India",
+        # Fixed reference hotspots (ml/spatial_outbreak/clustering.py), not live field observations
+        "simulated": True,
         "points": get_full_district_heatmap_data()
     }
 

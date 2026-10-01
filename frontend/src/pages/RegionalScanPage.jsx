@@ -1,18 +1,27 @@
 import React, { useState } from 'react'
 import { apiFetch, getUser } from '../utils/http'
 import {
-  Sparkles, Navigation
+  Sparkles, Navigation, Satellite, AlertTriangle
 } from 'lucide-react'
 import DrawableMap from '../components/DrawableMap'
 import RegionalResultSheet from '../components/RegionalResultSheet'
 
 const REGIONAL_PRESETS = [
-  { name: 'Kovilpatti (Dryland)', lat: 9.1768, lon: 77.9803, zoom: 11 },
-  { name: 'Thanjavur (Delta)', lat: 10.7870, lon: 79.1378, zoom: 11 },
-  { name: 'Madurai (Irrigated)', lat: 9.9252, lon: 78.1198, zoom: 11 },
-  { name: 'Coimbatore (Western)', lat: 11.0168, lon: 76.9558, zoom: 11 },
-  { name: 'Tirunelveli (Southern)', lat: 8.7139, lon: 77.7567, zoom: 11 },
+  { name: 'Kovilpatti', zone: 'Dryland', lat: 9.1768, lon: 77.9803, zoom: 11 },
+  { name: 'Thanjavur', zone: 'Delta', lat: 10.7870, lon: 79.1378, zoom: 11 },
+  { name: 'Madurai', zone: 'Irrigated', lat: 9.9252, lon: 78.1198, zoom: 11 },
+  { name: 'Coimbatore', zone: 'Western', lat: 11.0168, lon: 76.9558, zoom: 11 },
+  { name: 'Tirunelveli', zone: 'Southern', lat: 8.7139, lon: 77.7567, zoom: 11 },
 ]
+
+function LegendDot({ className, children }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={`w-2.5 h-2.5 rounded-full inline-block ${className}`} />
+      {children}
+    </span>
+  )
+}
 
 export default function RegionalScanPage() {
   const [mapCenter, setMapCenter] = useState([9.9252, 78.1198])
@@ -38,7 +47,7 @@ export default function RegionalScanPage() {
     } catch (err) {
       console.error('Scan area error:', err)
       // P2-5: never fabricate a result — show an error state with retry instead.
-      if (err.status === 422) {
+      if (err.status === 422 && /farms|too large|AREA_TOO_LARGE/i.test(err.message || '')) {
         setErrorKind('too_large')
         setError(err.message || 'Selected zone is too large (>500 farms). Please zoom in and scan a smaller zone.')
       } else {
@@ -69,41 +78,43 @@ export default function RegionalScanPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn pb-24 max-w-7xl mx-auto">
+    <div className="space-y-6 animate-fade-in pb-24 max-w-7xl mx-auto">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-teal-900 via-brand-800 to-brand-900 rounded-3xl p-7 text-white shadow-xl flex flex-wrap items-center justify-between gap-4">
-        <div className="space-y-1.5 max-w-2xl">
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 bg-brand-400/20 text-brand-200 text-xs font-semibold rounded-full border border-brand-400/30 flex items-center gap-1">
-              <Sparkles size={12} className="text-brand-300" />
+      <div className="bg-gradient-to-r from-brand-800 to-brand-600 rounded-3xl p-6 sm:p-7 text-white shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1.5 max-w-2xl min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-3 py-1 bg-white/15 text-brand-50 text-xs font-semibold rounded-full border border-white/20 flex items-center gap-1">
+              <Sparkles size={12} />
               Interactive "Draw-to-Scan" · MongoDB 2dsphere Spatial Index
             </span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-stone-900/40 border border-white/20 text-stone-200 font-mono capitalize">
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-black/20 border border-white/20 text-white font-mono capitalize">
               Role: {userRole}
             </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             Interactive Regional Threat Scanner
           </h1>
-          <p className="text-xs sm:text-sm text-brand-100/90 leading-relaxed">
+          <p className="text-sm text-brand-50 leading-relaxed">
             Drag a rectangle or trace a polygon over any Tamil Nadu agricultural zone.
-            AgriGuard instantly indexes every registered farm within the boundary, runs real-time
-            risk aggregation, and computes dominant pest threats.
+            AgriGuard finds every registered farm inside the boundary, aggregates each farm's latest
+            risk assessment, and identifies the dominant pest threat.
           </p>
         </div>
 
         {/* Quick Region Presets */}
-        <div className="flex flex-wrap items-center gap-1.5 bg-black/25 backdrop-blur-sm p-2 rounded-2xl border border-white/10">
-          <span className="text-[11px] font-bold text-brand-300 px-1.5 flex items-center gap-1">
-            <Navigation size={12} /> Zone Jump:
+        <div className="flex flex-wrap items-center gap-1.5 bg-black/20 p-2 rounded-2xl border border-white/10">
+          <span className="text-xs font-semibold text-brand-50 px-1.5 flex items-center gap-1">
+            <Navigation size={12} /> Zone jump:
           </span>
           {REGIONAL_PRESETS.map((p) => (
             <button
+              type="button"
               key={p.name}
               onClick={() => jumpToPreset(p)}
-              className="text-[11px] px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-all"
+              title={`${p.name} (${p.zone})`}
+              className="text-xs px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              {p.name.split(' ')[0]}
+              {p.name}
             </button>
           ))}
         </div>
@@ -122,31 +133,34 @@ export default function RegionalScanPage() {
           onChangeColorMode={setColorMode}
         />
 
-        {/* Dynamic Map Legend Badge */}
-        <div className="mt-2.5 p-3 rounded-2xl bg-white border border-stone-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+        {/* Map Legend — colours match RiskPin exactly */}
+        <div className="mt-2.5 p-3 rounded-2xl bg-white border border-stone-200 shadow-sm flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-stone-700">Active Map Layer:</span>
-            <span className={`px-2.5 py-0.5 rounded-full font-extrabold uppercase text-[10px] ${
+            <span className="font-semibold text-stone-700">Active map layer:</span>
+            <span className={`px-2.5 py-0.5 rounded-full font-semibold text-xs inline-flex items-center gap-1 ${
               colorMode === 'vegetation'
-                ? 'bg-brand-100 text-brand-800 border border-brand-300'
+                ? 'bg-green-100 text-green-800 border border-green-300'
                 : 'bg-red-100 text-red-800 border border-red-300'
             }`}>
-              {colorMode === 'vegetation' ? '🛰️ Sentinel-2 NDVI Canopy Health' : '🚨 Climate Pest Outbreak Risk'}
+              {colorMode === 'vegetation'
+                ? <><Satellite size={12} /> Sentinel-2 NDVI Canopy Health</>
+                : <><AlertTriangle size={12} /> Climate Pest Outbreak Risk</>}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-[11px] text-stone-600 font-medium">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-stone-600 font-medium">
             {colorMode === 'vegetation' ? (
               <>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-600 inline-block"></span> Vigorous (NDVI &ge; 0.60)</span>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Moderate/Declining (0.40–0.60)</span>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-900 inline-block"></span> Stressed Canopy (&lt; 0.40)</span>
+                <LegendDot className="bg-green-700">Healthy (NDVI ≥ 0.40)</LegendDot>
+                <LegendDot className="bg-amber-600">Declining (trend &lt; −0.15)</LegendDot>
+                <LegendDot className="bg-amber-800">Stressed (NDVI &lt; 0.40)</LegendDot>
+                <LegendDot className="bg-stone-400">No NDVI data</LegendDot>
               </>
             ) : (
               <>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block"></span> High Risk (&ge; 65%)</span>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span> Medium Risk (35–65%)</span>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-600 inline-block"></span> Low Risk (&lt; 35%)</span>
+                <LegendDot className="bg-red-600">High risk</LegendDot>
+                <LegendDot className="bg-amber-600">Medium risk</LegendDot>
+                <LegendDot className="bg-green-600">Low risk / no assessment</LegendDot>
               </>
             )}
           </div>
@@ -157,7 +171,7 @@ export default function RegionalScanPage() {
           scanResult={scanResult}
           loading={loading}
           error={error}
-          errorTitle={errorKind === 'too_large' ? 'Zone Scan Exceeded' : 'Scan failed'}
+          errorTitle={errorKind === 'too_large' ? 'Zone too large to scan' : 'Scan failed'}
           onRetry={errorKind === 'failed' && finalizedPolygon ? () => runScan(finalizedPolygon) : undefined}
           userRole={userRole}
           polygonGeoJSON={finalizedPolygon}

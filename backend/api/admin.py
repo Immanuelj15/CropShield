@@ -466,7 +466,7 @@ async def check_external_api_status(
     """
     nasa_endpoint = "https://power.larc.nasa.gov/api/system/manager/version"
     status_label = "operational"
-    latency_ms = 142.0
+    latency_ms = None  # None = not measured (ping failed)
 
     try:
         t0 = time.time()
@@ -476,9 +476,9 @@ async def check_external_api_status(
             if resp.status_code >= 400:
                 status_label = "degraded"
     except Exception:
-        # Fallback simulation if internet is offline
-        status_label = "operational (cached)"
-        latency_ms = 188.4
+        # Ping failed (offline / timeout): report it honestly; predictions fall back to synthetic weather
+        status_label = "unreachable"
+        latency_ms = None
 
     # Fetch latest daily ingestion job log
     last_job = await MongoJobRunLog.find(
@@ -507,7 +507,7 @@ async def check_external_api_status(
         "service_url": "power.larc.nasa.gov",
         "status": status_label,
         "latency_ms": latency_ms,
-        "uptime_percentage": "99.94%",
+        "uptime_percentage": None,  # not tracked — no uptime history is recorded
         "last_sync_timestamp": datetime.utcnow().isoformat(),
         "temporal_coverage": "1980 – 2026 (Daily Point Reanalysis)",
         "spatial_resolution": "0.5° x 0.625° Global Grid",

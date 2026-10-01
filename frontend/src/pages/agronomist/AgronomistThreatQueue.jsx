@@ -1,49 +1,72 @@
-import { useState, useEffect } from 'react'
-import { AlertTriangle, RefreshCw, CheckCircle2, X, ArrowRight } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { AlertTriangle, RefreshCw, CheckCircle2, X, ArrowRight, Info } from 'lucide-react'
 import clsx from 'clsx'
 import { useToast } from '../../components/ui/Toast'
 import Badge from '../../components/ui/Badge'
+import Button from '../../components/ui/Button'
 import EmptyState from '../../components/ui/EmptyState'
-
-import { apiFetch } from '../../utils/http'
 import DemoDataBadge from '../../components/ui/DemoDataBadge'
+import { LoadingState, ErrorState } from '../../components'
+import { apiFetch } from '../../utils/http'
+
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+const SEVERITIES = ['Low', 'Medium', 'High']
+const DECISION_PAST = { confirm: 'confirmed', override: 'overridden' }
+
+const pct = (v) => (Number.isFinite(Number(v)) ? `${Math.round(Number(v) * 100)}%` : '—')
 
 export default function AgronomistThreatQueue() {
   const toast = useToast()
   const [threatQueue, setThreatQueue] = useState([])
   const [selectedThreat, setSelectedThreat] = useState(null)
   const [verifyDecision, setVerifyDecision] = useState('confirm')
+  const [overrideSeverity, setOverrideSeverity] = useState('Medium')
+  const [overridePest, setOverridePest] = useState('')
   const [verifyNotes, setVerifyNotes] = useState('')
 
+  const [loading, setLoading] = useState(true)
   const [verifying, setVerifying] = useState(false)
   const [loadError, setLoadError] = useState(null)
   const [isSimulated, setIsSimulated] = useState(false) // demo queue: cases cannot be verified (backend 404s)
 
-  useEffect(() => { fetchThreatQueue() }, [])
+  const selectedId = selectedThreat?.log_id
+  // Reset the verification form whenever a different case is selected
+  useEffect(() => {
+    setVerifyDecision('confirm')
+    setOverrideSeverity(SEVERITIES.includes(selectedThreat?.ai_risk_level) ? selectedThreat.ai_risk_level : 'Medium')
+    setOverridePest(selectedThreat?.detected_pest || '')
+    setVerifyNotes('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId])
 
-  const fetchThreatQueue = async () => {
+  const fetchThreatQueue = useCallback(async () => {
+    setLoading(true)
     setLoadError(null)
     try {
       const data = await apiFetch('/detect/pending')
-      const items = data?.items || []
+      const items = Array.isArray(data?.items) ? data.items : []
       setIsSimulated(!!data?.simulated)
       setThreatQueue(items)
-      // P2-10: keep the selection only if it is still in the queue; clear it when the queue is empty
-      setSelectedThreat((prev) => {
-        if (prev && items.some((i) => i.log_id === prev.log_id)) return items.find((i) => i.log_id === prev.log_id)
-        return items[0] || null
-      })
+      // Keep the selection only if it is still in the queue; otherwise pick the first item
+      setSelectedThreat((prev) => (prev && items.find((i) => i.log_id === prev.log_id)) || items[0] || null)
     } catch (e) {
-      console.error(e)
       setThreatQueue([])
       setSelectedThreat(null)
       setLoadError(e.message || 'Could not load the threat queue.')
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => { fetchThreatQueue() }, [fetchThreatQueue])
 
   const handleVerify = async (e) => {
     e.preventDefault()
-    if (!selectedThreat || verifying) return
+    if (!selectedThreat || verifying || isSimulated) return
+    if (verifyDecision === 'override' && !verifyNotes.trim()) {
+      toast.error('Please add a field note explaining why you are overriding the AI diagnosis.')
+      return
+    }
     const target = selectedThreat
     setVerifying(true)
     try {
@@ -51,157 +74,231 @@ export default function AgronomistThreatQueue() {
         method: 'POST',
         json: {
           decision: verifyDecision,
-          confirmed_pest: target.detected_pest,
-          severity: verifyDecision === 'confirm' ? target.ai_risk_level : 'Medium',
-          notes: verifyNotes || `Verified by regional expert in ${target.district}.`
+          confirmed_pest: verifyDecision === 'override' ? (overridePest.trim() || target.detected_pest) : target.detected_pest,
+          severity: verifyDecision === 'override'
+            ? overrideSeverity
+            : (SEVERITIES.includes(target.ai_risk_level) ? target.ai_risk_level : undefined),
+          notes: verifyNotes.trim() || `Verified by regional expert in ${target.district || 'the field'}.`,
         },
       })
-      toast.success(`Threat case ${verifyDecision}ed successfully. Audit trail and retraining queue recorded.`)
+      toast.success(`Case ${DECISION_PAST[verifyDecision]}. Audit trail recorded and added to the retraining queue.`)
       setVerifyNotes('')
       // Drop the verified case locally so it can't be verified twice while the queue reloads
       setThreatQueue((prev) => prev.filter((i) => i.log_id !== target.log_id))
       setSelectedThreat(null)
       await fetchThreatQueue()
-    } catch (e) {
-      console.error(e)
-      toast.error(e.message || 'Verification failed. Please try again.')
+    } catch (err) {
+      if (err.status === 409) {
+        toast.error('This case was already verified by another expert. Refreshing the queue.')
+        fetchThreatQueue()
+      } else {
+        toast.error(err.message || 'Verification failed. Please try again.')
+      }
     } finally {
       setVerifying(false)
     }
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-      <div className="lg:col-span-5 bg-white rounded-2xl border border-stone-200 p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-          <div>
-            <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">Unverified Threats <DemoDataBadge show={isSimulated} /></h3>
-            <p className="text-xs text-stone-500">AI-flagged cases awaiting agronomist confirmation</p>
+    <div className="space-y-4">
+      {isSimulated && (
+        <div className="flex items-start gap-2 p-3 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-900">
+          <Info size={16} className="shrink-0 mt-0.5" />
+          <span>
+            There are no real unverified predictions right now, so example cases are shown. Demo cases cannot be verified.
+          </span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-5 card p-5 space-y-4 min-w-0">
+          <div className="flex items-center justify-between gap-3 pb-3 border-b border-stone-100">
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold text-stone-800 flex flex-wrap items-center gap-2">
+                Unverified threats <DemoDataBadge show={isSimulated} />
+              </h3>
+              <p className="text-xs text-stone-500">AI-flagged cases awaiting agronomist confirmation</p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchThreatQueue}
+              disabled={loading}
+              aria-label="Refresh threat queue"
+              className={clsx('p-2 rounded-lg hover:bg-stone-100 text-stone-500 disabled:opacity-50 shrink-0', FOCUS)}
+            >
+              <RefreshCw size={16} className={clsx(loading && 'animate-spin')} />
+            </button>
           </div>
-          <button onClick={fetchThreatQueue} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500">
-            <RefreshCw size={14} />
-          </button>
+
+          {loading && threatQueue.length === 0 ? (
+            <LoadingState message="Loading threat queue…" />
+          ) : loadError ? (
+            <ErrorState message={loadError} onRetry={fetchThreatQueue} />
+          ) : threatQueue.length === 0 ? (
+            <EmptyState icon={CheckCircle2} title="Queue clear" message="No unverified threat cases right now." />
+          ) : (
+            <div className="space-y-3">
+              {threatQueue.map((item) => {
+                const isSelected = selectedThreat?.log_id === item.log_id
+                return (
+                  <button
+                    key={item.log_id}
+                    type="button"
+                    onClick={() => setSelectedThreat(item)}
+                    aria-pressed={isSelected}
+                    className={clsx(
+                      'w-full text-left p-4 rounded-2xl border transition-all flex flex-col gap-2',
+                      FOCUS,
+                      isSelected
+                        ? 'border-brand-600 bg-brand-50 shadow-sm'
+                        : 'border-stone-200 hover:border-stone-300 hover:bg-stone-50'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2 w-full">
+                      <span className="font-bold text-sm text-stone-900 min-w-0 break-words">{item.detected_pest}</span>
+                      <Badge status={item.ai_risk_level}>{item.ai_risk_level} risk</Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs text-stone-500">
+                      <span className="min-w-0 truncate">{item.farm_name} ({item.district})</span>
+                      <span className="font-bold text-stone-700 shrink-0">Risk {pct(item.ai_risk_score)}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
-        <div className="space-y-3">
-          {threatQueue.map(item => {
-            const isSelected = selectedThreat?.log_id === item.log_id
-            return (
-              <button
-                key={item.log_id}
-                onClick={() => setSelectedThreat(item)}
-                className={clsx(
-                  'w-full text-left p-4 rounded-2xl border transition-all flex flex-col gap-2',
-                  isSelected
-                    ? 'border-sky-600 bg-sky-50/70 shadow-sm ring-2 ring-sky-500/20'
-                    : 'border-stone-200 hover:border-stone-300 hover:bg-stone-50'
+        <div className="lg:col-span-7 card p-5 sm:p-6 space-y-6 min-w-0">
+          {selectedThreat ? (
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-stone-100">
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Expert verification docket</span>
+                  <h2 className="text-xl font-bold text-stone-900 mt-1 break-words">{selectedThreat.detected_pest}</h2>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Plot: {selectedThreat.farm_name} · Crop: {selectedThreat.crop_type} · Date: {selectedThreat.date}
+                  </p>
+                </div>
+                <div className="flex gap-4 sm:text-right shrink-0">
+                  <div>
+                    <span className="text-2xl font-bold text-stone-900 block">{pct(selectedThreat.ai_risk_score)}</span>
+                    <span className="text-xs text-stone-500 block">AI risk score</span>
+                  </div>
+                  <div>
+                    <span className="text-2xl font-bold text-stone-900 block">{pct(selectedThreat.ai_confidence)}</span>
+                    <span className="text-xs text-stone-500 block">Pest confidence</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 text-sm space-y-1">
+                <span className="font-bold text-stone-600 uppercase tracking-wider block text-xs">AI satellite & climate evidence</span>
+                <p className="text-stone-800">{selectedThreat.evidence_snippet || 'No evidence summary available.'}</p>
+              </div>
+
+              <form onSubmit={handleVerify} className="space-y-4 pt-2">
+                <fieldset>
+                  <legend className="label">Agronomist action</legend>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setVerifyDecision('confirm')}
+                      aria-pressed={verifyDecision === 'confirm'}
+                      className={clsx(
+                        'p-3.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all',
+                        FOCUS,
+                        verifyDecision === 'confirm'
+                          ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                          : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                      )}
+                    >
+                      <CheckCircle2 size={16} /> Confirm AI diagnosis
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVerifyDecision('override')}
+                      aria-pressed={verifyDecision === 'override'}
+                      className={clsx(
+                        'p-3.5 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all',
+                        FOCUS,
+                        verifyDecision === 'override'
+                          ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                          : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                      )}
+                    >
+                      <X size={16} /> Override / adjust level
+                    </button>
+                  </div>
+                </fieldset>
+
+                {verifyDecision === 'override' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="override-pest" className="label">Corrected pest / disease</label>
+                      <input
+                        id="override-pest"
+                        type="text"
+                        maxLength={200}
+                        value={overridePest}
+                        onChange={(e) => setOverridePest(e.target.value)}
+                        className="input-field text-sm py-2.5"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="override-severity" className="label">Corrected risk level</label>
+                      <select
+                        id="override-severity"
+                        value={overrideSeverity}
+                        onChange={(e) => setOverrideSeverity(e.target.value)}
+                        className="input-field text-sm py-2.5"
+                      >
+                        {SEVERITIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
                 )}
-              >
-                <div className="flex items-start justify-between w-full">
-                  <span className="font-bold text-sm text-stone-900">{item.detected_pest}</span>
-                  <Badge status={item.ai_risk_level}>{item.ai_risk_level} Risk</Badge>
+
+                <div>
+                  <label htmlFor="verify-notes" className="label">
+                    Field notes & observations{verifyDecision === 'override' && <span className="text-red-600"> *</span>}
+                  </label>
+                  <textarea
+                    id="verify-notes"
+                    rows={3}
+                    maxLength={2000}
+                    value={verifyNotes}
+                    onChange={(e) => setVerifyNotes(e.target.value)}
+                    placeholder="Field scouting observations, symptom confirmation, or reasons for override…"
+                    className="input-field text-sm resize-none"
+                  />
                 </div>
-                <div className="flex items-center justify-between text-xs text-stone-500">
-                  <span>{item.farm_name} ({item.district})</span>
-                  <span className="font-bold text-stone-700">AI: {Math.round(item.ai_risk_score * 100)}%</span>
+
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <span className="text-xs text-stone-500">
+                    {isSimulated ? 'Demo cases cannot be verified.' : 'Attributed to your agronomist account.'}
+                  </span>
+                  <Button
+                    type="submit"
+                    loading={verifying}
+                    disabled={isSimulated}
+                    title={isSimulated ? 'Demo cases cannot be verified' : undefined}
+                    className={FOCUS}
+                  >
+                    {verifying ? 'Submitting…' : 'Submit verification'}
+                    {!verifying && <ArrowRight size={14} />}
+                  </Button>
                 </div>
-              </button>
-            )
-          })}
-          {loadError && (
-            <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{loadError}</p>
-          )}
-          {threatQueue.length === 0 && !loadError && (
-            <EmptyState icon={AlertTriangle} title="Queue clear" message="No unverified threat cases in queue." />
+              </form>
+            </>
+          ) : (
+            <EmptyState
+              icon={AlertTriangle}
+              title="No case selected"
+              message="Select a threat case from the list to review and verify it."
+            />
           )}
         </div>
-      </div>
-
-      <div className="lg:col-span-7 bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
-        {selectedThreat ? (
-          <>
-            <div className="flex items-start justify-between pb-4 border-b border-stone-100">
-              <div>
-                <span className="text-[11px] font-bold text-sky-700 uppercase tracking-wider">Expert Verification Docket</span>
-                <h2 className="text-xl font-bold text-stone-900 mt-1">{selectedThreat.detected_pest}</h2>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  Plot: {selectedThreat.farm_name} · Crop: {selectedThreat.crop_type} · Date: {selectedThreat.date}
-                </p>
-              </div>
-              <div className="text-right">
-                <span className="text-2xl font-black text-stone-900">{Math.round(selectedThreat.ai_risk_score * 100)}%</span>
-                <span className="text-[11px] text-stone-400 block">AI Confidence</span>
-              </div>
-            </div>
-
-            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 text-xs space-y-1">
-              <span className="font-bold text-stone-700 uppercase tracking-wider block text-[10px]">AI Satellite & Climate Evidence</span>
-              <p className="text-stone-800">{selectedThreat.evidence_snippet}</p>
-            </div>
-
-            <form onSubmit={handleVerify} className="space-y-4 pt-2">
-              <div>
-                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-2">Agronomist Action</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setVerifyDecision('confirm')}
-                    className={clsx(
-                      'p-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all',
-                      verifyDecision === 'confirm'
-                        ? 'bg-green-600 text-white border-green-600 shadow-md'
-                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
-                    )}
-                  >
-                    <CheckCircle2 size={16} /> Confirm AI Diagnosis
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setVerifyDecision('override')}
-                    className={clsx(
-                      'p-3.5 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-all',
-                      verifyDecision === 'override'
-                        ? 'bg-amber-600 text-white border-amber-600 shadow-md'
-                        : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
-                    )}
-                  >
-                    <X size={16} /> Override / Adjust Level
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">Expert Field Notes & Observations</label>
-                <textarea
-                  rows={3}
-                  value={verifyNotes}
-                  onChange={(e) => setVerifyNotes(e.target.value)}
-                  placeholder="Add specific field scouting observations, symptom confirmation, or reasons for override..."
-                  className="w-full p-3 text-xs rounded-lg border border-stone-200 focus:ring-2 focus:ring-sky-500 outline-none resize-none"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-between">
-                <span className="text-[11px] text-stone-400">
-                  Attribution: your agronomist account
-                </span>
-                <button
-                  type="submit"
-                  disabled={verifying || isSimulated}
-                  title={isSimulated ? 'Demo cases cannot be verified' : undefined}
-                  className="disabled:opacity-50 disabled:cursor-not-allowed px-6 py-2.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2"
-                >
-                  <span>{verifying ? 'Submitting…' : 'Submit Verification Audit'}</span>
-                  <ArrowRight size={14} />
-                </button>
-              </div>
-            </form>
-          </>
-        ) : (
-          <div className="p-16 text-center text-stone-400 text-xs">
-            Select a threat case from the list on the left to review and verify.
-          </div>
-        )}
       </div>
     </div>
   )

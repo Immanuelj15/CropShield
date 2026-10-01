@@ -12,26 +12,32 @@ import clsx from 'clsx'
 // ── Spinner / Loading ────────────────────────────────────────
 export function Spinner({ size = 'md', className = '' }) {
   const s = { sm: 'w-4 h-4', md: 'w-8 h-8', lg: 'w-12 h-12' }
-  return <div className={clsx('animate-spin rounded-full border-2 border-stone-200 border-t-brand-600', s[size], className)} />
+  return <div aria-hidden="true" className={clsx('animate-spin rounded-full border-2 border-stone-200 border-t-brand-600', s[size] || s.md, className)} />
 }
 
 export function LoadingState({ message = 'Loading…' }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 gap-4">
+    <div role="status" aria-live="polite" className="flex flex-col items-center justify-center py-20 gap-4">
       <Spinner size="lg" />
-      <p className="text-stone-500">{message}</p>
+      <p className="text-sm text-stone-500">{message}</p>
     </div>
   )
 }
 
-export function ErrorState({ message, onRetry }) {
+export function ErrorState({ message, onRetry, retryLabel = 'Try Again' }) {
+  // Never render a raw object (e.g. a FastAPI 422 `detail` array) as a React child.
+  const text = typeof message === 'string' ? message : message?.message || 'Something went wrong'
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-4">
-      <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center">
-        <AlertTriangle size={24} className="text-red-500" />
+    <div role="alert" className="flex flex-col items-center justify-center py-16 gap-4">
+      <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center" aria-hidden="true">
+        <AlertTriangle size={24} className="text-red-600" />
       </div>
-      <p className="text-stone-700 font-semibold text-center max-w-sm">{message || 'Something went wrong'}</p>
-      {onRetry && <button onClick={onRetry} className="btn-secondary text-sm px-4 py-2">Try Again</button>}
+      <p className="text-sm text-stone-700 font-semibold text-center max-w-sm">{text || 'Something went wrong'}</p>
+      {onRetry && (
+        <button type="button" onClick={onRetry} className="btn-secondary text-sm px-4 py-2">
+          {retryLabel}
+        </button>
+      )}
     </div>
   )
 }
@@ -63,6 +69,9 @@ export function TodayWarningCard({ result }) {
     Low:    { bg: 'from-brand-600 to-brand-800',  badge: 'bg-brand-100 text-brand-900', Icon: ShieldCheck },
   }
   const cfg = configs[risk_level] || configs.Low
+  // Backend risk_score is 0–100; older payloads used 0–1. Normalise to a 0–100 percentage.
+  const rawScore = Number(risk_score) || 0
+  const scorePct = Math.max(0, Math.min(100, Math.round(rawScore <= 1 ? rawScore * 100 : rawScore)))
 
   return (
     <div className={clsx('rounded-2xl bg-gradient-to-br text-white p-6 relative overflow-hidden', cfg.bg)}>
@@ -90,12 +99,12 @@ export function TodayWarningCard({ result }) {
         <div className="mb-4">
           <div className="flex items-center justify-between text-sm mb-1.5">
             <span className="text-white/70">Risk Score</span>
-            <span className="font-mono font-bold">{Math.round(risk_score * 100)}%</span>
+            <span className="font-mono font-bold">{scorePct}%</span>
           </div>
           <div className="h-3 bg-white/20 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full bg-white transition-all duration-700"
-              style={{ width: `${Math.round(risk_score * 100)}%` }}
+              style={{ width: `${scorePct}%` }}
             />
           </div>
         </div>

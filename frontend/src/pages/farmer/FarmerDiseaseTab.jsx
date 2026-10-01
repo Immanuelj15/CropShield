@@ -1,10 +1,12 @@
 import { Camera, Activity, AlertTriangle } from 'lucide-react'
 import { motion } from 'framer-motion'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 
 export default function FarmerDiseaseTab({
   previewUrl, selectedFile, scanResult, scanLoading, scanError, handleFileChange, handleDiseaseScan,
 }) {
+  const { t } = useTranslation(['farmer'])
   // Contract 7: when the disease model is unavailable the result is not reliable —
   // never show a confidence % or a treatment.
   const modelUnavailable = scanResult?.model_available === false
@@ -16,7 +18,7 @@ export default function FarmerDiseaseTab({
         <div>
           <h2 className="text-lg font-bold text-stone-900">Leaf Disease Vision Scan</h2>
           <p className="text-xs text-stone-500 mt-0.5">
-            Upload a photo taken on your mobile phone for instant PyTorch CNN leaf pathology diagnosis.
+            Upload a photo taken on your mobile phone for an AI leaf-disease diagnosis.
           </p>
         </div>
 
@@ -28,14 +30,15 @@ export default function FarmerDiseaseTab({
             </div>
           ) : (
             <div className="space-y-2">
-              <Camera size={36} className="mx-auto text-stone-400" />
+              <Camera size={36} className="mx-auto text-stone-500" />
               <p className="text-xs font-bold text-stone-700">Take or upload a photo of an affected leaf</p>
-              <p className="text-[11px] text-stone-400">Supports JPG, PNG from phone camera or gallery</p>
+              <p className="text-[11px] text-stone-500">Supports JPG, PNG from phone camera or gallery</p>
             </div>
           )}
           <input
             type="file"
             accept="image/*"
+            aria-label="Upload or capture a leaf photo"
             onChange={handleFileChange}
             className="mt-4 block w-full text-xs text-stone-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100 cursor-pointer"
           />
@@ -49,12 +52,13 @@ export default function FarmerDiseaseTab({
         )}
 
         <button
+          type="button"
           onClick={handleDiseaseScan}
           disabled={scanLoading}
-          className="w-full py-3 rounded-lg bg-gradient-to-r from-brand-600 to-teal-600 text-white font-bold text-sm shadow-md hover:from-brand-700 hover:to-teal-700 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+          className="w-full py-3 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-md transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 flex items-center justify-center gap-2 disabled:opacity-60"
         >
           {scanLoading ? (
-            <><Activity size={16} className="animate-spin" /> Analyzing leaf with ResNet18 model...</>
+            <><Activity size={16} className="animate-spin" /> Analyzing leaf photo...</>
           ) : (
             <><Camera size={16} /> Run Disease Diagnosis</>
           )}
@@ -66,7 +70,7 @@ export default function FarmerDiseaseTab({
           <div className="bg-amber-50 rounded-2xl border border-amber-300 p-6 shadow-sm space-y-2" role="alert">
             <div className="flex items-center gap-2 text-amber-900">
               <AlertTriangle size={20} className="shrink-0" />
-              <h3 className="text-base font-bold">Disease model unavailable — result not reliable</h3>
+              <h3 className="text-base font-bold">{t('farmer:model_unavailable', 'Disease model unavailable — result not reliable')}</h3>
             </div>
             <p className="text-xs text-amber-800 leading-relaxed">
               {scanResult.message || 'The leaf-disease model is not loaded on the server, so no diagnosis, confidence or treatment can be given for this photo.'}
@@ -82,18 +86,20 @@ export default function FarmerDiseaseTab({
           >
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
               <div>
-                <span className="text-[11px] font-bold text-brand-700 uppercase tracking-wider">PyTorch Vision Diagnosis</span>
-                <h3 className="text-xl font-bold text-stone-900 mt-0.5">{scanResult.disease_name || scanResult.predicted_class || 'Unknown'}</h3>
+                <span className="text-[11px] font-bold text-brand-700 uppercase tracking-wider">AI Leaf Diagnosis</span>
+                <h3 className="text-xl font-bold text-stone-900 mt-0.5">{scanResult.disease_name || String(scanResult.predicted_class || 'Unknown').replace(/___/g, ' · ').replace(/_/g, ' ')}</h3>
                 <span className="text-xs text-stone-500 font-medium">{scanResult.pathogen}</span>
               </div>
-              <span className={clsx(
-                'text-xs px-3 py-1 font-bold rounded-full border',
-                scanResult.severity_level === 'High' ? 'bg-red-100 text-red-800 border-red-200' :
-                scanResult.severity_level === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-200' :
-                'bg-green-100 text-green-800 border-green-200'
-              )}>
-                {scanResult.severity_level || 'Moderate'} Severity
-              </span>
+              {scanResult.severity_level && (
+                <span className={clsx(
+                  'text-xs px-3 py-1 font-bold rounded-full border shrink-0',
+                  scanResult.severity_level === 'High' ? 'bg-red-100 text-red-800 border-red-200' :
+                  scanResult.severity_level === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                  'bg-green-100 text-green-800 border-green-200'
+                )}>
+                  {scanResult.severity_level} Severity
+                </span>
+              )}
             </div>
 
             {confidencePct !== null && (
@@ -107,7 +113,7 @@ export default function FarmerDiseaseTab({
                   initial={{ width: 0 }}
                   animate={{ width: `${confidencePct}%` }}
                   transition={{ duration: 0.4, ease: 'easeOut' }}
-                  className="bg-gradient-to-r from-brand-500 to-teal-600 h-full rounded-full"
+                  className="bg-brand-600 h-full rounded-full"
                 />
               </div>
             </div>
@@ -145,18 +151,18 @@ export default function FarmerDiseaseTab({
               </div>
               )}
               {scanResult.prevention && (
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 text-xs">
-                  <span className="font-bold text-blue-900 block mb-0.5">🛡️ Cultural Prevention:</span>
-                  <p className="text-blue-800">{scanResult.prevention}</p>
+                <div className="p-3 bg-sky-50 rounded-lg border border-sky-200 text-xs">
+                  <span className="font-bold text-sky-900 block mb-0.5">🛡️ Cultural Prevention:</span>
+                  <p className="text-sky-800">{scanResult.prevention}</p>
                 </div>
               )}
             </div>
           </motion.div>
         ) : (
-          <div className="bg-stone-50 rounded-2xl border border-stone-200/80 p-12 text-center text-stone-400">
+          <div className="bg-stone-50 rounded-2xl border border-stone-200/80 p-12 text-center text-stone-500">
             <Camera size={36} className="mx-auto mb-2 opacity-50" />
             <p className="text-sm font-semibold">Diagnosis results will appear here after scanning a leaf photo.</p>
-            <p className="text-xs text-stone-400 mt-1">Accepts mobile photos up to 10MB (automatically compressed for rural connectivity).</p>
+            <p className="text-xs text-stone-500 mt-1">Accepts mobile photos up to 10MB (automatically compressed for rural connectivity).</p>
           </div>
         )}
       </div>

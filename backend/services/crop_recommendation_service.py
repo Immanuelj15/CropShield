@@ -393,6 +393,8 @@ async def generate_crop_recommendations(
             "water_requirement": rule.water_requirement,
             "source_note": rule.source_note,
             "cost_source_note": cost_template.source_note if cost_template else "CACP Cost of Cultivation",
+            "reason_text": reason,
+            "exceeds_budget": False,
         })
 
     # Fallback: if strictly no crops fit within budget, return best agronomic fits with budget notice
@@ -462,7 +464,7 @@ async def generate_crop_recommendations(
                 "cost_breakdown": cost_breakdown_total,
                 "expected_price_range": {
                     "min": price_min_per_quintal,
-                    "max": price_max_quintal,
+                    "max": price_max_per_quintal,
                     "unit": "₹/quintal",
                     "min_per_kg": price_min_per_kg,
                     "max_per_kg": price_max_per_kg,

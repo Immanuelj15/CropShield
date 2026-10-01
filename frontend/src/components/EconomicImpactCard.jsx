@@ -55,28 +55,28 @@ export default function EconomicImpactCard({ economicImpact }) {
   const recommendationStyles = {
     'Treat Now': {
       container: 'bg-red-50/80 border-red-200 text-red-950',
-      badge: 'bg-red-600 text-white border-red-700 shadow-xs',
+      badge: 'bg-red-600 text-white border-red-700 shadow-sm',
       badgeDot: 'bg-red-200 animate-ping',
       tag: 'Urgent Action Justified',
       headline: 'Treat Now — Strong Economic Payoff',
       description: 'The prevented crop loss significantly exceeds treatment expenses. Treating now protects your field revenue.',
       icon: AlertOctagon,
-      benefitColor: 'text-emerald-700',
+      benefitColor: 'text-green-700',
     },
     'Treat Soon': {
       container: 'bg-amber-50/80 border-amber-200 text-amber-950',
-      badge: 'bg-amber-500 text-white border-amber-600 shadow-xs',
+      badge: 'bg-amber-500 text-white border-amber-600 shadow-sm',
       badgeDot: 'bg-amber-200 animate-pulse',
       tag: 'Economically Viable',
       headline: 'Treat Soon — Positive Net Benefit',
       description: 'Treatment yields a positive net return. Schedule spray within the recommended weather window.',
       icon: Clock,
-      benefitColor: 'text-emerald-700',
+      benefitColor: 'text-green-700',
     },
     'Monitor Only': {
-      container: 'bg-blue-50/80 border-blue-200 text-blue-950',
-      badge: 'bg-blue-600 text-white border-blue-700 shadow-xs',
-      badgeDot: 'bg-blue-200',
+      container: 'bg-sky-50/80 border-sky-200 text-sky-950',
+      badge: 'bg-sky-600 text-white border-sky-700 shadow-sm',
+      badgeDot: 'bg-sky-200',
       tag: 'Hold Intervention',
       headline: 'Monitor Only — Cost Exceeds Risk',
       description: hasCostData
@@ -86,14 +86,14 @@ export default function EconomicImpactCard({ economicImpact }) {
       benefitColor: 'text-stone-700',
     },
     'No Action Needed': {
-      container: 'bg-emerald-50/80 border-emerald-200 text-emerald-950',
-      badge: 'bg-emerald-600 text-white border-emerald-700 shadow-xs',
-      badgeDot: 'bg-emerald-200',
+      container: 'bg-green-50/80 border-green-200 text-green-950',
+      badge: 'bg-green-600 text-white border-green-700 shadow-sm',
+      badgeDot: 'bg-green-200',
       tag: 'Crop Safe',
       headline: 'No Action Needed — Optimal Economics',
       description: 'Microclimate risk is low and crops are healthy. No chemical or bio intervention required.',
       icon: CheckCircle2,
-      benefitColor: 'text-emerald-700',
+      benefitColor: 'text-green-700',
     },
   }
 
@@ -108,7 +108,7 @@ export default function EconomicImpactCard({ economicImpact }) {
       className="bg-white rounded-3xl border border-stone-200 p-6 shadow-sm space-y-5 relative overflow-hidden"
     >
       {/* Background Accent Gradient */}
-      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-amber-500/5 via-emerald-500/5 to-transparent rounded-full pointer-events-none blur-2xl" />
+      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-amber-500/5 via-brand-500/5 to-transparent rounded-full pointer-events-none blur-2xl" />
 
       {/* Header Pill & Patent Badge */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -126,11 +126,11 @@ export default function EconomicImpactCard({ economicImpact }) {
       <div className={clsx('p-4 rounded-2xl border transition-all', currentStyle.container)}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0 shadow-xs border border-stone-200/60 mt-0.5">
+            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0 shadow-sm border border-stone-200/60 mt-0.5">
               <RecIcon size={22} className={clsx(
                 recommendation === 'Treat Now' ? 'text-red-600' :
                 recommendation === 'Treat Soon' ? 'text-amber-600' :
-                recommendation === 'No Action Needed' ? 'text-emerald-600' : 'text-blue-600'
+                recommendation === 'No Action Needed' ? 'text-green-600' : 'text-sky-600'
               )} />
             </div>
             <div>
@@ -149,42 +149,42 @@ export default function EconomicImpactCard({ economicImpact }) {
       </div>
 
       {/* 4 Financial Key Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3">
         {/* Metric 1: Crop Value at Stake */}
         <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 text-left space-y-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 block">
+          <span className="text-xs font-bold uppercase tracking-wider text-stone-500 block">
             Crop Value / Acre
           </span>
           <div className="text-lg font-black text-stone-900">
             <AnimatedRupee value={crop_value_at_stake} />
           </div>
-          <span className="text-[10px] text-stone-500 block truncate">
-            {expected_yield_kg_per_acre ? `${Math.round(expected_yield_kg_per_acre)} kg @ ₹${market_price_per_kg}/kg` : 'Yield prediction'}
+          <span className="text-xs text-stone-500 block truncate">
+            {expected_yield_kg_per_acre ? `${Math.round(expected_yield_kg_per_acre)} kg @ ₹${market_price_per_kg}/kg` : 'Yield estimate unavailable'}
           </span>
         </div>
 
         {/* Metric 2: Expected Loss */}
         <div className="p-3.5 bg-red-50/60 rounded-2xl border border-red-200 text-left space-y-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-red-700 block">
+          <span className="text-xs font-bold uppercase tracking-wider text-red-700 block">
             Loss If Untreated
           </span>
           <div className="text-lg font-black text-red-950">
             <AnimatedRupee value={expected_loss_if_untreated} />
           </div>
-          <span className="text-[10px] text-red-600 block">
+          <span className="text-xs text-red-600 block">
             Potential pest damage
           </span>
         </div>
 
         {/* Metric 3: Treatment Cost */}
         <div className="p-3.5 bg-amber-50/60 rounded-2xl border border-amber-200 text-left space-y-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 block">
+          <span className="text-xs font-bold uppercase tracking-wider text-amber-700 block">
             Treatment Cost
           </span>
           <div className="text-lg font-black text-amber-950">
-            {hasCostData ? <AnimatedRupee value={treatment_cost} /> : <span className="text-sm font-semibold text-stone-400">N/A</span>}
+            {hasCostData ? <AnimatedRupee value={treatment_cost} /> : <span className="text-sm font-semibold text-stone-500">N/A</span>}
           </div>
-          <span className="text-[10px] text-amber-700 block truncate">
+          <span className="text-xs text-amber-700 block truncate">
             {hasCostData ? 'Input + labor / acre' : 'No advisory cost'}
           </span>
         </div>
@@ -192,19 +192,19 @@ export default function EconomicImpactCard({ economicImpact }) {
         {/* Metric 4: Net Benefit */}
         <div className={clsx(
           'p-3.5 rounded-2xl border text-left space-y-1',
-          net_benefit && net_benefit > 0 ? 'bg-emerald-50/80 border-emerald-300' : 'bg-stone-50 border-stone-200'
+          net_benefit && net_benefit > 0 ? 'bg-green-50/80 border-green-300' : 'bg-stone-50 border-stone-200'
         )}>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 block">
+          <span className="text-xs font-bold uppercase tracking-wider text-green-800 block">
             Net Benefit
           </span>
-          <div className="text-lg font-black text-emerald-950">
+          <div className="text-lg font-black text-green-950">
             {hasCostData && net_benefit !== null ? (
               <AnimatedRupee value={net_benefit} />
             ) : (
-              <span className="text-sm font-semibold text-stone-400">—</span>
+              <span className="text-sm font-semibold text-stone-500">—</span>
             )}
           </div>
-          <span className="text-[10px] text-emerald-700 block truncate">
+          <span className="text-xs text-green-700 block truncate">
             {hasCostData && net_benefit && net_benefit > 0 ? 'Net savings in pocket' : 'Cost threshold'}
           </span>
         </div>
@@ -236,7 +236,7 @@ export default function EconomicImpactCard({ economicImpact }) {
               initial={{ width: 0 }}
               animate={{ width: `${valuePct}%` }}
               transition={{ duration: shouldReduceMotion ? 0 : 0.6, ease: 'easeOut', delay: shouldReduceMotion ? 0 : 0.1 }}
-              className="bg-emerald-600 h-full relative group cursor-pointer"
+              className="bg-green-600 h-full relative group cursor-pointer"
               title={`Protected Crop Value: ₹${valueProtected}`}
             />
           </div>
@@ -246,8 +246,8 @@ export default function EconomicImpactCard({ economicImpact }) {
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
               <span>Cost to Treat: ₹{treatment_cost?.toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-emerald-800 font-semibold">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0" />
+            <div className="flex items-center gap-1.5 text-green-800 font-semibold">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-600 shrink-0" />
               <span>Value Protected: ₹{valueProtected.toLocaleString('en-IN')}</span>
             </div>
           </div>
@@ -268,11 +268,13 @@ export default function EconomicImpactCard({ economicImpact }) {
       {/* Progressive Disclosure: Tap to Expand Calculation Basis */}
       <div className="border-t border-stone-100 pt-3">
         <button
+          type="button"
           onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-between text-xs font-bold text-stone-700 hover:text-stone-900 p-2 rounded-xl hover:bg-stone-50 transition-colors"
+          aria-expanded={expanded}
+          className="w-full flex items-center justify-between gap-2 text-left text-xs font-bold text-stone-700 hover:text-stone-900 p-2 rounded-xl hover:bg-stone-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <div className="flex items-center gap-2">
-            <HelpCircle size={14} className="text-emerald-600" />
+            <HelpCircle size={14} className="text-brand-600" />
             <span>How was this ₹ decision calculated? (Transparent Methodology)</span>
           </div>
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -294,23 +296,27 @@ export default function EconomicImpactCard({ economicImpact }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-stone-200/80 text-[11px]">
                 <div>
                   <span className="font-bold text-stone-700 block">Mandi Price Benchmark:</span>
-                  <span>{market_price_source} ({market_price_per_kg ? `₹${market_price_per_kg}/kg` : 'Modal'})</span>
+                  <span>{market_price_source} ({market_price_per_kg ? `₹${market_price_per_kg}/kg` : 'price unavailable'})</span>
                 </div>
                 <div>
                   <span className="font-bold text-stone-700 block">Input Cost Reference:</span>
-                  <span>{cost_source_note || 'TNAU Crop Protection Guide 2024'}</span>
+                  <span>{cost_source_note || (hasCostData ? 'Advisory database' : 'Not available')}</span>
                 </div>
                 <div>
                   <span className="font-bold text-stone-700 block">Expected Yield Estimate:</span>
-                  <span>{expected_yield_kg_per_acre ? `${Math.round(expected_yield_kg_per_acre)} kg/acre` : 'Yield Regressor'}</span>
+                  <span>{expected_yield_kg_per_acre ? `${Math.round(expected_yield_kg_per_acre).toLocaleString('en-IN')} kg/acre` : 'Not available'}</span>
                 </div>
                 <div>
                   <span className="font-bold text-stone-700 block">Treatment Efficacy Factor:</span>
-                  <span>{Math.round((treatment_effectiveness_pct || 0.75) * 100)}% potential loss prevented</span>
+                  <span>
+                    {hasCostData && typeof treatment_effectiveness_pct === 'number'
+                      ? `${Math.round(treatment_effectiveness_pct * 100)}% potential loss prevented`
+                      : 'Not available (no treatment cost data)'}
+                  </span>
                 </div>
               </div>
 
-              <p className="text-[10px] text-stone-400 pt-1">
+              <p className="text-xs text-stone-500 pt-1">
                 *Note: Damage fractions and treatment efficacy are model assumptions derived from TNAU & ICAR extension studies.
               </p>
             </motion.div>

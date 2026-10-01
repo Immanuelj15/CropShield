@@ -19,14 +19,14 @@ export default function ChatMessage({
         transition={{ duration: 0.25 }}
         className="flex items-start gap-2.5 mb-3"
       >
-        <div className="w-8 h-8 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-sm">
+        <div className="w-8 h-8 rounded-xl bg-brand-700 text-white flex items-center justify-center shrink-0 shadow-sm">
           <Bot size={16} />
         </div>
-        <div className="bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-600 animate-bounce [animation-delay:-0.3s]" />
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-bounce [animation-delay:-0.15s]" />
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" />
-          <span className="text-xs text-stone-500 dark:text-stone-400 ml-2 font-medium">
+        <div className="bg-white border border-stone-200 px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-brand-600 animate-bounce [animation-delay:-0.3s]" />
+          <span className="w-2 h-2 rounded-full bg-brand-500 animate-bounce [animation-delay:-0.15s]" />
+          <span className="w-2 h-2 rounded-full bg-brand-400 animate-bounce" />
+          <span className="text-xs text-stone-500 ml-2 font-medium">
             {language === 'ta' ? 'சிந்திக்கிறது...' : language === 'hi' ? 'सोच रहा है...' : 'Checking advisories...'}
           </span>
         </div>
@@ -47,8 +47,8 @@ export default function ChatMessage({
       <div
         className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
           isUser
-            ? 'bg-stone-700 text-white dark:bg-stone-600'
-            : 'bg-emerald-700 text-emerald-100 dark:bg-emerald-600'
+            ? 'bg-stone-700 text-white'
+            : 'bg-brand-700 text-brand-100'
         }`}
       >
         {isUser ? <User size={16} /> : <Bot size={16} />}
@@ -58,16 +58,16 @@ export default function ChatMessage({
       <div
         className={`max-w-[82%] sm:max-w-[78%] px-4 py-3 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
           isUser
-            ? 'bg-emerald-600 text-white rounded-tr-sm font-medium'
-            : 'bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-100 border border-stone-200 dark:border-stone-700 rounded-tl-sm'
+            ? 'bg-brand-600 text-white rounded-tr-sm font-medium'
+            : 'bg-white text-stone-800 border border-stone-200 rounded-tl-sm'
         }`}
       >
         <p className="whitespace-pre-wrap select-text">{message?.text}</p>
 
         {/* Footer Meta & TTS */}
         <div
-          className={`flex items-center justify-between gap-3 mt-1.5 pt-1 text-[10px] ${
-            isUser ? 'text-emerald-100' : 'text-stone-400 dark:text-stone-500'
+          className={`flex items-center justify-between gap-3 mt-1.5 pt-1 text-xs ${
+            isUser ? 'text-brand-100' : 'text-stone-500'
           }`}
         >
           <span>
@@ -80,8 +80,9 @@ export default function ChatMessage({
             <button
               type="button"
               onClick={() => onSpeak(message?.text)}
-              className="inline-flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 font-medium transition-colors"
-              title="Listen text audio"
+              className="inline-flex items-center gap-1 rounded hover:text-brand-700 font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+              title={isSpeaking ? 'Stop audio' : 'Listen'}
+              aria-label={isSpeaking ? 'Stop reading aloud' : 'Read this reply aloud'}
             >
               {isSpeaking ? (
                 <>

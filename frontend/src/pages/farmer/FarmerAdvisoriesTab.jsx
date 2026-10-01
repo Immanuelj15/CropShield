@@ -24,29 +24,32 @@ export default function FarmerAdvisoriesTab({
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-stone-900">Digital Pest & Disease Advisories</h2>
+          <h2 className="text-lg font-semibold text-stone-800">Digital Pest & Disease Advisories</h2>
           <p className="text-xs text-stone-500 mt-0.5">TNAU & ICAR verified treatment and prevention guidance by crop and pest.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-2.5 text-stone-400" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+          <div className="relative w-full sm:w-auto">
+            <Search size={15} className="absolute left-3 top-2.5 text-stone-500" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
+              aria-label="Search advisories"
               placeholder="Search pest or symptoms..."
               value={advisorySearch}
               onChange={(e) => setAdvisorySearch(e.target.value)}
-              className="pl-9 pr-4 py-1.5 rounded-lg border border-stone-200 text-xs outline-none focus:ring-2 focus:ring-brand-500 w-52"
+              className="pl-9 pr-4 py-1.5 rounded-lg border border-stone-200 text-xs outline-none focus:ring-2 focus:ring-brand-500 w-full sm:w-52"
             />
           </div>
           <select
             value={advisoryCrop}
             onChange={(e) => setAdvisoryCrop(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-semibold text-stone-700 outline-none"
+            aria-label="Filter by crop"
+            className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-semibold text-stone-700 outline-none focus:ring-2 focus:ring-brand-500"
           >
             <option value="All">All Crops</option>
             <option value="Cotton">Cotton</option>
             <option value="Rice">Rice</option>
             <option value="Sugarcane">Sugarcane</option>
+            <option value="Sorghum">Sorghum</option>
             <option value="Millets">Millets</option>
             <option value="Pulses">Pulses</option>
           </select>
@@ -74,7 +77,7 @@ export default function FarmerAdvisoriesTab({
               <div key={adv.id} className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm space-y-3 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <span className="text-[10px] font-bold text-brand-700 uppercase tracking-wider">{cropName} {t('farmer:advisories_tab')}</span>
+                    <span className="text-xs font-bold text-brand-700 uppercase tracking-wider">{cropName}</span>
                     <h3 className="font-bold text-base text-stone-900">{pestName}</h3>
                   </div>
                   <span className="text-[11px] px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 font-bold">{adv.season || 'All Seasons'}</span>
@@ -86,9 +89,9 @@ export default function FarmerAdvisoriesTab({
                   {chem && <div className="p-2.5 bg-stone-50 rounded-lg text-stone-800"><strong>🧪 Chemical:</strong> {chem}</div>}
                 </div>
 
-                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-400">
-                  <span>Temp: {adv.favorable_temp_range || '24-34°C'}</span>
-                  <span>RH: {adv.favorable_humidity_range || '65-85%'}</span>
+                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+                  <span>Temp: {adv.favorable_temp_range || 'N/A'}</span>
+                  <span>RH: {adv.favorable_humidity_range || 'N/A'}</span>
                 </div>
               </div>
             )

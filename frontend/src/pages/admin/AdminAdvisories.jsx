@@ -74,22 +74,22 @@ export default function AdminAdvisories() {
     <div className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6 max-w-3xl">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-100">
         <div>
-          <span className="text-[11px] font-bold text-violet-700 uppercase tracking-wider">Multi-Language Knowledge Base</span>
+          <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Multi-Language Knowledge Base</span>
           <h2 className="text-xl font-bold text-stone-900 mt-0.5">Upload Crop Advisory (5 Languages)</h2>
           <p className="text-xs text-stone-500">Publish research recommendations from TNAU / ICAR with English fallback and regional scripts.</p>
         </div>
         <div className="flex items-center gap-1.5 bg-stone-100 p-1 rounded-lg">
-          <span className="text-[10px] font-bold text-stone-500 uppercase px-2">Active Script:</span>
-          <span className="text-xs font-bold text-violet-900 bg-white px-2 py-0.5 rounded-lg shadow-sm">
+          <span className="text-xs font-bold text-stone-500 uppercase px-2">Active Script:</span>
+          <span className="text-xs font-bold text-stone-900 bg-white px-2 py-0.5 rounded-lg shadow-sm">
             {SUPPORTED_ADVISORY_LANGS.find(l => l.code === advisoryTabLang)?.native} ({advisoryTabLang.toUpperCase()})
           </span>
         </div>
       </div>
 
       <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-stone-600 uppercase tracking-wider">Advisory Translation Language:</span>
-          <span className="text-[11px] text-stone-500">English is required; other languages will fallback to English if unprovided.</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <span className="text-xs font-bold text-stone-600 uppercase tracking-wider">Advisory Translation Language:</span>
+          <span className="text-xs text-stone-500">English is required; missing languages fall back to English.</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -107,22 +107,22 @@ export default function AdminAdvisories() {
                 type="button"
                 onClick={() => setAdvisoryTabLang(lang.code)}
                 className={clsx(
-                  'px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 border',
-                  isSelected ? 'bg-violet-600 text-white border-violet-600 shadow-sm' : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
+                  'px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500',
+                  isSelected ? 'bg-brand-600 text-white border-brand-600 shadow-sm' : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
                 )}
               >
                 <span>{lang.native}</span>
-                <span className="text-[10px] font-mono opacity-80">({lang.code.toUpperCase()})</span>
+                <span className="text-xs font-mono opacity-80">({lang.code.toUpperCase()})</span>
                 {lang.required ? (
-                  <span className={clsx('text-[10px] px-1.5 py-0.2 rounded font-extrabold', hasPest ? 'bg-green-200 text-green-950' : 'bg-red-200 text-red-950')}>
+                  <span className={clsx('text-xs px-1.5 py-0.5 rounded font-extrabold', hasPest ? 'bg-green-200 text-green-950' : 'bg-red-200 text-red-950')}>
                     {hasPest ? '✓ EN' : '*Required'}
                   </span>
                 ) : isFullyFilled ? (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-green-100 text-green-800 font-extrabold">✓ Complete</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-800 font-extrabold">✓ Complete</span>
                 ) : isPartiallyFilled ? (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-extrabold">Partial</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-extrabold">Partial</span>
                 ) : (
-                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-stone-200 text-stone-500 font-semibold">Missing</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-stone-200 text-stone-500 font-semibold">Missing</span>
                 )}
               </button>
             )
@@ -131,8 +131,8 @@ export default function AdminAdvisories() {
       </div>
 
       {advisoryTabLang !== 'en' && newAdvisory.pest_or_disease.en && (
-        <div className="p-3 bg-violet-50/70 border border-violet-200 rounded-lg text-xs text-violet-900 space-y-1">
-          <span className="font-bold block text-[11px] uppercase tracking-wider text-violet-800">English Reference Context:</span>
+        <div className="p-3 bg-stone-50 border border-stone-200 rounded-lg text-xs text-stone-900 space-y-1">
+          <span className="font-bold block text-xs uppercase tracking-wider text-stone-600">English Reference Context:</span>
           <p><strong>Pest:</strong> {newAdvisory.pest_or_disease.en}</p>
           {newAdvisory.organic_treatment.en && <p><strong>Organic:</strong> {newAdvisory.organic_treatment.en}</p>}
         </div>
@@ -141,13 +141,13 @@ export default function AdminAdvisories() {
       <form onSubmit={handleCreateAdvisory} className="space-y-4">
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="text-[11px] font-bold text-stone-700 uppercase">
+            <label className="text-xs font-bold text-stone-700 uppercase">
               Pest or Disease Name ({SUPPORTED_ADVISORY_LANGS.find(l => l.code === advisoryTabLang)?.native} - {advisoryTabLang.toUpperCase()})
               {advisoryTabLang === 'en' && <span className="text-red-500 ml-1">*</span>}
             </label>
             {!newAdvisory.pest_or_disease[advisoryTabLang]?.trim() && advisoryTabLang !== 'en' && (
-              <span className="text-[10px] text-amber-700 font-semibold flex items-center gap-1">
-                <AlertCircle size={12} /> Untranslated (will fallback to EN)
+              <span className="text-xs text-amber-700 font-semibold flex items-center gap-1">
+                <AlertCircle size={12} /> Untranslated (falls back to EN)
               </span>
             )}
           </div>
@@ -163,17 +163,17 @@ export default function AdminAdvisories() {
             }
             value={newAdvisory.pest_or_disease[advisoryTabLang] || ''}
             onChange={setField('pest_or_disease')}
-            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-violet-500"
+            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">Crop</label>
+            <label className="block text-xs font-bold text-stone-700 uppercase mb-1">Crop</label>
             <select
               value={newAdvisory.crop_type}
               onChange={(e) => setNewAdvisory({ ...newAdvisory, crop_type: e.target.value })}
-              className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none font-semibold"
+              className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-brand-500 font-semibold"
             >
               <option value="Cotton">Cotton (பருத்தி / कपास)</option>
               <option value="Rice">Rice (நெல் / चावल)</option>
@@ -183,18 +183,18 @@ export default function AdminAdvisories() {
             </select>
           </div>
           <div>
-            <label className="block text-[11px] font-bold text-stone-700 uppercase mb-1">Season</label>
+            <label className="block text-xs font-bold text-stone-700 uppercase mb-1">Season</label>
             <input
               type="text"
               value={newAdvisory.season}
               onChange={(e) => setNewAdvisory({ ...newAdvisory, season: e.target.value })}
-              className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none"
+              className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
         </div>
 
         <div>
-          <label className="text-[11px] font-bold text-stone-700 uppercase block mb-1">Symptoms ({advisoryTabLang.toUpperCase()})</label>
+          <label className="text-xs font-bold text-stone-700 uppercase block mb-1">Symptoms ({advisoryTabLang.toUpperCase()})</label>
           <textarea
             rows={2}
             placeholder={
@@ -204,12 +204,12 @@ export default function AdminAdvisories() {
             }
             value={newAdvisory.symptoms[advisoryTabLang] || ''}
             onChange={setField('symptoms')}
-            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-violet-500"
+            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
         <div>
-          <label className="text-[11px] font-bold text-stone-700 uppercase block mb-1">Organic / Bio-control Treatment ({advisoryTabLang.toUpperCase()})</label>
+          <label className="text-xs font-bold text-stone-700 uppercase block mb-1">Organic / Bio-control Treatment ({advisoryTabLang.toUpperCase()})</label>
           <textarea
             rows={2}
             placeholder={
@@ -219,12 +219,12 @@ export default function AdminAdvisories() {
             }
             value={newAdvisory.organic_treatment[advisoryTabLang] || ''}
             onChange={setField('organic_treatment')}
-            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-violet-500"
+            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
         <div>
-          <label className="text-[11px] font-bold text-stone-700 uppercase block mb-1">Chemical Treatment ({advisoryTabLang.toUpperCase()})</label>
+          <label className="text-xs font-bold text-stone-700 uppercase block mb-1">Chemical Treatment ({advisoryTabLang.toUpperCase()})</label>
           <textarea
             rows={2}
             placeholder={
@@ -234,23 +234,23 @@ export default function AdminAdvisories() {
             }
             value={newAdvisory.chemical_treatment[advisoryTabLang] || ''}
             onChange={setField('chemical_treatment')}
-            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-violet-500"
+            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
         <div>
-          <label className="text-[11px] font-bold text-stone-700 uppercase block mb-1">Cultural Prevention Advice ({advisoryTabLang.toUpperCase()})</label>
+          <label className="text-xs font-bold text-stone-700 uppercase block mb-1">Cultural Prevention Advice ({advisoryTabLang.toUpperCase()})</label>
           <textarea
             rows={2}
             placeholder="Crop rotation, destroy alternate host weeds, avoid excess nitrogenous fertilizers..."
             value={newAdvisory.prevention[advisoryTabLang] || ''}
             onChange={setField('prevention')}
-            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-violet-500"
+            className="w-full p-2.5 text-xs rounded-lg border border-stone-200 outline-none resize-none focus:ring-2 focus:ring-brand-500"
           />
         </div>
 
-        <button type="submit" disabled={saving} className="disabled:opacity-50 w-full py-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
-          <Upload size={16} /> Publish Multi-Language Advisory
+        <button type="submit" disabled={saving} aria-busy={saving || undefined} className="disabled:opacity-50 disabled:cursor-not-allowed w-full py-3 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold shadow-sm transition-all flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
+          <Upload size={16} /> {saving ? 'Publishing…' : 'Publish multi-language advisory'}
         </button>
       </form>
     </div>

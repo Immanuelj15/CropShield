@@ -243,6 +243,8 @@ class FeaturesResponse(BaseModel):
     rolling:      RollingFeatures
     soil:         SoilFeatures
     derived:      Dict[str, Any]
+    # {"weather_source": "NASA_POWER" | "synthetic", "is_synthetic": bool} — same shape as predict-today
+    data_quality: Optional[Dict[str, Any]] = None
 
 
 # ── Weather ───────────────────────────────────────────────────

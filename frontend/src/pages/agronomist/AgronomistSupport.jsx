@@ -1,31 +1,50 @@
 import { useState, useEffect, useCallback } from 'react'
-import { MessageSquare, Send, RefreshCw, Inbox } from 'lucide-react'
+import { MessageSquare, Send, RefreshCw, Inbox, CheckCircle2 } from 'lucide-react'
 import clsx from 'clsx'
 import { useToast } from '../../components/ui/Toast'
 import EmptyState from '../../components/ui/EmptyState'
+import Badge from '../../components/ui/Badge'
+import Button from '../../components/ui/Button'
+import PillToggleGroup from '../../components/ui/PillToggleGroup'
+import { LoadingState, ErrorState } from '../../components'
 import { apiFetch } from '../../utils/http'
 
-// Contract 9: real queue from GET /advisories/farmer-requests?status=pending,
-// responses go to the selected request's id (no hard-coded demo id).
+const FOCUS = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+const MIN_REPLY = 5 // backend SupportResponseRequest.response_text min_length
+const MAX_REPLY = 4000
+const FILTERS = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'resolved', label: 'Answered' },
+  { value: 'all', label: 'All' },
+]
+
+const fmtDate = (v) => {
+  if (!v) return ''
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString()
+}
+
+// Real queue from GET /advisories/farmer-requests?status=…; responses go to the selected request's id.
 export default function AgronomistSupport() {
   const toast = useToast()
+  const [statusFilter, setStatusFilter] = useState('pending')
   const [requests, setRequests] = useState([])
   const [selectedId, setSelectedId] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [supportReply, setSupportReply] = useState('')
+  const [replyError, setReplyError] = useState(null)
   const [sending, setSending] = useState(false)
 
-  const loadRequests = useCallback(async () => {
+  const loadRequests = useCallback(async (filter) => {
     setLoading(true)
     setLoadError(null)
     try {
-      const data = await apiFetch('/advisories/farmer-requests?status=pending')
+      const data = await apiFetch(`/advisories/farmer-requests?status=${encodeURIComponent(filter)}`)
       const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : []
       setRequests(items)
       setSelectedId((prev) => (prev && items.some((r) => String(r.id) === String(prev)) ? prev : (items[0]?.id ?? null)))
     } catch (e) {
-      console.error(e)
       setRequests([])
       setSelectedId(null)
       setLoadError(e.message || 'Could not load farmer requests.')
@@ -34,27 +53,35 @@ export default function AgronomistSupport() {
     }
   }, [])
 
-  useEffect(() => { loadRequests() }, [loadRequests])
+  useEffect(() => { loadRequests(statusFilter) }, [loadRequests, statusFilter])
 
   const selected = requests.find((r) => String(r.id) === String(selectedId)) || null
+  const isResolved = selected?.status === 'resolved'
 
   const handleSendSupportReply = async (e) => {
     e.preventDefault()
-    if (!selected || !supportReply.trim() || sending) return
+    if (!selected || sending) return
+    const text = supportReply.trim()
+    if (text.length < MIN_REPLY) {
+      setReplyError(`Please write at least ${MIN_REPLY} characters.`)
+      return
+    }
+    setReplyError(null)
     const targetId = selected.id
     setSending(true)
     try {
       await apiFetch(`/advisories/farmer-requests/${encodeURIComponent(targetId)}/respond`, {
         method: 'POST',
-        json: { response_text: supportReply },
+        json: { response_text: text },
       })
-      toast.success('Response transmitted to farmer successfully.')
+      toast.success('Response sent to the farmer.')
       setSupportReply('')
-      setRequests((prev) => prev.filter((r) => String(r.id) !== String(targetId)))
-      setSelectedId(null)
-      loadRequests()
+      if (statusFilter === 'pending') {
+        setRequests((prev) => prev.filter((r) => String(r.id) !== String(targetId)))
+        setSelectedId(null)
+      }
+      loadRequests(statusFilter)
     } catch (err) {
-      console.error(err)
       toast.error(err.message || 'Failed to send response.')
     } finally {
       setSending(false)
@@ -62,90 +89,120 @@ export default function AgronomistSupport() {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 shadow-sm space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-stone-900">Farmer Diagnostic Support Inquiries</h2>
-          <p className="text-xs text-stone-500 mt-0.5">Handle field assistance requests submitted by smallholders.</p>
+    <div className="card p-5 sm:p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold text-stone-900">Farmer support requests</h2>
+          <p className="text-sm text-stone-600 mt-0.5">Answer field assistance requests submitted by farmers.</p>
         </div>
-        <button onClick={loadRequests} disabled={loading} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500 disabled:opacity-50" title="Refresh">
-          <RefreshCw size={14} className={clsx(loading && 'animate-spin')} />
-        </button>
+        <div className="flex items-center gap-2">
+          <PillToggleGroup options={FILTERS} value={statusFilter} onChange={setStatusFilter} size="sm" />
+          <button
+            type="button"
+            onClick={() => loadRequests(statusFilter)}
+            disabled={loading}
+            aria-label="Refresh requests"
+            className={clsx('p-2 rounded-lg hover:bg-stone-100 text-stone-500 disabled:opacity-50', FOCUS)}
+          >
+            <RefreshCw size={16} className={clsx(loading && 'animate-spin')} />
+          </button>
+        </div>
       </div>
 
-      {loadError && (
-        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{loadError}</p>
-      )}
-
-      {!loading && !loadError && requests.length === 0 && (
-        <EmptyState icon={Inbox} title="No pending requests" message="Farmer support requests will appear here." />
-      )}
-
-      {requests.length > 0 && (
+      {loading && requests.length === 0 ? (
+        <LoadingState message="Loading requests…" />
+      ) : loadError ? (
+        <ErrorState message={loadError} onRetry={() => loadRequests(statusFilter)} />
+      ) : requests.length === 0 ? (
+        <EmptyState
+          icon={Inbox}
+          title={statusFilter === 'pending' ? 'No pending requests' : 'No requests'}
+          message="Farmer support requests will appear here."
+        />
+      ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-5 space-y-2">
+          <div className="lg:col-span-5 space-y-2 min-w-0">
             {requests.map((r) => (
               <button
                 key={r.id}
                 type="button"
-                onClick={() => { setSelectedId(r.id); setSupportReply('') }}
+                onClick={() => { setSelectedId(r.id); setSupportReply(''); setReplyError(null) }}
+                aria-pressed={String(r.id) === String(selectedId)}
                 className={clsx(
-                  'w-full text-left p-3 rounded-xl border text-xs transition-all',
-                  String(r.id) === String(selectedId) ? 'border-sky-400 bg-sky-50' : 'border-stone-200 hover:bg-stone-50'
+                  'w-full text-left p-3 rounded-xl border text-sm transition-all',
+                  FOCUS,
+                  String(r.id) === String(selectedId) ? 'border-brand-600 bg-brand-50' : 'border-stone-200 hover:bg-stone-50'
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-stone-900 truncate">{r.farmer_name || 'Farmer'}</span>
-                  <span className="text-[10px] text-stone-400 shrink-0">
-                    {r.created_at ? new Date(r.created_at).toLocaleDateString() : ''}
-                  </span>
+                  <span className="text-xs text-stone-500 shrink-0">{fmtDate(r.created_at)}</span>
                 </div>
-                <p className="text-stone-500 truncate">{r.farm_name || '—'} · {r.crop_type || 'General'}</p>
+                <p className="text-xs text-stone-500 truncate">{r.farm_name || r.district || '—'} · {r.crop_type || 'General'}</p>
                 <p className="text-stone-700 line-clamp-2 mt-0.5">{r.question}</p>
               </button>
             ))}
           </div>
 
-          <div className="lg:col-span-7">
+          <div className="lg:col-span-7 min-w-0">
             {selected ? (
-              <div className="p-6 bg-stone-50 rounded-2xl border border-stone-200 space-y-4">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold text-green-700 uppercase tracking-wider">
+              <div className="p-5 bg-stone-50 rounded-2xl border border-stone-200 space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">
                       Farmer: {selected.farmer_name || 'Farmer'}
                     </span>
-                    <h4 className="text-sm font-bold text-stone-900 mt-0.5">
-                      Crop: {selected.crop_type || 'General'} · Plot: {selected.farm_name || '—'}
+                    <h4 className="text-sm font-bold text-stone-900 mt-0.5 break-words">
+                      Crop: {selected.crop_type || 'General'} · Plot: {selected.farm_name || '—'}{selected.district ? ` · ${selected.district}` : ''}
                     </h4>
                   </div>
-                  <span className="text-xs px-2.5 py-0.5 bg-amber-100 text-amber-800 rounded-full font-bold capitalize">
-                    {selected.status || 'pending'}
-                  </span>
+                  <Badge status={isResolved ? 'success' : 'warning'}>{isResolved ? 'Answered' : 'Pending'}</Badge>
                 </div>
 
-                <p className="text-xs text-stone-700 bg-white p-3.5 rounded-lg border border-stone-200">
-                  "{selected.question}"
-                </p>
+                <blockquote className="text-sm text-stone-700 bg-white p-3.5 rounded-lg border border-stone-200 break-words">
+                  “{selected.question}”
+                </blockquote>
 
-                <form onSubmit={handleSendSupportReply} className="space-y-3">
-                  <textarea
-                    rows={3}
-                    value={supportReply}
-                    onChange={(e) => setSupportReply(e.target.value)}
-                    placeholder="Provide specific TNAU chemical/organic prescription to the farmer..."
-                    className="w-full p-3 text-xs rounded-lg border border-stone-200 focus:ring-2 focus:ring-sky-500 outline-none resize-none"
-                  />
-                  <button
-                    type="submit"
-                    disabled={sending || !supportReply.trim()}
-                    className="px-5 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Send size={14} /> {sending ? 'Sending…' : 'Send Expert Advisory'}
-                  </button>
-                </form>
+                {selected.image_url && (
+                  <a href={selected.image_url} target="_blank" rel="noreferrer" className={clsx('inline-block rounded-lg', FOCUS)}>
+                    <img src={selected.image_url} alt="Photo attached by the farmer" className="max-h-48 rounded-lg border border-stone-200" />
+                  </a>
+                )}
+
+                {isResolved ? (
+                  <div className="p-3.5 rounded-lg border border-green-200 bg-green-50 text-sm text-green-900 space-y-1">
+                    <span className="flex items-center gap-1.5 font-semibold">
+                      <CheckCircle2 size={16} /> Answered by {selected.agronomist_name || 'an agronomist'}
+                      {selected.responded_at ? ` on ${fmtDate(selected.responded_at)}` : ''}
+                    </span>
+                    <p className="whitespace-pre-line break-words">{selected.response_text}</p>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendSupportReply} className="space-y-3" noValidate>
+                    <label htmlFor="support-reply" className="label">Your advisory</label>
+                    <textarea
+                      id="support-reply"
+                      rows={4}
+                      maxLength={MAX_REPLY}
+                      value={supportReply}
+                      onChange={(e) => { setSupportReply(e.target.value); if (replyError) setReplyError(null) }}
+                      placeholder="Give a specific TNAU organic or chemical prescription for the farmer…"
+                      aria-invalid={!!replyError}
+                      className={clsx('input-field text-sm resize-none', replyError && 'border-red-400')}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={clsx('text-xs', replyError ? 'text-red-600 font-medium' : 'text-stone-500')}>
+                        {replyError || `${supportReply.length}/${MAX_REPLY}`}
+                      </span>
+                      <Button type="submit" icon={Send} loading={sending} disabled={!supportReply.trim()} className={FOCUS}>
+                        {sending ? 'Sending…' : 'Send advisory'}
+                      </Button>
+                    </div>
+                  </form>
+                )}
               </div>
             ) : (
-              <div className="p-12 text-center text-stone-400 text-xs">Select a request to respond.</div>
+              <EmptyState icon={MessageSquare} title="No request selected" message="Select a request to view or respond." />
             )}
           </div>
         </div>
