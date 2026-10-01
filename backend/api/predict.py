@@ -317,7 +317,7 @@ async def predict_today(
                 ):
                     try:
                         from backend.services.notification_service import notify_farmer
-                        net_benefit = economic_impact_data.get("net_benefit_treat_now_inr", 0) or 0
+                        net_benefit = economic_impact_data.get("net_benefit", 0) or 0
                         await notify_farmer(owner_id, "treat_now_recommendation", {
                             "en": f"AgriGuard Advisory: 'Treat Now' recommended for your {request.crop}. Estimated net benefit of treating now: ₹{net_benefit:,.0f}.",
                             "ta": f"அக்ரிகார்ட் ஆலோசனைக் குறிப்பு: உங்கள் {request.crop} பயிருக்கு உடனடியாக சிகிச்சையளிக்க பரிந்துரைக்கப்படுகிறது. எதிர்பார்க்கப்படும் நிகர லாபம்: ₹{net_benefit:,.0f}.",

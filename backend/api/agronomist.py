@@ -220,8 +220,24 @@ async def get_farm_field_weather(
             "wind_speed_ms": latest.get("ws2m", 2.8),
             "vapour_pressure_deficit_kpa": round(0.61078 * (2.718 ** ((17.27 * latest.get("t2m", 30)) / (latest.get("t2m", 30) + 237.3))) * (1 - latest.get("rh2m", 66) / 100), 2),
         },
-        "microclimate_status": "Moderately elevated night humidity — ideal for sucking pest emergence."
+        "microclimate_status": _microclimate_status(latest),
     }
+
+
+def _microclimate_status(latest: dict) -> str:
+    """Plain-language summary derived from today's values (simple agronomic thresholds)."""
+    rh = latest.get("rh2m")
+    t_max = latest.get("t2m_max")
+    rain = latest.get("prectotcorr") or 0.0
+    if rh is None or t_max is None:
+        return "Insufficient weather data for a microclimate summary."
+    if rain >= 10:
+        return "Recent heavy rain — watch for fungal disease and waterlogging."
+    if rh >= 80:
+        return "High humidity — favourable for fungal disease and sucking pests."
+    if t_max >= 35 and rh < 50:
+        return "Hot and dry — favourable for mites and thrips; check irrigation."
+    return "No notable microclimate stress today."
 
 
 @router.get("/outbreak/regional-grid")
@@ -295,7 +311,7 @@ async def generate_regional_report(
         "report_id": f"REP-{datetime.utcnow().strftime('%Y%m%d')}-{range.upper()}",
         "generated_by": current_user.name,
         "region": region,
-        "time_horizon": f"Last 7 Days ({range.title()})",
+        "time_horizon": {"daily": "Last 24 Hours", "weekly": "Last 7 Days", "monthly": "Last 30 Days"}[range],
         "generated_at": datetime.utcnow().isoformat(),
         "summary": {
             "total_farms_monitored": 59,

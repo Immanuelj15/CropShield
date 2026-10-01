@@ -5,7 +5,9 @@
 > dependencies, the frontend↔backend contract, data/ML artifacts, and verified gotchas.
 > Originally written against commit `55bfc2a` (branch `main`), then updated for branch `fix/audit-remediation`.
 > That branch added auth + ownership everywhere, a real-NASA-POWER model retrain, idempotent jobs, isolated tests and a
-> working Docker setup. If code and this file disagree, trust the code and update this file.
+> working Docker setup. Branch `fix/frontend-fix` (on top of it) then reworked the frontend to one design system, wired
+> missing features, removed fabricated UI figures and fixed the backend defects that review found (see §8.5 and §12).
+> If code and this file disagree, trust the code and update this file.
 
 ---
 
@@ -331,16 +333,16 @@ Error contract: 401 = missing, invalid or expired token; 403 = wrong role or not
 | `predict.py` | `POST /predict-today` | 🔐 + own `farm_id` | see §4 |
 | `location_predict.py` | `POST /predict-location` | 🔓 | geocoding (async), weather, soil, `ml.location_prediction.*`, recommendation_engine, economic_impact |
 | `detect.py` | `POST /detect` | 🔐 | weather, soil, pest_service; SQLite `PestDetection` |
-| `features.py` | `GET /features` | 🔓 | weather, soil, `engineer_features` |
+| `features.py` | `GET /features` (returns `data_quality {weather_source, is_synthetic}` like predict-today) | 🔓 | weather, soil, `engineer_features` |
 | `weather.py` | `GET /weather/current` | 🔓 | weather_service (router included **before** agronomist, so `/weather/current` is no longer shadowed) |
-| `history.py` | `GET /history` | 🔓 | SQLite `PestWarningLog` |
+| `history.py` | `GET /history` | 🔐 (farmers: only rows within ~1 km of their own farms' coordinates — the SQLite log has no owner column; agronomist/admin: platform-wide) | SQLite `PestWarningLog`, Mongo `Farm` |
 | `farmer.py` | `GET /farms/me` (404 if none), `GET /farmer/profile` (`farm` or null), `GET /farms` = `GET /farmer/farms` (own farms; admin/agronomist: all), `POST /farms`, `PUT/DELETE /farms/{id}` (own), `GET /history/me`, `GET/POST /treatments`, `GET /advisories` (🔓, regex-escaped search), `GET /alerts/me`, `POST /support/requests`, `GET /support/requests/me` | F/Ad (profile, farms list: 🔐) | Mongo Farm, PestWarningLog, Treatment, PestDiseaseAdvisory, Alert, SupportRequest, User |
 | `agronomist.py` | `GET /detect/pending` (`simulated` flag), `POST /detect/{log_id}/verify` (404/409), `GET /weather/{farm_id}` (no demo fallback), `GET /outbreak/regional-grid` (simulated), `GET /reports/regional?range=` (simulated), `GET /advisories/farmer-requests?status=pending\|resolved\|all`, `POST /advisories/farmer-requests/{id}/respond` (404 on unknown) | A/Ad | Mongo PestWarningLog, RetrainingLog, SupportRequest, Farm; weather_service |
 | `admin.py` (prefix `/admin`) | `GET/POST /pests-diseases`, `DELETE /pests-diseases/{id}`, `GET /farms` (A too), `POST /farms`, `GET/POST /users`, `PUT /users/{id}` (roles Literal; no self-demote or self-deactivate), `GET/PUT /thresholds` `{low_max, medium_max}`, legacy `GET/PUT /alert-thresholds`, `POST /advisories`, `GET /api-status`, `POST /jobs/run-ingestion-now` (409 if running), `GET /analytics` (simulated sections), `POST /run-daily-predictions`, `POST /models/retrain` (simulated), `GET /models/status`, `GET /model-calibration` | Ad | daily_ingestion_job, risk_thresholds, calibration_service, metrics.json |
 | `vegetation.py` | `GET /vegetation/{farm_id}` (own, staff read; `persisted` flag; no writes on GET), `GET /vegetation` (farmers see own farms) | 🔐 | ndvi_service (async), fusion_service |
 | `disease.py` | `POST /disease/detect` (multipart `file`, `crop_hint`, `farm_id`), `GET /disease/recent` | 🔐 | disease_service singleton; utils/uploads |
 | `yield_api.py` | `POST /yield/predict` (`confidence_score` may be null; unknown crop → 422) | 🔐 | `ml.yield_prediction.yield_model`; SQLite `YieldPredictionLog` |
-| `outbreak.py` | `GET /outbreak/heatmap`, `POST /outbreak/spatial-risk`, `POST /outbreak/scan-area`, `POST /outbreak/scan-area/broadcast-advisory` | 🔓 / 🔓 / 🔐 / A+Ad | clustering, ndvi_service; Farm, PestWarningLog, VegetationSnapshot, Alert |
+| `outbreak.py` | `GET /outbreak/heatmap` (`simulated:true` — fixed reference hotspots), `POST /outbreak/spatial-risk`, `POST /outbreak/scan-area`, `POST /outbreak/scan-area/broadcast-advisory` | 🔓 / 🔓 / 🔐 / A+Ad | clustering, ndvi_service; Farm, PestWarningLog, VegetationSnapshot, Alert |
 | `chatbot.py` | `POST /chatbot/ask` (own farm_id), `GET /chatbot/intents?lang=`, `POST /chatbot/query` | F/A/Ad / 🔓 / 🔓 | chatbot_service |
 | `alerts.py` | `POST /alerts/send` (mock, `status:"simulated"`) | A/Ad | none |
 | `notifications.py` (prefix `/notifications`) | `GET /vapid-public-key` (🔓; `{public_key:null, push_enabled:false}` without keys), `GET/PUT /preferences`, `POST /subscribe`, `POST /unsubscribe`, `POST /test`, `GET /logs` | 🔐 | notification_service |
@@ -348,8 +350,8 @@ Error contract: 401 = missing, invalid or expired token; 403 = wrong role or not
 | `irrigation.py` | `GET /irrigation/{farm_id}` (own, staff read), `GET /irrigation/coefficients/all` (🔓), `POST /irrigation/coefficients`, `DELETE /irrigation/coefficients/{id}` (Ad) | F/A/Ad | irrigation_service |
 | `fertilizer.py` | `GET /fertilizer/{farm_id}` (own, staff read), `GET /fertilizer/requirements/all` (🔓), `POST/DELETE /fertilizer/requirements` (Ad) | F/A/Ad | fertilizer_service |
 | `activity_planner.py` | `POST /activity-planner/generate` (F/Ad, own), `GET /activity-planner/{farm_id}` (F/A/Ad), `POST …/activities/{id}/complete` (F/Ad), `POST /activity-planner/run-reminders-now` (Ad, 409 if running) | see route | activity_planner_service, activity_reminder_job |
-| `soil_health.py` (prefix `/soil-health`) | `POST /generate`, `POST /{farm_id}/upload-lab-report` (F/Ad, own), `GET /{farm_id}/effective`, `GET /{farm_id}/history` (read roles), `POST /seed-demo-data` (Ad) | see route | soil_health_service |
-| `pnl.py` | `POST /expenses`, `POST /expenses/receipt-upload` (→ `{url:"/uploads/receipts/<uuid>.<ext>"}`), `GET /expenses/{farm_id}`, `DELETE /expenses/{id}`, `POST /revenue`, `GET /revenue/{farm_id}`, `GET /farm-pnl/{farm_id}` (404 for unknown farm; no write on GET), `GET /admin/prediction-accuracy` (Ad), `POST /pnl/seed-demo-data` (Ad) | F/Ad + own | pnl_service. Amounts: 0 < x ≤ 1e9. `category` ∈ seeds/fertilizer/labor/irrigation/pesticides/other. `receipt_photo_url` must match the upload URL. `crop_type` defaults to "General". |
+| `soil_health.py` (prefix `/soil-health`) | `POST /generate`, `POST /{farm_id}/upload-lab-report` (F/Ad, own), `GET /{farm_id}/effective`, `GET /{farm_id}/history` (read roles), `POST /seed-demo-data` (Ad). Lab upload: `organic_carbon_pct` optional (null = not measured); lab reports copy elevation/slope from the farm's latest preliminary report, else null. Preliminary `data_sources` list the sources actually used (SoilGrids or regional fallback; SRTM or regional topography). | see route | soil_health_service |
+| `pnl.py` | `POST /expenses`, `POST /expenses/receipt-upload` (→ `{url:"/uploads/receipts/<uuid>.<ext>"}`), `GET /expenses/{farm_id}`, `DELETE /expenses/{id}`, `POST /revenue`, `GET /revenue/{farm_id}`, `GET /farm-pnl/{farm_id}` (404 for unknown farm; no write on GET), `GET /admin/prediction-accuracy` (Ad; `simulated`/`demo_seasons` count seeded `DEMO-*` farm ids), `POST /pnl/seed-demo-data` (Ad) | F/Ad + own | pnl_service. Amounts: 0 < x ≤ 1e9. `category` ∈ seeds/fertilizer/labor/irrigation/pesticides/other. `receipt_photo_url` must match the upload URL. `crop_type` defaults to "General". |
 
 ---
 
@@ -528,9 +530,9 @@ Risk thresholds are stored in the raw collection `platform_settings`, which has 
 - `main.jsx` imports `./i18n`, then renders `<App/>`.
 - `App.jsx` contains:
   - `BrowserRouter` and `OfflineBanner`
-  - `Navbar` (role-based nav items, `LanguageSelector`, role badge, logout, the Tamil voice button that opens `VoiceAssistantModal`)
+  - `Navbar` (role-based nav items, `LanguageSelector`, role badge, logout, the voice button that opens `VoiceAssistantModal`); the mobile menu, `Sidebar` (agronomist/admin) and `FarmerBottomNav` mirror the same items
   - `<Routes>` wrapped in a route-level `ErrorBoundary` (it resets on route change)
-  - `Footer` and a floating `ChatbotWidget`, keyed by user id
+  - `Footer` and a floating `ChatbotWidget`, keyed by user id (signed-in users only, never on `/login`; opens in the UI language when it is ta/hi/en)
 - **Auth storage and HTTP (`utils/http.js`):**
   - `sessionStorage.cropshield_token` holds the JWT; `sessionStorage.cropshield_user` holds `{email, role, name, user_id}`. Helpers: `getToken`, `getUser`, `setSession`, `logout`, `userScopedKey`.
   - `apiFetch(path, {json, body, signal, auth, skipAuthRedirect})` attaches the Bearer token and throws `ApiError {status, data, isNetwork}`. `normalizeError()` turns string or `[{msg}]` details into text.
@@ -557,9 +559,9 @@ Risk thresholds are stored in the raw collection `platform_settings`, which has 
 | `/regional-scan` | any logged-in | `RegionalScanPage` | `POST /outbreak/scan-area`, `POST /outbreak/scan-area/broadcast-advisory` (error state, no fabricated fallback) | DrawableMap, RegionalResultSheet |
 | `/yield` | any logged-in | `YieldPage` | `POST /yield/predict` (confidence may be "Not available") | — |
 | `/outbreak` | any logged-in | `OutbreakMapPage` | `GET /outbreak/heatmap` | react-leaflet |
-| `/expert` | agronomist, admin | `ExpertPortalPage` | (static/mock) | — |
-| `/features` | any logged-in | `FeaturesPage` | `GET /features` | components/index.jsx |
-| `/history` | any logged-in | `HistoryPage` | `GET /history` (SQLite) | components/index.jsx |
+| `/expert` | agronomist, admin | `ExpertPortalPage` ("AI Review Desk") | `GET /detect/pending`, `GET /disease/recent`, `GET /advisories/farmer-requests?status=resolved` | DemoDataBadge |
+| `/features` | any logged-in (nav: agronomist, admin) | `FeaturesPage` | `GET /features` (shows real weather source from `data_quality`) | components/index.jsx |
+| `/history` | any logged-in | `HistoryPage` | `GET /history` (SQLite; farmer = own farms, staff = platform-wide) | components/index.jsx |
 
 `TodayPage.jsx` and `DetectPage.jsx` were **deleted**. Legacy short paths (`/soil-health`, `/expenses`, `/detect`, `/map`, …) redirect to the `/farmer/*` routes.
 
@@ -582,6 +584,14 @@ Risk thresholds are stored in the raw collection `platform_settings`, which has 
 
 ### 8.4 i18n
 `i18n.js` loads namespaces `common, auth, farmer, agronomist, admin, validation` for `en, ta, hi, te, ml` and uses the browser language detector. Usage: `const { t } = useTranslation(['farmer'])`, then `t('farmer:key', 'English default')`. **When you add UI text, add the key to all 5 locale folders** (or at least `en`; the others fall back to the inline default).
+
+### 8.5 Design system and UI conventions (enforced on `fix/frontend-fix`)
+- **Colours:** brand green `brand-*` (`brand-600` = `#0d5c2f` primary, also PWA theme colour). Don't use ad-hoc `emerald-*`/`teal-*`/raw hex for brand. Risk/status: low/success = green, medium/warning = amber, high/error = red, info = sky (`components/ui/Badge.jsx`). Role accents only for hero, role badge and active nav: farmer = brand, agronomist = `sky-700`, admin = `violet-700`. Neutrals are `stone-*` only.
+- **Tailwind is v3.4.** v4-only names (`shadow-xs`, `shadow-2xs`, `backdrop-blur-xs`, `bg-linear-*`) silently do nothing; `tailwind.config.js` keeps safety-net aliases for `shadow-xs/2xs` and `animate-fadeIn`, but use `shadow-sm` and `animate-fade-in`. Never build class names by concatenation (`bg-${c}-100`); use static maps. `darkMode: 'class'` is set so stray `dark:` classes never fire (the app has no dark theme).
+- **Primitives:** `.card`, `ui/Button` (defaults to `type="button"`; pass `type="submit"` for forms), `.input-field` + `.label`, `ui/Modal` (Escape and backdrop click close it), `ui/Toggle` (`aria-label` when no visible label), `ui/EmptyState`, `LoadingState`/`ErrorState` (with retry) from `components/index.jsx`, `ui/DemoDataBadge` wherever the API says `simulated:true`. `.focus-ring` (index.css) gives custom controls the brand focus ring.
+- **Money:** `formatRupee()` from `components/ProfitRangeDisplay.jsx` renders negatives as `-₹5,000`. Dates: parse backend naive timestamps as UTC; date inputs default to the local (IST) date (`localISODate` in `QuickAddExpenseForm.jsx`).
+- **Honesty rule:** never render invented fallbacks (fake confidence, NDVI, uptime, costs). Show `—` or an explicit "not available" and label synthetic/simulated/demo data.
+- **Minimums:** `text-xs` for meaningful text, no `text-stone-300/400` body text on white, layouts must work at 360 px (tables scroll inside `overflow-x-auto`).
 
 ---
 
@@ -700,7 +710,7 @@ Still true:
 4. **In-process state.**
    - The login and predict rate limiters and `jobs/locks.py` are per process. Run a single uvicorn worker, or move them to Mongo/Redis before scaling out.
    - The risk-threshold cache is per process too: a `PUT /admin/thresholds` is not seen by other workers until they restart.
-5. **Simulated admin data.** Retrain, analytics' district vulnerability, the regional grid/report, `/alerts/send` and the demo pending queue return `simulated:true`. Don't present them as real.
+5. **Simulated admin data.** Retrain, analytics' district vulnerability, the regional grid/report, `/alerts/send`, the demo pending queue and `/outbreak/heatmap` return `simulated:true`; `/admin/prediction-accuracy` sets it when seeded `DEMO-*` seasons are included. Don't present them as real. The regional-grid clusters (incl. `alert_status`) are static examples.
 6. **`/uploads` is a public static mount.** Receipts, lab reports and leaf images are protected only by unguessable uuid names.
 7. **`chatbot_service` still has a `Farm.find_one()` fallback** for context when no farm id is given (the API passes an owned farm or none). `economic_impact_service.DEFAULT_YIELDS_KG_ACRE` still uses older uncited constants.
 8. **Mixed naming for zones and crops.** `Farm.climate_zone` may be `Coastal|Hills`, while the ML pipeline uses `Dryland|Irrigated|Delta|Semi-arid|Humid`. The model only supports 6 crops; any other crop raises `FeatureError` → rule fallback or 4xx. The outbreak hotspots use other crops.
@@ -710,6 +720,16 @@ Still true:
 12. **i18n is partial.** Expense, Farms, Scan, Soil, Agronomist and Admin screens are mostly English-only.
 13. **Git history still contains the old JWT secret and VAPID key pair.** Rotate them; they are compromised.
 14. `frontend/Dockerfile` (`serve -s dist`) does not proxy `/api` or `/uploads`. Compose uses `deploy/frontend.Dockerfile` (nginx) instead.
+15. **No edit/delete for some P&L records.** The backend has no endpoints to edit or delete revenue, or edit expenses, and ignores a null `boundary_geojson` (a saved boundary can't be removed). The UI does not offer these actions.
+16. **Disease model crop coverage.** The disease classes don't include Sugarcane, Millets, Pulses or Sorghum; those crops always get "not trained" (the scan page no longer offers Sugarcane; Corn is sent as `Corn (maize)`).
+17. **`/history` farmer scoping is coordinate-based** (±0.01° of a farm's GeoJSON point) because SQLite `PestWarningLog` has no owner column. Predictions made for coordinates other than a saved farm won't appear for that farmer.
+
+Fixed on `fix/frontend-fix` and no longer issues:
+- `crop_recommendation_service` budget fallback referenced undefined `price_max_quintal` (500 when no crop fit the budget); normal results now include `reason_text` and `exceeds_budget:false`
+- the "Treat Now" notification read non-existent `net_benefit_treat_now_inr` (always ₹0); it now reads `net_benefit`
+- unauthenticated `GET /history` returning every user's warnings
+- fabricated values: soil-report `data_sources` always claiming SoilGrids/SRTM, lab reports' fixed 120 m elevation / 1 % slope, lab organic carbon defaulting to 0.65, NASA health `uptime_percentage: "99.94%"` and offline latency 188.4 ms (now `null`, status `unreachable`), a constant `microclimate_status` (now derived from today's weather) and the regional report `time_horizon` always "Last 7 Days"
+- frontend: off-brand colours and dead Tailwind classes, the mock expert portal, read-only admin screens, raw i18n keys on login, Corn disease scans always "not trained", UTC date shifts, `₹-x` formatting, NaN/undefined rendering
 
 ---
 

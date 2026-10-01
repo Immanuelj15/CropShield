@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Clock, RefreshCw, Filter, AlertTriangle, CheckCircle } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { getHistory } from '../utils/api'
+import { getUser } from '../utils/http'
 import { LoadingState, ErrorState } from '../components'
 import Badge from '../components/ui/Badge'
 
@@ -9,6 +10,7 @@ const CROPS      = ['All', 'Cotton', 'Sorghum', 'Millets', 'Rice', 'Sugarcane', 
 const RISK_COLORS = { Low: '#16a34a', Medium: '#d97706', High: '#dc2626' }
 
 export default function HistoryPage() {
+  const isStaff = ['agronomist', 'admin'].includes(getUser()?.role)
   const [items,   setItems]   = useState([])
   const [total,   setTotal]   = useState(0)
   const [loading, setLoading] = useState(true)
@@ -49,7 +51,7 @@ export default function HistoryPage() {
           <h1 className="font-display text-2xl font-bold text-stone-900 flex items-center gap-3">
             <Clock className="text-stone-600" size={24} aria-hidden="true" /> Warning History
           </h1>
-          <p className="text-sm text-stone-600 mt-1">{total} predictions on record (platform-wide)</p>
+          <p className="text-sm text-stone-600 mt-1">{total} predictions on record {isStaff ? '(platform-wide)' : 'for your farms'}</p>
         </div>
         <button type="button" onClick={load} disabled={loading} className="btn-secondary flex items-center gap-2 text-sm px-4 py-2">
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} aria-hidden="true" /> Refresh

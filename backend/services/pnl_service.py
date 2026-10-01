@@ -261,9 +261,13 @@ async def get_aggregated_prediction_accuracy() -> Dict[str, Any]:
     """
     summaries = await SeasonPnlSummary.find().to_list()
     valid_summaries = [s for s in summaries if s.prediction_accuracy and s.prediction_accuracy.get("deviation_pct") is not None]
+    # Seeded CSV demo rows use farm ids like "DEMO-FARM-0001" (see seed_pnl_demo_data)
+    demo_seasons = sum(1 for s in valid_summaries if str(s.farm_id).upper().startswith("DEMO-"))
 
     if not valid_summaries:
         return {
+            "simulated": False,
+            "demo_seasons": 0,
             "total_seasons": 0,
             "within_range_count": 0,
             "accuracy_rate_pct": 0.0,
@@ -322,6 +326,8 @@ async def get_aggregated_prediction_accuracy() -> Dict[str, Any]:
     }
 
     return {
+        "simulated": demo_seasons > 0,
+        "demo_seasons": demo_seasons,
         "total_seasons": len(valid_summaries),
         "within_range_count": within_count,
         "accuracy_rate_pct": accuracy_rate,

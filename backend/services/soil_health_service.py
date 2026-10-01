@@ -211,10 +211,14 @@ def _regional_soil_fallback(lat: float, lon: float) -> Dict[str, Any]:
     }
 
 
-def fetch_terrain_data(lat: float, lon: float) -> Tuple[float, float]:
+TERRAIN_SOURCE_SRTM = "SRTM Digital Elevation Model (via Google Earth Engine)"
+TERRAIN_SOURCE_REGIONAL = "Regional topography approximation (Earth Engine unavailable)"
+
+
+def fetch_terrain_data(lat: float, lon: float) -> Tuple[float, float, str]:
     """
-    Retrieves plot elevation (meters) and terrain slope (%) from SRTM DEM.
-    Gracefully models regional topography if Earth Engine is offline.
+    Retrieves plot elevation (meters), terrain slope (%) and the source label actually used.
+    Uses SRTM DEM via Earth Engine when initialized, else a regional topography approximation.
     """
     # Attempt Google Earth Engine SRTM if initialized (read the live flag, not a stale import copy).
     # BLOCKING (getInfo round-trips) — from async code call via asyncio.to_thread.
@@ -229,7 +233,7 @@ def fetch_terrain_data(lat: float, lon: float) -> Tuple[float, float]:
             slope_dict = slope_img.reduceRegion(ee.Reducer.mean(), point, 30).getInfo()
             elev = float(elev_dict.get("elevation", 150.0))
             slope = float(slope_dict.get("slope", 1.0))
-            return (round(elev, 1), round(slope, 1))
+            return (round(elev, 1), round(slope, 1), TERRAIN_SOURCE_SRTM)
     except Exception as e:
         logger.debug("GEE SRTM query bypassed: %s", e)
 
@@ -255,7 +259,7 @@ def fetch_terrain_data(lat: float, lon: float) -> Tuple[float, float]:
         elev = 140.0 + abs(math.sin(lat * 60)) * 220.0
         slope = 0.8 + abs(math.cos(lon * 40)) * 1.8
 
-    return (round(elev, 1), round(slope, 1))
+    return (round(elev, 1), round(slope, 1), TERRAIN_SOURCE_REGIONAL)
 
 
 async def generate_preliminary_soil_report(
@@ -271,7 +275,7 @@ async def generate_preliminary_soil_report(
     area_acres = compute_polygon_area_acres(boundary_geojson)
     lat, lon = compute_polygon_centroid(boundary_geojson)
 
-    soil_data, (elevation_m, terrain_slope_pct) = await asyncio.gather(
+    soil_data, (elevation_m, terrain_slope_pct, terrain_source) = await asyncio.gather(
         fetch_soilgrids_with_quantiles_async(lat, lon),
         asyncio.to_thread(fetch_terrain_data, lat, lon),
     )
@@ -350,10 +354,10 @@ async def generate_preliminary_soil_report(
         overall_confidence_pct=overall_confidence,
         elevation_m=elevation_m,
         terrain_slope_pct=terrain_slope_pct,
+        # Report the sources actually used (SoilGrids may fall back to a regional profile)
         data_sources=[
-            "ISRIC SoilGrids v2.0 (Uncertainty Quantiles)",
-            "NASA POWER Agro-climatology",
-            "SRTM Digital Elevation Model (via Google Earth Engine)",
+            soil_data.get("source") or "ISRIC SoilGrids v2.0 (Uncertainty Quantiles)",
+            terrain_source,
         ],
         lab_report_file_url=None,
         lab_measured_values=None,
@@ -395,7 +399,7 @@ async def get_effective_soil_data(farm_id: Optional[str]) -> Optional[Dict[str, 
                 "nitrogen_kg_per_acre": float(meas.get("nitrogen_kg", 45.0)),
                 "phosphorus_kg_per_acre": float(meas.get("phosphorus_kg", 20.0)),
                 "potassium_kg_per_acre": float(meas.get("potassium_kg", 30.0)),
-                "organic_carbon_pct": float(meas.get("organic_carbon_pct", 0.65)),
+                "organic_carbon_pct": float(meas["organic_carbon_pct"]) if meas.get("organic_carbon_pct") is not None else None,
                 "soil_type": lab_report.soil_type_declared or "Lab Tested Soil",
                 "area_acres": lab_report.area_acres,
                 "elevation_m": lab_report.elevation_m,

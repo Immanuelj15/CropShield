@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { TrendingUp, RefreshCw, Sprout, MapPin } from 'lucide-react'
 import clsx from 'clsx'
 import StatCard from '../../components/ui/StatCard'
+import DemoDataBadge from '../../components/ui/DemoDataBadge'
 import Button from '../../components/ui/Button'
 import EmptyState from '../../components/ui/EmptyState'
 import { LoadingState, ErrorState } from '../../components'
@@ -79,8 +80,14 @@ export default function AdminPredictionAccuracy() {
           <h2 className="text-xl font-bold text-stone-900 mt-1">Crop profit prediction accuracy</h2>
           <p className="text-sm text-stone-600 mt-1 max-w-2xl">
             Computed from farmer-logged expenses and harvest revenue. A season is <strong>accurate</strong> when the actual net
-            profit falls inside the predicted [min, max] range. Non-production servers also include seeded demo P&L data.
+            profit falls inside the predicted [min, max] range.
           </p>
+          {data?.simulated && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-600">
+              <DemoDataBadge title="Includes seeded demo P&L seasons (farm ids starting with DEMO-)." />
+              <span>{data.demo_seasons} of {data.total_seasons} seasons are seeded demo data.</span>
+            </div>
+          )}
         </div>
         <Button type="button" variant="secondary" icon={RefreshCw} loading={loading} onClick={load} className="self-start md:self-auto">
           Refresh

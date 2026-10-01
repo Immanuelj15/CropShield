@@ -150,8 +150,12 @@ export default function FeaturesPage() {
             <p className="text-xs text-stone-500 mt-3 flex items-start gap-1.5">
               <Info size={13} className="shrink-0 mt-0.5" />
               <span>
-                Date: {weather.date || '—'} · Source: NASA POWER daily reanalysis. If NASA POWER is unreachable the
-                server substitutes estimated climatology, so treat values as indicative.
+                Date: {weather.date || '—'} ·{' '}
+                {data.data_quality?.is_synthetic
+                  ? 'Source: estimated climatology (NASA POWER was unreachable), so treat these values as indicative only.'
+                  : data.data_quality
+                    ? 'Source: NASA POWER daily reanalysis.'
+                    : 'Source: NASA POWER daily reanalysis, or estimated climatology if NASA POWER was unreachable.'}
               </span>
             </p>
           </FeatureGroup>

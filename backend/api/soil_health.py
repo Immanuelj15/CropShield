@@ -92,7 +92,7 @@ async def upload_lab_report_endpoint(
     nitrogen_kg: float = Form(..., ge=0, le=10000, description="Laboratory available Nitrogen in kg/acre"),
     phosphorus_kg: float = Form(..., ge=0, le=10000, description="Laboratory available Phosphorus (P2O5) in kg/acre"),
     potassium_kg: float = Form(..., ge=0, le=10000, description="Laboratory available Potassium (K2O) in kg/acre"),
-    organic_carbon_pct: Optional[float] = Form(0.65, ge=0, le=100, description="Laboratory Organic Carbon percentage"),
+    organic_carbon_pct: Optional[float] = Form(None, ge=0, le=100, description="Laboratory Organic Carbon percentage (optional; omitted = not measured)"),
     lab_name: Optional[str] = Form("Govt. District Soil Testing Laboratory", max_length=200, description="Testing Lab Name"),
     test_date: Optional[date_type] = Form(None, description="Date of lab analysis YYYY-MM-DD"),
     soil_type_declared: Optional[str] = Form(None, max_length=100, description="Soil classification determined by lab"),
@@ -116,7 +116,13 @@ async def upload_lab_report_endpoint(
     area_acres = compute_polygon_area_acres(boundary) if boundary else round(float(farm.area_hectares or 1.0) * 2.471, 2)
     district = farm.district or "Tamil Nadu"
 
-    # 4. Create lab_verified document
+    # 4. Lab reports carry no topography; reuse the farm's latest preliminary estimate if one exists
+    prior = await SoilHealthReport.find(
+        SoilHealthReport.farm_id == farm_id,
+        SoilHealthReport.report_type == "preliminary",
+    ).sort(-SoilHealthReport.generated_at).first_or_none()
+
+    # 5. Create lab_verified document
     lab_report = SoilHealthReport(
         farm_id=farm_id,
         boundary_geojson=boundary,
@@ -129,11 +135,15 @@ async def upload_lab_report_endpoint(
             "nitrogen": {"level": "Measured", "value_kg_per_acre": nitrogen_kg, "confidence_pct": 100.0},
             "phosphorus": {"level": "Measured", "value_kg_per_acre": phosphorus_kg, "confidence_pct": 100.0},
             "potassium": {"level": "Measured", "value_kg_per_acre": potassium_kg, "confidence_pct": 100.0},
-            "organic_carbon": {"level": "Measured", "value_pct": organic_carbon_pct, "confidence_pct": 100.0},
+            "organic_carbon": (
+                {"level": "Measured", "value_pct": organic_carbon_pct, "confidence_pct": 100.0}
+                if organic_carbon_pct is not None
+                else {"level": "Not measured", "value_pct": None, "confidence_pct": None}
+            ),
         },
         overall_confidence_pct=100.0,
-        elevation_m=120.0,
-        terrain_slope_pct=1.0,
+        elevation_m=prior.elevation_m if prior else None,
+        terrain_slope_pct=prior.terrain_slope_pct if prior else None,
         data_sources=[f"Verified Laboratory Testing ({lab_name})", "Farmer Document Submission"],
         lab_report_file_url=file_url,
         lab_measured_values={

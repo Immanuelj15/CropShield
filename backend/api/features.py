@@ -74,6 +74,10 @@ async def get_features(
                 "temp_trend_7d":        round(float(w.get("temp_trend_7d",0)),3),
                 "rain_rolling_30d":     round(float(w.get("rain_rolling_30d",0)),2),
             },
+            data_quality={
+                "weather_source": weather_service.get_weather_source(weather_df),
+                "is_synthetic": weather_service.is_synthetic_weather(weather_df),
+            },
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

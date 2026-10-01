@@ -13,11 +13,11 @@ const fmtDateTime = (v) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
 }
 
-// status from backend: "operational" | "degraded" | "operational (cached)" (= ping failed, no live latency)
+// status from backend: "operational" | "degraded" | "unreachable" (= ping failed, latency_ms null)
 function statusStyle(status) {
   const s = String(status || '').toLowerCase()
   if (s === 'operational') return { cls: 'bg-green-100 text-green-800', dot: 'bg-green-600', label: 'Operational' }
-  if (s.includes('cached')) return { cls: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500', label: 'Unreachable (cached)' }
+  if (s === 'unreachable' || s.includes('cached')) return { cls: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500', label: 'Unreachable' }
   if (s === 'degraded') return { cls: 'bg-amber-100 text-amber-800', dot: 'bg-amber-500', label: 'Degraded' }
   return { cls: 'bg-stone-100 text-stone-700', dot: 'bg-stone-500', label: status || 'Unknown' }
 }
@@ -79,7 +79,7 @@ export default function AdminApiHealth() {
   if (!apiStatus) return null
 
   const st = statusStyle(apiStatus.status)
-  const pingFailed = String(apiStatus.status || '').toLowerCase().includes('cached')
+  const pingFailed = apiStatus.latency_ms == null || /unreachable|cached/.test(String(apiStatus.status || '').toLowerCase())
   const job = apiStatus.last_job_run
   const failures = Array.isArray(job?.failures) ? job.failures : []
 
